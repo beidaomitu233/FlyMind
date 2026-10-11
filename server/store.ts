@@ -9,7 +9,7 @@ import { applyOperations, type DiagramOperation } from '../src/drawing/core/oper
 export const PROJECT_ROOT=fileURLToPath(new URL('../',import.meta.url))
 export const DATA_ROOT=resolve(process.env.FLYMIND_DATA_DIR||join(PROJECT_ROOT,'data'))
 export interface DiagramRecord {document:DiagramDocument;revision:number;savedAt:number}
-export class StoreError extends Error {constructor(message:string,public status=400){super(message)}}
+export class StoreError extends Error {constructor(message:string,public status=400,public currentRevision?:number){super(message)}}
 export class DiagramStore {
   constructor(public root=DATA_ROOT){}
   id(id:string){if(!/^[a-zA-Z0-9_-]{1,100}$/.test(id))throw new StoreError('图形 ID 仅支持字母、数字、下划线、短横线（1–100 字）');return id}
@@ -26,6 +26,6 @@ export class DiagramStore {
   async create(input:unknown){const d=validateDocument(input);this.id(d.id);return this.lock(d.id,async()=>{try{await stat(this.path(d.id));throw new StoreError('该图形 ID 已存在，请读取后更新，或使用新的 ID',409)}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e}d.updatedAt=Date.now();return this.write({document:d,revision:1,savedAt:Date.now()})})}
   async update(id:string,revision:number,input:unknown){return this.change(id,revision,()=>validateDocument(input))}
   async patch(id:string,revision:number,ops:DiagramOperation[]){return this.change(id,revision,d=>applyOperations(d,ops))}
-  async change(id:string,revision:number,fn:(d:DiagramDocument)=>DiagramDocument){return this.lock(id,async()=>{const prev=await this.get(id);if(!Number.isInteger(revision)||revision!==prev.revision)throw new StoreError(`版本冲突：当前为 ${prev.revision}，请读取最新图形后再修改`,409);const next=validateDocument(fn(copy(prev.document)));next.id=id;next.updatedAt=Date.now();return this.write({document:next,revision:prev.revision+1,savedAt:Date.now()})})}
+  async change(id:string,revision:number,fn:(d:DiagramDocument)=>DiagramDocument){return this.lock(id,async()=>{const prev=await this.get(id);if(!Number.isInteger(revision)||revision!==prev.revision)throw new StoreError(`版本冲突：当前为 ${prev.revision}，请读取最新图形后再修改`,409,prev.revision);const next=validateDocument(fn(copy(prev.document)));next.id=id;next.updatedAt=Date.now();return this.write({document:next,revision:prev.revision+1,savedAt:Date.now()})})}
   async delete(id:string,revision:number){await this.lock(id,async()=>{const prev=await this.get(id);if(revision!==prev.revision)throw new StoreError('版本冲突，请读取最新图形',409);await rm(this.path(id))})}
 }

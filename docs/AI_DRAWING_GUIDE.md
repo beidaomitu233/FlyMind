@@ -191,9 +191,9 @@ edges/lanes/phases/groups 可省略，自动补空数组。思维导图通过 pa
 
 - 双击节点原位编辑标题，Enter 保存、Shift+Enter 换行、Esc 取消；“内容”编辑类型、说明、模块条目、角色/阶段/分组或父主题。
 - “渲染”编辑位置、尺寸、颜色、形状、字号、卡片图标、连接线路由和端口；可单独恢复标准配置。无选择时调整全图标准节点与连线配置。
-- 拖动节点、右下角手柄缩放；框选/Shift 多选，Ctrl+A 全选、Ctrl+D 复制；多选面板提供对齐与等距分布。方向键移动 1，Shift+方向键移动 10。
+- 拖动节点吸附边缘/中心并显示辅助线，Alt 临时绕过；单节点八方向手柄缩放，Shift 保持比例。框选/Shift 追加框选或多选，Ctrl+A 全选、Ctrl+D 复制；多选面板提供对齐与等距分布。方向键移动 1，Shift+方向键移动 10。Esc 取消手势，不写入文档；完成手势一次提交和撤销。
 - 从四侧端口拖动连线；C 工具依次选择起终点；选中线后拖动端点重连、拖动折点或双击增加折点、拖动标签位置。
-- 分组调整顺序；删除有节点的分组时选择迁移目标。Ctrl+Z 撤销、Ctrl+Shift+Z 重做；H 或空格拖动画布，Ctrl+滚轮缩放。
+- 分组调整顺序；删除有节点的分组时选择迁移目标。Ctrl+Z 撤销、Ctrl+Shift+Z 重做；H 或空格拖动画布，Ctrl+滚轮缩放，Shift+1 适应全部、Shift+2 适应所选。打开属性面板保持视角。
 - 自动保存与版本保护。断网保留未同步内容，恢复后重试；重新加载发现与远端不同的未同步存档会另存为本地存档。网页冲突可载入最新或另存本地副本。
 
 | 交付物 | 用途 |
@@ -208,5 +208,7 @@ edges/lanes/phases/groups 可省略，自动补空数组。思维导图通过 pa
 存储结构是 `{schemaVersion:2,content:{...},rendering:{...},updatedAt:...}`。外层存储记录有 revision/savedAt；内容本身没有时间或版本锁字段。旧版本平铺文档通过导入/存储读取兼容：order → rendering.ranks、edges.dashed → rendering.edges、groups.tone → rendering.groups。兼容入口与新内容工具严格校验分开。
 
 制品在 `data/artifacts/{diagramId}/r{revision}/`；JSON 内容为 diagram.json，完整工作区为 diagram.project.json。编辑链接仅本机使用。可在 Codex 回复中引用返回的 files.png 绝对路径展示图形，再给出编辑/下载链接。
+
+MCP 制品结果同时提供 resources URI；可通过 resources/read 读取 `flymind://artifacts/{diagramId}/{revision}/{format}`（png/svg/json/project.json/drawio）。PNG 使用 base64 blob，其余返回文本；只读取已生成版本制品。成功结果有 structuredContent 和 outputSchema；执行错误以 isError 和 JSON 文本 `{error:{code,message,currentRevision?}}` 返回。CONFLICT 重新读取和合并，禁止强制覆盖。字段 schema 校验失败由 SDK 返回错误，不保证同一业务错误格式。
 
 无 MCP 的独立渲染：`npm run render -- examples/swimlane.json output/swimlane.svg`；也可输入完整工作区文件以保留手动样式。这条命令不写入共享工作区。连接 Codex 见 `docs/CODEX_SETUP.md`。

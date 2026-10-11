@@ -203,3 +203,18 @@ test('共享保存断网后不被轮询覆盖，重新加载保留未同步内�
     assert.ok(recovered.current.value.title.endsWith('本地存档'))
   }finally{globalThis.fetch=originalFetch}
 })
+
+test('显式编辑链接加载未知图形，输入焦点不阻止导航且保留已有人工内容',async()=>{
+  const originalFetch=globalThis.fetch,storage=new Map<string,string>()
+  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(k:string)=>storage.get(k)||null,setItem:(k:string,v:string)=>storage.set(k,v)}})
+  Object.defineProperty(globalThis,'document',{configurable:true,value:{activeElement:{closest:()=>true}}})
+  const local=sampleFor('flowchart'),incoming=sampleFor('mindmap');local.nodes[0].label='尚未保存的人工文字'
+  const documents=ref([local]),activeId=ref(local.id),calls:string[]=[]
+  globalThis.fetch=(async(url:string)=>{calls.push(url);return Response.json({document:incoming,revision:7,savedAt:1})}) as any
+  try{
+    const shared=sharedWorkspace({documents,activeId,current:computed(()=>documents.value.find(d=>d.id===activeId.value)!),storageError:ref(''),notify:()=>{},reset:()=>{}})
+    assert.equal(await shared.ensureDocument(incoming.id),true);assert.equal(shared.revisions.value[incoming.id],7)
+    assert.equal(documents.value[0].nodes[0].label,'尚未保存的人工文字');assert.equal(activeId.value,local.id)
+    assert.equal(await shared.ensureDocument(incoming.id),true);assert.equal(calls.length,1)
+  }finally{globalThis.fetch=originalFetch;Object.defineProperty(globalThis,'document',{configurable:true,value:{activeElement:null}})}
+})

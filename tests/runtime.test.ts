@@ -43,7 +43,14 @@ test('真实 STDIO MCP：发现工具、读取规则、生成五类图片、读�
   }
   try {
     await client.connect(transport)
-    assert.equal((await client.listTools()).tools.length,10)
+    const tools=(await client.listTools()).tools
+    assert.equal(tools.length,10)
+    for(const tool of tools){assert.ok(tool.title);assert.ok(tool.outputSchema);assert.equal(tool.annotations?.openWorldHint,false);assert.equal(typeof tool.annotations?.readOnlyHint,'boolean');assert.equal(typeof tool.annotations?.idempotentHint,'boolean')}
+    const create=tools.find(t=>t.name==='create_diagram')!
+    const schema=(create.inputSchema.properties as any).content
+    assert.equal(schema.additionalProperties,false);assert.ok(schema.properties.nodes.items.properties.label);assert.ok(!schema.properties.nodes.items.properties.x)
+    const patch=(tools.find(t=>t.name==='patch_diagram')!.inputSchema.properties as any).operations
+    assert.equal(patch.items.oneOf?.length||patch.items.anyOf?.length,11)
     const guide=await call('get_drawing_guide',{kind:'swimlane'})
     assert.ok((guide.content as any[]).some(c=>c.type==='text'&&c.text.includes('expectedRevision')))
     for(const kind of ['swimlane','flowchart','architecture','mindmap','dataflow'] as const){
@@ -60,6 +67,12 @@ test('真实 STDIO MCP：发现工具、读取规则、生成五类图片、读�
       const content=JSON.parse(await readFile(data.files.json,'utf8'));assert.ok(!Object.hasOwn(content,'presentation'));assert.ok(content.nodes.every((n:any)=>!Object.hasOwn(n,'order')))
       const workspace=JSON.parse(await readFile(data.files['project.json'],'utf8'));assert.equal(workspace.schemaVersion,2);assert.deepEqual(workspace.content,content)
       assert.ok(data.editorUrl.includes('diagram='+document.id))
+      const linked=(result.content as any[]).find(c=>c.type==='resource_link'&&c.uri===data.resources.json)
+      assert.ok(linked)
+      const resource=await client.readResource({uri:linked.uri})
+      assert.equal(JSON.parse((resource.contents[0] as any).text).id,document.id)
+      const imageResource=await client.readResource({uri:data.resources.png})
+      assert.equal((imageResource.contents[0] as any).mimeType,'image/png');assert.equal((imageResource.contents[0] as any).blob,png.data)
     }
     const latest=await call('get_diagram',{id:'integration-swimlane'})
     const data=latest.structuredContent as any
@@ -67,6 +80,7 @@ test('真实 STDIO MCP：发现工具、读取规则、生成五类图片、读�
     assert.equal((changed.structuredContent as any).revision,2)
     const conflict=await client.callTool({name:'patch_diagram',arguments:{id:data.diagramId,expectedRevision:1,operations:[{op:'set_title',title:'过期覆盖'}]}})
     assert.equal(conflict.isError,true)
+    const error=JSON.parse((conflict.content as any[])[0].text).error;assert.equal(error.code,'CONFLICT');assert.equal(error.currentRevision,2)
     const after=(await call('get_diagram',{id:data.diagramId})).structuredContent as any
     assert.equal(after.content.nodes.find((n:any)=>n.id==='request').label,'AI 再次修改')
     assert.equal(after.content.title,data.title)

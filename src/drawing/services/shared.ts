@@ -29,5 +29,13 @@ export function sharedWorkspace(ctx:{documents:Ref<DiagramDocument[]>;activeId:R
   async function refreshRemote(){if(!shared.value||pending.value||conflictId.value||unsaved.size||document.activeElement?.closest('input,textarea,select,[contenteditable]'))return;try{const records:RecordData[]=await api('/diagrams');const changed=records.some(r=>revisions.value[r.document.id]!==r.revision)||records.length!==ctx.documents.value.length;if(!changed)return;if(!records.length)return;const activeChanged=records.find(r=>r.document.id===ctx.activeId.value)?.revision!==revisions.value[ctx.activeId.value];if(activeChanged)ctx.notify('当前图形已同步最新修改');ctx.documents.value=records.map(r=>validateDocument(r.document));revisions.value=Object.fromEntries(records.map(r=>[r.document.id,r.revision]));if(!ctx.documents.value.some(d=>d.id===ctx.activeId.value))ctx.activeId.value=ctx.documents.value[0].id;if(activeChanged)ctx.reset();backup();ctx.storageError.value=''}catch(e){ctx.storageError.value='共享同步失败；本地内容仍保留。'+(e as Error).message}}
   async function resolveConflict(asCopy:boolean){await tail;const id=conflictId.value;if(!id)return;try{const local=copy(ctx.documents.value.find(d=>d.id===id)!),latest:RecordData=await api(`/diagrams/${id}`);ctx.documents.value=ctx.documents.value.map(d=>d.id===id?latest.document:d);revisions.value[id]=latest.revision;clearDirty(id);conflictId.value='';ctx.storageError.value='';ctx.reset();if(asCopy){local.id=newId('diagram');local.title+=' · 本地副本';ctx.documents.value.push(local);ctx.activeId.value=local.id;save(local)}backup()}catch(e){ctx.storageError.value=(e as Error).message}}
   function remove(id:string){enqueue(async()=>{try{if(revisions.value[id])await api(`/diagrams/${id}?revision=${revisions.value[id]}`,'DELETE');delete revisions.value[id];clearDirty(id)}catch(e){const latest:RecordData=await api(`/diagrams/${id}`);if(!ctx.documents.value.some(d=>d.id===id))ctx.documents.value.push(latest.document);backup();throw e}})}
-  return {shared,loading,pending,conflictId,revisions,initialize,refreshRemote,resolveConflict,retrySync,markDirty,save,remove}
+  // An explicit editor link must work even while an input has focus. Ordinary
+  // background refresh deliberately pauses while typing; targeted navigation
+  // reads only a missing document and never replaces an unsaved local one.
+  async function ensureDocument(id:string){
+    await tail
+    if(ctx.documents.value.some(d=>d.id===id))return true
+    try{const record:RecordData=await api('/diagrams/'+encodeURIComponent(id));if(!ctx.documents.value.some(d=>d.id===id)){ctx.documents.value.push(validateDocument(record.document));revisions.value[id]=record.revision;backup()}return true}catch(e){ctx.notify((e as Error).message);return false}
+  }
+  return {shared,loading,pending,conflictId,revisions,initialize,refreshRemote,ensureDocument,resolveConflict,retrySync,markDirty,save,remove}
 }
