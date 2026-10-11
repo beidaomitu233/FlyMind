@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 2,
+  "content": {
+    "schemaVersion": 1,
+    "id": "sample-flowchart",
+    "title": "客户问题处理流程",
+    "kind": "flowchart",
+    "nodes": [
+      {
+        "id": "f1",
+        "label": "收到客户问题",
+        "kind": "start"
+      },
+      {
+        "id": "f2",
+        "label": "客服初步判断",
+        "kind": "task"
+      },
+      {
+        "id": "f3",
+        "label": "能否直接解决？",
+        "kind": "decision"
+      },
+      {
+        "id": "f4",
+        "label": "回复客户",
+        "kind": "task"
+      },
+      {
+        "id": "f5",
+        "label": "升级研发处理",
+        "kind": "task"
+      },
+      {
+        "id": "f6",
+        "label": "复现问题并修复",
+        "kind": "task"
+      },
+      {
+        "id": "f7",
+        "label": "客户确认结果",
+        "kind": "decision"
+      },
+      {
+        "id": "f8",
+        "label": "关闭问题",
+        "kind": "end"
+      }
+    ],
+    "edges": [
+      {
+        "id": "fe0",
+        "source": "f1",
+        "target": "f2"
+      },
+      {
+        "id": "fe1",
+        "source": "f2",
+        "target": "f3"
+      },
+      {
+        "id": "fe2",
+        "source": "f3",
+        "target": "f4",
+        "label": "是"
+      },
+      {
+        "id": "fe3",
+        "source": "f3",
+        "target": "f5",
+        "label": "否"
+      },
+      {
+        "id": "fe4",
+        "source": "f5",
+        "target": "f6"
+      },
+      {
+        "id": "fe5",
+        "source": "f6",
+        "target": "f4"
+      },
+      {
+        "id": "fe6",
+        "source": "f4",
+        "target": "f7"
+      },
+      {
+        "id": "fe7",
+        "source": "f7",
+        "target": "f8",
+        "label": "确认"
+      },
+      {
+        "id": "fe8",
+        "source": "f7",
+        "target": "f5",
+        "label": "未解决"
+      }
+    ],
+    "lanes": [],
+    "phases": [],
+    "groups": []
+  },
+  "rendering": {
+    "theme": "indigo",
+    "orientation": "vertical",
+    "positions": {},
+    "ranks": {
+      "f1": 0,
+      "f2": 1,
+      "f3": 2,
+      "f4": 3,
+      "f5": 3,
+      "f6": 4,
+      "f7": 5,
+      "f8": 6
+    }
+  },
+  "updatedAt": 1791738479652
+}

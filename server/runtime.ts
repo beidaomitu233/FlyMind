@@ -9,7 +9,7 @@ const app=express(),port=Number(process.env.FLYMIND_PORT||5179)
 // Local tools and editor only; reject cross-origin writes and DNS rebinding.
 app.use((req,res,next)=>{const host=req.hostname;if(!['localhost','127.0.0.1','[::1]'].includes(host)){res.status(403).json({error:'仅限本机访问'});return}const origin=req.headers.origin;if(origin&&!new Set([`http://127.0.0.1:${port}`,`http://localhost:${port}`,'http://127.0.0.1:5178','http://localhost:5178']).has(origin)){res.status(403).json({error:'来源不允许'});return}next()})
 app.use(express.json({limit:'4mb'}))
-app.get('/studio-api/health',(_req,res)=>res.json({name:'flymind',version:'0.2.0'}))
+app.get('/studio-api/health',(_req,res)=>res.json({name:'flymind',version:'0.3.0'}))
 app.get('/studio-api/guide',async(_req,res)=>res.type('text/markdown').send(await readFile(join(PROJECT_ROOT,'docs/AI_DRAWING_GUIDE.md'),'utf8')))
 app.get('/studio-api/diagrams',async(_req,res)=>res.json(await store.list()))
 app.post('/studio-api/diagrams',async(req,res)=>res.status(201).json(await store.create(req.body.document)))

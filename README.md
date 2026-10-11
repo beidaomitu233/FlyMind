@@ -31,7 +31,7 @@ npm run dev
 
 数据流架构图使用卡片表达，不是严格 DFD 标准符号。当前不宣称覆盖全部 UML 或 BPMN。
 
-调用顺序：`get_drawing_guide → create_diagram → get_diagram → patch_diagram`。创建和修改直接返回 PNG 图片、SVG/JSON/draw.io 文件及编辑链接。单独重新导出用 `export_diagram`。修改前读取最新 `revision`，以 `expectedRevision` 提交；过期修改会被拒绝。工具共有 8 个，支持完整替换和原子增量操作。
+调用顺序：`get_drawing_guide → create_diagram → get_diagram → patch_diagram`。创建和修改直接返回 PNG 图片、SVG/JSON/draw.io 文件及编辑链接。单独重新导出用 `export_diagram`。修改前读取最新 `revision`，以 `expectedRevision` 提交；过期修改会被拒绝。工具共有 10 个，支持完整替换和原子增量操作。
 
 可以对 Codex 说：
 
@@ -48,7 +48,7 @@ npm run dev
 - 增删泳道、阶段和分层，调整顺序；删除有节点的分组时指定迁移目标。
 - 思维导图通过父主题调整关系；删除主题同时删除子分支。
 - 自动布局、撤销/重做、文件复制、搜索与删除；导入 JSON/FMD/Markdown。
-- 导出 PNG、SVG、JSON、draw.io；思维导图另支持 FMD。draw.io 文件可在 draw.io 中继续编辑，当前不支持 XML 回读。
+- 导出 PNG、SVG、JSON 内容、完整工作区、draw.io；思维导图另支持 FMD。draw.io 文件可在 draw.io 中继续编辑，当前不支持 XML 回读。
 
 快捷键：V 选择、H 移动画布、C 连线；空格或中键拖动画布；Ctrl+滚轮缩放；Ctrl+A 全选、Ctrl+D 复制、方向键微调（Shift 加快）、Delete 删除、Ctrl+Z 撤销、Ctrl+Shift+Z 重做、Ctrl+S 保存。节点文字编辑时 Enter 保存，Shift+Enter 换行，Esc 取消。
 
@@ -65,7 +65,7 @@ server/mcp.ts            Codex MCP 工具与资源
 server/artifacts.ts      SVG / PNG / JSON / draw.io 制品
 ```
 
-节点层 `nodes/edges/lanes/phases/groups` 描述业务含义和关系。位置、颜色、卡片样式、连线端口与路径放在 `presentation`。布局生成临时场景，渲染不修改节点层。`core/index.ts` 不依赖 Vue store、AI 平台、项目管理、认证或 API Key；后续功能作为外围适配器接入。
+内容层 `content` 只含节点、类型、关系和可选语义颜色，不含 order、坐标或美化数据。独立 `rendering` 管理标准节点大小/形状/配色、连线走线及手动覆盖。普通 MCP 工具仅接收 content；视觉调整单独使用 get_rendering_config / configure_rendering。存储和工作区导出为 `{schemaVersion:2,content,rendering,updatedAt}`；内容 JSON 导出仅包含语义数据。网页属性与源码编辑均区分内容/渲染标签。旧文档自动迁移。布局生成临时场景，渲染不修改节点层。`core/index.ts` 不依赖 Vue store、AI 平台、项目管理、认证或 API Key；后续功能作为外围适配器接入。
 
 网页与 MCP 共用 `data/diagrams/`。版本制品放在 `data/artifacts/<id>/r<revision>/`，保留每次交付。浏览器 localStorage 作为本地备份；首次连接会迁移旧图形，冲突存档另存副本。网页保存遇到版本冲突时，可载入最新或把本地修改另存副本。本阶段只提供本机共享，编辑链接不能作为跨设备公开链接。
 

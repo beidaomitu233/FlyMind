@@ -1,4 +1,5 @@
 import { kindLabels, validateDocument, newId, type DiagramDocument, type DiagramNode } from './model'
+import { extractContent,composeDocument } from './layers'
 import type { MindNode } from '../../types/mindmap'
 import { parseMarkdown } from '../../utils/markdown'
 
@@ -15,7 +16,7 @@ export function parseDocument(text:string):DiagramDocument {
   if(value.type==='flymind'&&value.data?.root)return fromMindTree(value.data.root,value.metadata?.name||value.data.name||'导入的导图')
   if(value.root?.text)return fromMindTree(value.root,value.name||value.root.text)
   if(value.text&&Array.isArray(value.children))return fromMindTree(value,value.text)
-  return validateDocument(value)
+  return value.presentation||value.schemaVersion===2?validateDocument(value):composeDocument(value)
 }
 export function fromMarkdown(text:string):DiagramDocument {
   const trees=parseMarkdown(text)
@@ -29,5 +30,5 @@ export function toMindTree(d:DiagramDocument):MindNode {
   return build(d.nodes.find(n=>!n.parentId)!)
 }
 export function codexPrompt(d:DiagramDocument):string {
-  return `请根据我提供的业务材料生成一张${kindLabels[d.kind]}，只返回可导入 FlyMind 的 JSON，不编造原文不存在的内容。\n数据和渲染分离：不要在 nodes 中输出坐标、图标、颜色或 SVG。\n统一结构：schemaVersion=1、id、title、kind(swimlane/flowchart/architecture/mindmap/dataflow)、nodes、edges、lanes、phases、groups、presentation、updatedAt。\n节点字段：id、label、kind(task/decision/start/end/module/topic/card/note)、可选 laneId、phaseId、groupId、parentId、order、description、items、badge。\n连线字段：id、source、target、可选 label、dashed、kind(flow/feedback)。泳道和阶段字段：id、label。架构分层字段：id、label、tone(blue/green/amber)、kind(layer/governance)。\n泳道图节点必须归属 laneId；有阶段时必须归属 phaseId；order 为阶段内从上到下的行序号，同一行的跨角色活动用相同 order。架构图节点归属 groupId，模块内部条目放 items。思维导图用 parentId，只有一个没有 parentId 的中心主题。保留所有判断分支和循环连线。\n数据流架构图 kind=dataflow，卡片用 kind=card，纯文字注释用 kind=note。label 为标题，description 为画布可见说明（可换行），order 为从上到下的布局行，同一行用相同 order。反馈回流的连线设置 kind=feedback。视觉配置只放 presentation.cards，以节点 ID 为键，可选 icon(database/network/check/none)、tone(blue/teal)、variant(card/band)。多源汇聚支持独立入口，单卡片行自动铺满，band 为居中横幅。\npresentation={"theme":"${d.presentation.theme}","orientation":"${d.presentation.orientation}","positions":{}}，数据流图可附 cards。\n当前图形数据可作为结构参考：\n${JSON.stringify(d,null,2)}`
+  return `请根据业务材料生成一张${kindLabels[d.kind]}，只返回 FlyMind 内容 JSON。节点只描述 id、label、kind 和关系；可选 color=#RRGGBB。不要输出坐标、order、尺寸、形状、字体、图标、线型、presentation 或 updatedAt。渲染器自动布局和配色。\n统一结构：schemaVersion=1、id、title、kind、nodes、edges、lanes、phases、groups。泳道节点归属 laneId/phaseId，架构模块归属 groupId，思维导图用 parentId，数据流卡片用 card，注释用 note。保留判断分支和循环，反馈边 kind=feedback。\n当前内容参考：\n${JSON.stringify(extractContent(d),null,2)}`
 }

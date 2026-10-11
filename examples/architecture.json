@@ -482,39 +482,28 @@
   "groups": [
     {
       "id": "app",
-      "label": "01\n应用层",
-      "tone": "blue"
+      "label": "01\n应用层"
     },
     {
       "id": "business",
-      "label": "02\n业务层",
-      "tone": "green"
+      "label": "02\n业务层"
     },
     {
       "id": "system",
-      "label": "03\n系统层",
-      "tone": "blue"
+      "label": "03\n系统层"
     },
     {
       "id": "ai",
-      "label": "04\nAI 层",
-      "tone": "green"
+      "label": "04\nAI 层"
     },
     {
       "id": "data",
-      "label": "05\n数据层",
-      "tone": "blue"
+      "label": "05\n数据层"
     },
     {
       "id": "governance",
       "label": "持续改进与全程治理",
       "kind": "governance"
     }
-  ],
-  "presentation": {
-    "theme": "blue",
-    "orientation": "vertical",
-    "positions": {}
-  },
-  "updatedAt": 1791725361960
+  ]
 }

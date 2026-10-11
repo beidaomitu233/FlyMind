@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { copy, newId, validateDocument, type DiagramDocument, type DiagramKind, type DiagramNode, type ThemeName, type Box, type Port } from '../core/model'
+import { projectDocument } from '../core/layers'
 import { sharedWorkspace } from '../services/shared'
 import { duplicateNodes as duplicate, alignNodes, placeNodes, type AlignMode } from '../core/editor'
 import { applyOperations, removeNodes, type Collection } from '../core/operations'
@@ -23,8 +24,8 @@ export const useStudio=defineStore('drawing-studio',()=>{
   let noticeTimer:ReturnType<typeof setTimeout>
   function notify(message:string){notice.value=message;clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>notice.value='',3200)}
   const remote=sharedWorkspace({documents,activeId,current,storageError,notify,reset:()=>{histories.clear();clearSelection();historyVersion.value++}})
-  function persist(save=true){if(save)remote.markDirty(current.value.id);try{if(recoveryRequired.value)throw new Error('原始存档待恢复，当前操作暂留在内存中，请导出备份');localStorage.setItem(KEY,JSON.stringify({documents:documents.value,activeId:activeId.value}));if(save&&remote.shared.value)remote.save(current.value);if(!remote.shared.value)storageError.value='';return true}catch(e){storageError.value=(e as Error).message||'保存失败，请导出备份';return false}}
-  function commit(change:(d:DiagramDocument)=>void){const d=copy(current.value);try{change(d);d.updatedAt=Date.now();validateDocument(d)}catch(e){notify((e as Error).message);return false}const h=history();h.items=h.items.slice(0,h.index+1);h.items.push(JSON.stringify(d));if(h.items.length>60)h.items.shift();h.index=h.items.length-1;documents.value=documents.value.map(x=>x.id===d.id?d:x);historyVersion.value++;persist();return true}
+  function persist(save=true){if(save)remote.markDirty(current.value.id);try{if(recoveryRequired.value)throw new Error('原始存档待恢复，当前操作暂留在内存中，请导出备份');localStorage.setItem(KEY,JSON.stringify({documents:documents.value.map(projectDocument),activeId:activeId.value}));if(save&&remote.shared.value)remote.save(current.value);if(!remote.shared.value)storageError.value='';return true}catch(e){storageError.value=(e as Error).message||'保存失败，请导出备份';return false}}
+  function commit(change:(d:DiagramDocument)=>void){let d=copy(current.value);try{change(d);d.updatedAt=Date.now();d=validateDocument(d)}catch(e){notify((e as Error).message);return false}const h=history();h.items=h.items.slice(0,h.index+1);h.items.push(JSON.stringify(d));if(h.items.length>60)h.items.shift();h.index=h.items.length-1;documents.value=documents.value.map(x=>x.id===d.id?d:x);historyVersion.value++;persist();return true}
   function clearSelection(){selection.value=null;selectedNodeIds.value=[]}
   function selectMany(ids:string[]){selectedNodeIds.value=ids;selection.value=ids.length?{type:'node',id:ids.at(-1)!}:null}
   function select(type:NonNullable<Selection>['type'],id:string,additive=false){if(type==='node'){if(additive)selectMany(selectedNodeIds.value.includes(id)?selectedNodeIds.value.filter(x=>x!==id):[...selectedNodeIds.value,id]);else if(!selectedNodeIds.value.includes(id))selectMany([id]);else selection.value={type,id}}else{selectedNodeIds.value=[];selection.value={type,id}}}
@@ -37,20 +38,19 @@ export const useStudio=defineStore('drawing-studio',()=>{
   function setTitle(title:string){commit(d=>{d.title=title.trim()})}
   function setTheme(theme:ThemeName){commit(d=>{d.presentation.theme=theme})}
   function setOrientation(orientation:'vertical'|'horizontal'){commit(d=>{d.presentation.orientation=orientation;Object.assign(d,applyOperations(d,[{op:'reset_layout'}]))})}
-  function autoLayout(){commit(d=>{d.presentation.positions={};for(const s of Object.values(d.presentation.edges||{})){delete s.points;delete s.sourcePort;delete s.targetPort;delete s.labelPosition}});notify('已按节点关系重新排布')}
+  function autoLayout(){commit(d=>{d.presentation.positions={};d.presentation.ranks={};for(const s of Object.values(d.presentation.edges||{})){delete s.points;delete s.sourcePort;delete s.targetPort;delete s.labelPosition}});notify('已按节点关系重新排布')}
   function addNode(){const d=current.value,n:DiagramNode={id:newId(),label:d.kind==='architecture'?'新模块':d.kind==='mindmap'?'新主题':'新步骤',kind:d.kind==='architecture'?'module':d.kind==='mindmap'?'topic':'task'}
     const selected=d.nodes.find(n=>n.id===selection.value?.id)
-    if(d.kind==='swimlane'){n.laneId=selection.value?.type==='lane'?selection.value.id:selected?.laneId||d.lanes[0].id;n.phaseId=selection.value?.type==='phase'?selection.value.id:selected?.phaseId||d.phases[0]?.id;n.order=(selected?.order??Math.max(-1,...d.nodes.filter(x=>x.laneId===n.laneId&&x.phaseId===n.phaseId).map(x=>x.order||0)))+1}
+    if(d.kind==='swimlane'){n.laneId=selection.value?.type==='lane'?selection.value.id:selected?.laneId||d.lanes[0].id;n.phaseId=selection.value?.type==='phase'?selection.value.id:selected?.phaseId||d.phases[0]?.id}
     if(d.kind==='architecture'){n.groupId=selection.value?.type==='group'?selection.value.id:selected?.groupId||d.groups[0].id;n.items=['功能条目']}
     if(d.kind==='mindmap')n.parentId=selected?.id||d.nodes.find(x=>!x.parentId)!.id
-    if(d.kind==='flowchart'&&selected)n.order=(selected.order??0)+1
-    if(d.kind==='dataflow'){n.kind='card';n.label='新卡片';n.description='';n.order=selected?.order??Math.max(0,...d.nodes.map(n=>n.order||0))}
+    if(d.kind==='dataflow'){n.kind='card';n.label='新卡片';n.description=''}
     if(commit(x=>{x.nodes.push(n);if(selected&&d.kind==='flowchart')x.edges.push({id:newId('edge'),source:selected.id,target:n.id})}))selectMany([n.id])
   }
   function moveNode(id:string,x:number,y:number){const box=scene.value.nodes.find(n=>n.node.id===id);if(!box)return;const cx=x+box.width/2,cy=y+box.height/2;commit(d=>{
     d.presentation.positions[id]={...d.presentation.positions[id],x:Math.max(16,x),y:Math.max(16,y)}
     const node=d.nodes.find(n=>n.id===id)!
-    if(d.kind==='swimlane'){const vertical=d.presentation.orientation==='vertical',lanes=scene.value.containers.filter(c=>c.kind==='lane'),phases=scene.value.containers.filter(c=>c.kind==='phase');const lane=lanes.find(l=>vertical?cx>=l.x&&cx<=l.x+l.width:cy>=l.y&&cy<=l.y+l.height);const phase=phases.find(p=>vertical?cy>=p.y&&cy<=p.y+p.height:cx>=p.x&&cx<=p.x+p.width);if(lane)node.laneId=lane.id;if(phase){node.phaseId=phase.id||undefined;node.order=Math.max(0,Math.round(((vertical?cy-phase.y:cx-phase.x)-62)/(vertical?116:224)))}}
+    if(d.kind==='swimlane'){const vertical=d.presentation.orientation==='vertical',lanes=scene.value.containers.filter(c=>c.kind==='lane'),phases=scene.value.containers.filter(c=>c.kind==='phase');const lane=lanes.find(l=>vertical?cx>=l.x&&cx<=l.x+l.width:cy>=l.y&&cy<=l.y+l.height);const phase=phases.find(p=>vertical?cy>=p.y&&cy<=p.y+p.height:cx>=p.x&&cx<=p.x+p.width);if(lane)node.laneId=lane.id;if(phase){node.phaseId=phase.id||undefined;(d.presentation.ranks??={})[id]=Math.max(0,Math.round(((vertical?cy-phase.y:cx-phase.x)-62)/(vertical?116:224)))}}
     if(d.kind==='architecture'){const group=scene.value.containers.find(c=>c.kind==='layer'&&cy>=c.y&&cy<=c.y+c.height);if(group)node.groupId=group.id}
   })}
   function moveNodes(boxes:Record<string,Partial<Box>>){commit(d=>placeNodes(d,scene.value,boxes))}

@@ -1,9 +1,10 @@
 import { cardStyle, palette, type DiagramDocument, type DiagramNode, type DiagramScene, type SceneNode, type DiagramEdge } from './model'
+import { nodePreset } from './render-config'
 import { wrapText } from './text'
 
 export function cardMetrics(d:DiagramDocument,node:DiagramNode,width:number){
   const style=cardStyle(d,node.id),centered=node.kind==='note'||style.variant==='band'
-  const titleSize=d.presentation.styles?.[node.id]?.fontSize||(width<360?23:28),bodySize=d.presentation.styles?.[node.id]?.fontSize?Math.max(10,titleSize-4):width<360?19:23,pad=28
+  const titleSize=d.presentation.styles?.[node.id]?.fontSize||d.presentation.nodeDefaults?.[node.kind]?.fontSize||(width<360?23:28),bodySize=d.presentation.styles?.[node.id]?.fontSize?Math.max(10,titleSize-4):width<360?19:23,pad=28
   const titleLines=wrapText(node.label,(width-pad*2)/titleSize)
   const bodyLines=node.description?wrapText(node.description,(width-pad*2)/bodySize):[]
   const iconHeight=!centered&&style.icon!=='none'?52:0
@@ -14,13 +15,13 @@ export function cardMetrics(d:DiagramDocument,node:DiagramNode,width:number){
 // Card rows describe the story; visual coordinates are derived and never stored in nodes.
 export function layoutDataflow(d:DiagramDocument,ranks:Map<string,number>):DiagramScene {
   const rows=new Map<number,DiagramNode[]>()
-  for(const node of d.nodes){const rank=node.order??ranks.get(node.id)??0;const row=rows.get(rank)||[];row.push(node);rows.set(rank,row)}
-  const gap=40,pad=40,maxColumns=Math.max(1,...Array.from(rows.values()).map(row=>row.length)),contentWidth=Math.max(1120,maxColumns*284+(maxColumns-1)*gap)
+  for(const node of d.nodes){const rank=d.presentation.ranks?.[node.id]??ranks.get(node.id)??0;const row=rows.get(rank)||[];row.push(node);rows.set(rank,row)}
+  const gap=40,pad=40,maxColumns=Math.max(1,...Array.from(rows.values()).map(row=>row.length)),contentWidth=Math.max(1120,maxColumns*nodePreset(d,'card').width+(maxColumns-1)*gap)
   const scene:DiagramScene={width:contentWidth+pad*2,height:0,nodes:[],edges:[],containers:[]},p=palette[d.presentation.theme]
   let y=pad
   for(const [,row] of Array.from(rows).sort((a,b)=>a[0]-b[0])){
     const cellWidth=(contentWidth-gap*(row.length-1))/row.length
-    const rowHeight=Math.max(...row.map(n=>cardMetrics(d,n,d.presentation.positions[n.id]?.width||cellWidth).height))
+    const rowHeight=Math.max(...row.map(n=>Math.max(nodePreset(d,n.kind).height,cardMetrics(d,n,d.presentation.positions[n.id]?.width||cellWidth).height,d.presentation.positions[n.id]?.height||0)))
     row.forEach((node,i)=>{const style=cardStyle(d,node.id),teal=style.tone==='teal';scene.nodes.push({node,x:pad+i*(cellWidth+gap),y,width:cellWidth,height:rowHeight,color:teal?'#15918e':p.brand,fill:teal?'#eaf7f3':p.soft,textColor:teal?'#118986':p.dark,...d.presentation.positions[node.id]})})
     y+=rowHeight+72
     const feedbacks=d.edges.filter(e=>e.kind==='feedback'&&row.some(n=>n.id===e.source))

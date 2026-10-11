@@ -4,3 +4,7 @@ export * from './render'
 export * from './adapters'
 export * from './operations'
 export * from './geometry'
+
+export * from './layers'
+export * from './render-config'
+export * from './auto-layout'

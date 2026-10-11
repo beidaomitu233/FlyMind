@@ -20,7 +20,7 @@ export function removeNodes(d:DiagramDocument,ids:string[]){
   const removed=new Set(ids);if(d.kind==='mindmap'){let count=0;while(count!==removed.size){count=removed.size;d.nodes.filter(n=>n.parentId&&removed.has(n.parentId)).forEach(n=>removed.add(n.id))}}
   if(d.nodes.every(n=>removed.has(n.id)))throw new Error('请保留至少一个节点')
   d.nodes=d.nodes.filter(n=>!removed.has(n.id));const edges=d.edges.filter(e=>removed.has(e.source)||removed.has(e.target));d.edges=d.edges.filter(e=>!edges.includes(e))
-  for(const id of removed){delete d.presentation.positions[id];if(d.presentation.styles)delete d.presentation.styles[id];if(d.presentation.cards)delete d.presentation.cards[id]}
+  for(const id of removed){delete d.presentation.positions[id];if(d.presentation.ranks)delete d.presentation.ranks[id];if(d.presentation.styles)delete d.presentation.styles[id];if(d.presentation.cards)delete d.presentation.cards[id]}
   edges.forEach(e=>{if(d.presentation.edges)delete d.presentation.edges[e.id]})
 }
 export function applyOperations(input:DiagramDocument,ops:DiagramOperation[]):DiagramDocument {
@@ -28,7 +28,7 @@ export function applyOperations(input:DiagramDocument,ops:DiagramOperation[]):Di
   if(!Array.isArray(ops)||!ops.length||ops.length>500)throw new Error('一次修改需要 1–500 个操作')
   for(const o of ops){switch(o.op){
     case 'add_node':d.nodes.push(copy(o.node));if(o.position)d.presentation.positions[o.node.id]=copy(o.position);if(o.style)(d.presentation.styles??={})[o.node.id]=copy(o.style);break
-    case 'update_node':Object.assign(exists(d.nodes,o.id),o.changes,{id:o.id});if(['laneId','phaseId','groupId','parentId','order','kind'].some(k=>Object.hasOwn(o.changes,k)))delete d.presentation.positions[o.id];break
+    case 'update_node':Object.assign(exists(d.nodes,o.id),o.changes,{id:o.id});if(['laneId','phaseId','groupId','parentId','kind'].some(k=>Object.hasOwn(o.changes,k)))delete d.presentation.positions[o.id];break
     case 'remove_node':exists(d.nodes,o.id);removeNodes(d,[o.id]);break
     case 'add_edge':d.edges.push(copy(o.edge));if(o.style)(d.presentation.edges??={})[o.edge.id]=copy(o.style);break
     case 'update_edge':Object.assign(exists(d.edges,o.id),o.changes,{id:o.id});break
@@ -46,7 +46,7 @@ export function applyOperations(input:DiagramDocument,ops:DiagramOperation[]):Di
     }
     case 'set_title':d.title=o.title;break
     case 'set_theme':d.presentation.theme=o.theme;break
-    case 'reset_layout':d.presentation.positions={};resetRoutes(d);break
+    case 'reset_layout':d.presentation.positions={};d.presentation.ranks={};resetRoutes(d);break
     default:throw new Error('不支持的修改操作')
   }}
   d.updatedAt=Date.now();return validateDocument(d)

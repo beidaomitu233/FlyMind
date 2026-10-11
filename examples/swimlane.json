@@ -9,144 +9,126 @@
       "label": "提出需求",
       "kind": "task",
       "laneId": "customer",
-      "phaseId": "intake",
-      "order": 0
+      "phaseId": "intake"
     },
     {
       "id": "screen",
       "label": "需求初筛",
       "kind": "task",
       "laneId": "bd",
-      "phaseId": "intake",
-      "order": 0
+      "phaseId": "intake"
     },
     {
       "id": "context",
       "label": "了解客户背景\n与原始需求",
       "kind": "task",
       "laneId": "pm",
-      "phaseId": "intake",
-      "order": 0
+      "phaseId": "intake"
     },
     {
       "id": "goal",
       "label": "客户目标\n是否明确",
       "kind": "decision",
       "laneId": "pm",
-      "phaseId": "consult",
-      "order": 0
+      "phaseId": "consult"
     },
     {
       "id": "consulting",
       "label": "售前咨询",
       "kind": "task",
       "laneId": "pm",
-      "phaseId": "consult",
-      "order": 1
+      "phaseId": "consult"
     },
     {
       "id": "match",
       "label": "是否匹配\n涂码业务",
       "kind": "decision",
       "laneId": "pm",
-      "phaseId": "consult",
-      "order": 2
+      "phaseId": "consult"
     },
     {
       "id": "feedback",
       "label": "反馈沟通信息",
       "kind": "task",
       "laneId": "bd",
-      "phaseId": "consult",
-      "order": 2
+      "phaseId": "consult"
     },
     {
       "id": "stop",
       "label": "沟通终止合作",
       "kind": "end",
       "laneId": "customer",
-      "phaseId": "consult",
-      "order": 2
+      "phaseId": "consult"
     },
     {
       "id": "customer-needs",
       "label": "需求沟通",
       "kind": "task",
       "laneId": "customer",
-      "phaseId": "analysis",
-      "order": 0
+      "phaseId": "analysis"
     },
     {
       "id": "pm-needs",
       "label": "需求沟通",
       "kind": "task",
       "laneId": "pm",
-      "phaseId": "analysis",
-      "order": 0
+      "phaseId": "analysis"
     },
     {
       "id": "solution",
       "label": "软硬件方案输出",
       "kind": "task",
       "laneId": "pm",
-      "phaseId": "analysis",
-      "order": 1
+      "phaseId": "analysis"
     },
     {
       "id": "proposal",
       "label": "方案沟通",
       "kind": "task",
       "laneId": "pm",
-      "phaseId": "clarify",
-      "order": 0
+      "phaseId": "clarify"
     },
     {
       "id": "agree",
       "label": "客户是否\n确认需求",
       "kind": "decision",
       "laneId": "customer",
-      "phaseId": "clarify",
-      "order": 0
+      "phaseId": "clarify"
     },
     {
       "id": "revise",
       "label": "方案修改",
       "kind": "task",
       "laneId": "pm",
-      "phaseId": "clarify",
-      "order": 1
+      "phaseId": "clarify"
     },
     {
       "id": "confirm",
       "label": "确认项目范围",
       "kind": "task",
       "laneId": "customer",
-      "phaseId": "delivery",
-      "order": 0
+      "phaseId": "delivery"
     },
     {
       "id": "handoff",
       "label": "项目交接",
       "kind": "task",
       "laneId": "pm",
-      "phaseId": "delivery",
-      "order": 0
+      "phaseId": "delivery"
     },
     {
       "id": "plan",
       "label": "启动与交付计划",
       "kind": "task",
       "laneId": "project",
-      "phaseId": "delivery",
-      "order": 0
+      "phaseId": "delivery"
     },
     {
       "id": "done",
       "label": "项目落地",
       "kind": "end",
       "laneId": "project",
-      "phaseId": "delivery",
-      "order": 1
+      "phaseId": "delivery"
     }
   ],
   "edges": [
@@ -297,11 +279,5 @@
       "label": "项目交付"
     }
   ],
-  "groups": [],
-  "presentation": {
-    "theme": "indigo",
-    "orientation": "vertical",
-    "positions": {}
-  },
-  "updatedAt": 1791725361960
+  "groups": []
 }

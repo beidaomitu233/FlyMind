@@ -7,50 +7,42 @@
     {
       "id": "f1",
       "label": "收到客户问题",
-      "kind": "start",
-      "order": 0
+      "kind": "start"
     },
     {
       "id": "f2",
       "label": "客服初步判断",
-      "kind": "task",
-      "order": 1
+      "kind": "task"
     },
     {
       "id": "f3",
       "label": "能否直接解决？",
-      "kind": "decision",
-      "order": 2
+      "kind": "decision"
     },
     {
       "id": "f4",
       "label": "回复客户",
-      "kind": "task",
-      "order": 3
+      "kind": "task"
     },
     {
       "id": "f5",
       "label": "升级研发处理",
-      "kind": "task",
-      "order": 3
+      "kind": "task"
     },
     {
       "id": "f6",
       "label": "复现问题并修复",
-      "kind": "task",
-      "order": 4
+      "kind": "task"
     },
     {
       "id": "f7",
       "label": "客户确认结果",
-      "kind": "decision",
-      "order": 5
+      "kind": "decision"
     },
     {
       "id": "f8",
       "label": "关闭问题",
-      "kind": "end",
-      "order": 6
+      "kind": "end"
     }
   ],
   "edges": [
@@ -106,11 +98,5 @@
   ],
   "lanes": [],
   "phases": [],
-  "groups": [],
-  "presentation": {
-    "theme": "indigo",
-    "orientation": "vertical",
-    "positions": {}
-  },
-  "updatedAt": 1791725361960
+  "groups": []
 }

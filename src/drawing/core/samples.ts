@@ -9,10 +9,11 @@ swim.nodes=[
   ['customer-needs','需求沟通','task','customer','analysis',0],['pm-needs','需求沟通','task','pm','analysis',0],['solution','软硬件方案输出','task','pm','analysis',1],
   ['proposal','方案沟通','task','pm','clarify',0],['agree','客户是否\n确认需求','decision','customer','clarify',0],['revise','方案修改','task','pm','clarify',1],
   ['confirm','确认项目范围','task','customer','delivery',0],['handoff','项目交接','task','pm','delivery',0],['plan','启动与交付计划','task','project','delivery',0],['done','项目落地','end','project','delivery',1]
-].map(([id,label,kind,laneId,phaseId,order])=>({id,label,kind,laneId,phaseId,order} as DiagramNode))
+].map(([id,label,kind,laneId,phaseId,order])=>{(swim.presentation.ranks??={})[String(id)]=Number(order);return {id,label,kind,laneId,phaseId} as DiagramNode})
 swim.edges=[['request','screen'],['screen','context'],['context','goal'],['goal','consulting','N'],['goal','match','Y'],['consulting','match'],['match','feedback','N'],['feedback','stop'],['match','pm-needs','Y'],['customer-needs','pm-needs'],['pm-needs','customer-needs'],['pm-needs','solution'],['solution','proposal'],['proposal','agree'],['agree','revise','N'],['revise','proposal'],['agree','confirm','Y'],['confirm','handoff'],['handoff','plan'],['plan','done']].map(([source,target,label],i)=>({id:`e${i}`,source,target,label}))
 const architecture=base('sample-architecture','生殖专科 AI 辅助诊疗｜总体架构','architecture')
-architecture.groups=[{id:'app',label:'01\n应用层',tone:'blue'},{id:'business',label:'02\n业务层',tone:'green'},{id:'system',label:'03\n系统层',tone:'blue'},{id:'ai',label:'04\nAI 层',tone:'green'},{id:'data',label:'05\n数据层',tone:'blue'},{id:'governance',label:'持续改进与全程治理',kind:'governance'}]
+architecture.groups=[{id:'app',label:'01\n应用层'},{id:'business',label:'02\n业务层'},{id:'system',label:'03\n系统层'},{id:'ai',label:'04\nAI 层'},{id:'data',label:'05\n数据层'},{id:'governance',label:'持续改进与全程治理',kind:'governance'}]
+architecture.presentation.groups={app:{tone:'blue'},business:{tone:'green',columns:5},system:{tone:'blue'},ai:{tone:'green',columns:3},data:{tone:'blue'}}
 const mod=(id:string,label:string,groupId:string,items:string[],badge?:string):DiagramNode=>({id,label,kind:'module',groupId,items,badge})
 architecture.nodes=[
   mod('doctor','生殖医生 / 医师工作台','app',['患者概览页','诊疗决策页','报告页','工作台 / 检查 / 随访 / 患者周期']),
@@ -55,7 +56,7 @@ architecture.nodes=[
 ]
 const flow=base('sample-flowchart','客户问题处理流程','flowchart')
 flow.nodes=[{id:'f1',label:'收到客户问题',kind:'start'},{id:'f2',label:'客服初步判断',kind:'task'},{id:'f3',label:'能否直接解决？',kind:'decision'},{id:'f4',label:'回复客户',kind:'task'},{id:'f5',label:'升级研发处理',kind:'task'},{id:'f6',label:'复现问题并修复',kind:'task'},{id:'f7',label:'客户确认结果',kind:'decision'},{id:'f8',label:'关闭问题',kind:'end'}]
-flow.nodes.forEach((n,i)=>n.order=[0,1,2,3,3,4,5,6][i])
+flow.presentation.ranks=Object.fromEntries(flow.nodes.map((n,i)=>[n.id,[0,1,2,3,3,4,5,6][i]]))
 architecture.edges=[{id:'data-standard-1',source:'d1',target:'d3'},{id:'data-standard-2',source:'d2',target:'d3'}]
 flow.edges=[['f1','f2'],['f2','f3'],['f3','f4','是'],['f3','f5','否'],['f5','f6'],['f6','f4'],['f4','f7'],['f7','f8','确认'],['f7','f5','未解决']].map(([source,target,label],i)=>({id:`fe${i}`,source,target,label}))
 const mind=base('sample-mindmap','产品从想法到交付','mindmap')
@@ -64,25 +65,26 @@ const branches=[['发现问题',['用户访谈','现状流程','机会判断']],
 branches.forEach(([label,children],i)=>{mind.nodes.push({id:`m${i}`,label,kind:'topic',parentId:'root'});children.forEach((label,j)=>mind.nodes.push({id:`m${i}_${j}`,label,kind:'topic',parentId:`m${i}`}))})
 const dataflow=base('sample-dataflow','医院系统集成与数据闭环','dataflow')
 dataflow.nodes=[
-  {id:'his',label:'HIS',description:'患者  医嘱',kind:'card',order:0},
-  {id:'lis',label:'LIS',description:'标本  检验',kind:'card',order:0},
-  {id:'pacs',label:'PACS',description:'影像  尺度',kind:'card',order:0},
-  {id:'emr',label:'EMR',description:'病史  病程',kind:'card',order:0},
-  {id:'incubator',label:'培养箱',description:'时序  孔位',kind:'card',order:0},
-  {id:'integration',label:'医院集成平台与前置接口',description:'授权适配  字段映射  身份核验  单位与时间校验  来源版本',kind:'card',order:1},
-  {id:'analysis',label:'读入分析链路',description:'质控后进入业务与 AI 服务\n显示依据  置信度与使用限制',kind:'card',order:2},
-  {id:'review',label:'专业确认与报告回写',description:'复核  修订  电子签名\n幂等键  版本号  回执与补偿',kind:'card',order:2},
-  {id:'trace',label:'原始输入 → AI 建议 → 人工修改 → 签名结果 → 回写回执',description:'发生患者或标本错配时阻断回写  由专业人员核验',kind:'note',order:3}
+  {id:'his',label:'HIS',description:'患者  医嘱',kind:'card'},
+  {id:'lis',label:'LIS',description:'标本  检验',kind:'card'},
+  {id:'pacs',label:'PACS',description:'影像  尺度',kind:'card'},
+  {id:'emr',label:'EMR',description:'病史  病程',kind:'card'},
+  {id:'incubator',label:'培养箱',description:'时序  孔位',kind:'card'},
+  {id:'integration',label:'医院集成平台与前置接口',description:'授权适配  字段映射  身份核验  单位与时间校验  来源版本',kind:'card'},
+  {id:'analysis',label:'读入分析链路',description:'质控后进入业务与 AI 服务\n显示依据  置信度与使用限制',kind:'card'},
+  {id:'review',label:'专业确认与报告回写',description:'复核  修订  电子签名\n幂等键  版本号  回执与补偿',kind:'card'},
+  {id:'trace',label:'原始输入 → AI 建议 → 人工修改 → 签名结果 → 回写回执',description:'发生患者或标本错配时阻断回写  由专业人员核验',kind:'note'}
 ]
+dataflow.presentation.ranks={his:0,lis:0,pacs:0,emr:0,incubator:0,integration:1,analysis:2,review:2,trace:3}
 dataflow.presentation.cards={his:{icon:'database'},lis:{icon:'database'},pacs:{icon:'database'},emr:{icon:'database'},incubator:{icon:'database'},integration:{variant:'band',tone:'teal'},analysis:{icon:'network'},review:{icon:'check',tone:'teal'}}
 dataflow.edges=[...['his','lis','pacs','emr','incubator'].map(id=>({id:`read-${id}`,source:id,target:'integration'})),{id:'integrate',source:'integration',target:'analysis'},{id:'confirm',source:'analysis',target:'review'},{id:'evidence',source:'review',target:'analysis',label:'可追溯证据链',kind:'feedback'}]
 export const samples:DiagramDocument[]=[swim,architecture,flow,mind,dataflow]
 export function sampleFor(kind:DiagramKind){return copy(samples.find(d=>d.kind===kind)!)}
 export function blankDocument(kind:DiagramKind):DiagramDocument {
   const d=base(newId('diagram'),{swimlane:'未命名泳道图',flowchart:'未命名流程图',architecture:'未命名架构图',mindmap:'未命名思维导图',dataflow:'未命名数据流架构图'}[kind],kind)
-  if(kind==='swimlane'){d.lanes=[{id:'lane1',label:'角色 1'},{id:'lane2',label:'角色 2'},{id:'lane3',label:'角色 3'}];d.phases=[{id:'phase1',label:'阶段 1'}];d.nodes=[{id:newId(),label:'开始',kind:'start',laneId:'lane1',phaseId:'phase1',order:0}]}
-  else if(kind==='architecture'){d.groups=[{id:'layer1',label:'应用层',tone:'blue'},{id:'layer2',label:'服务层',tone:'green'},{id:'layer3',label:'数据层',tone:'blue'}];d.nodes=[{id:newId(),label:'应用模块',kind:'module',groupId:'layer1',items:['功能 1','功能 2']}]}
-  else if(kind==='dataflow'){d.nodes=[{id:newId(),label:'数据源',description:'输入数据',kind:'card',order:0}];d.presentation.cards={[d.nodes[0].id]:{icon:'database'}}}
+  if(kind==='swimlane'){d.lanes=[{id:'lane1',label:'角色 1'},{id:'lane2',label:'角色 2'},{id:'lane3',label:'角色 3'}];d.phases=[{id:'phase1',label:'阶段 1'}];d.nodes=[{id:newId(),label:'开始',kind:'start',laneId:'lane1',phaseId:'phase1'}]}
+  else if(kind==='architecture'){d.groups=[{id:'layer1',label:'应用层'},{id:'layer2',label:'服务层'},{id:'layer3',label:'数据层'}];d.nodes=[{id:newId(),label:'应用模块',kind:'module',groupId:'layer1',items:['功能 1','功能 2']}]}
+  else if(kind==='dataflow'){d.nodes=[{id:newId(),label:'数据源',description:'输入数据',kind:'card'}];d.presentation.cards={[d.nodes[0].id]:{icon:'database'}}}
   else d.nodes=[{id:newId(),label:kind==='mindmap'?'中心主题':'开始',kind:kind==='mindmap'?'topic':'start'}]
   return d
 }

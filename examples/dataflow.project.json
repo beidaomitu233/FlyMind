@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 2,
+  "content": {
+    "schemaVersion": 1,
+    "id": "sample-dataflow",
+    "title": "医院系统集成与数据闭环",
+    "kind": "dataflow",
+    "nodes": [
+      {
+        "id": "his",
+        "label": "HIS",
+        "description": "患者  医嘱",
+        "kind": "card"
+      },
+      {
+        "id": "lis",
+        "label": "LIS",
+        "description": "标本  检验",
+        "kind": "card"
+      },
+      {
+        "id": "pacs",
+        "label": "PACS",
+        "description": "影像  尺度",
+        "kind": "card"
+      },
+      {
+        "id": "emr",
+        "label": "EMR",
+        "description": "病史  病程",
+        "kind": "card"
+      },
+      {
+        "id": "incubator",
+        "label": "培养箱",
+        "description": "时序  孔位",
+        "kind": "card"
+      },
+      {
+        "id": "integration",
+        "label": "医院集成平台与前置接口",
+        "description": "授权适配  字段映射  身份核验  单位与时间校验  来源版本",
+        "kind": "card"
+      },
+      {
+        "id": "analysis",
+        "label": "读入分析链路",
+        "description": "质控后进入业务与 AI 服务\n显示依据  置信度与使用限制",
+        "kind": "card"
+      },
+      {
+        "id": "review",
+        "label": "专业确认与报告回写",
+        "description": "复核  修订  电子签名\n幂等键  版本号  回执与补偿",
+        "kind": "card"
+      },
+      {
+        "id": "trace",
+        "label": "原始输入 → AI 建议 → 人工修改 → 签名结果 → 回写回执",
+        "description": "发生患者或标本错配时阻断回写  由专业人员核验",
+        "kind": "note"
+      }
+    ],
+    "edges": [
+      {
+        "id": "read-his",
+        "source": "his",
+        "target": "integration"
+      },
+      {
+        "id": "read-lis",
+        "source": "lis",
+        "target": "integration"
+      },
+      {
+        "id": "read-pacs",
+        "source": "pacs",
+        "target": "integration"
+      },
+      {
+        "id": "read-emr",
+        "source": "emr",
+        "target": "integration"
+      },
+      {
+        "id": "read-incubator",
+        "source": "incubator",
+        "target": "integration"
+      },
+      {
+        "id": "integrate",
+        "source": "integration",
+        "target": "analysis"
+      },
+      {
+        "id": "confirm",
+        "source": "analysis",
+        "target": "review"
+      },
+      {
+        "id": "evidence",
+        "source": "review",
+        "target": "analysis",
+        "label": "可追溯证据链",
+        "kind": "feedback"
+      }
+    ],
+    "lanes": [],
+    "phases": [],
+    "groups": []
+  },
+  "rendering": {
+    "theme": "blue",
+    "orientation": "vertical",
+    "positions": {},
+    "ranks": {
+      "his": 0,
+      "lis": 0,
+      "pacs": 0,
+      "emr": 0,
+      "incubator": 0,
+      "integration": 1,
+      "analysis": 2,
+      "review": 2,
+      "trace": 3
+    },
+    "cards": {
+      "his": {
+        "icon": "database"
+      },
+      "lis": {
+        "icon": "database"
+      },
+      "pacs": {
+        "icon": "database"
+      },
+      "emr": {
+        "icon": "database"
+      },
+      "incubator": {
+        "icon": "database"
+      },
+      "integration": {
+        "variant": "band",
+        "tone": "teal"
+      },
+      "analysis": {
+        "icon": "network"
+      },
+      "review": {
+        "icon": "check",
+        "tone": "teal"
+      }
+    }
+  },
+  "updatedAt": 1791738479652
+}

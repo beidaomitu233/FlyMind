@@ -1,4 +1,5 @@
 import { ref, type Ref, type ComputedRef } from 'vue'
+import { projectDocument } from '../core/layers'
 import { copy, newId, validateDocument, type DiagramDocument } from '../core/model'
 type RecordData={document:DiagramDocument;revision:number;savedAt:number}
 const KEY='flymind-drawing-studio-v1'
@@ -8,7 +9,7 @@ export function sharedWorkspace(ctx:{documents:Ref<DiagramDocument[]>;activeId:R
   function markDirty(id:string){unsaved.add(id);saveDirty()}
   function clearDirty(id:string){unsaved.delete(id);saveDirty()}
   function saveDirty(){try{localStorage.setItem(KEY+'-unsaved',JSON.stringify([...unsaved]))}catch{}}
-  function backup(){localStorage.setItem(KEY,JSON.stringify({documents:ctx.documents.value,activeId:ctx.activeId.value}))}
+  function backup(){localStorage.setItem(KEY,JSON.stringify({documents:ctx.documents.value.map(projectDocument),activeId:ctx.activeId.value}))}
   async function api(path:string,method='GET',body?:unknown){const r=await fetch('/studio-api'+path,{method,headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined}),v=r.status===204?null:await r.json();if(!r.ok){const e=new Error(v?.error||'共享服务请求失败') as Error&{status:number};e.status=r.status;throw e}return v}
   function enqueue(fn:()=>Promise<void>){pending.value++;tail=tail.then(fn).catch(e=>{ctx.storageError.value=(e as Error).message}).finally(()=>pending.value--);return tail}
   function save(d:DiagramDocument){const snapshot=copy(d);markDirty(d.id);enqueue(async()=>{if(conflictId.value===snapshot.id)return;try{const rev=revisions.value[snapshot.id],r:RecordData=await api(rev?`/diagrams/${snapshot.id}`:'/diagrams',rev?'PUT':'POST',rev?{document:snapshot,expectedRevision:rev}:{document:snapshot});revisions.value[snapshot.id]=r.revision;clearDirty(snapshot.id);ctx.storageError.value=''}catch(e){if((e as any).status===409){conflictId.value=snapshot.id;throw new Error('图形已有新的修改；本地内容已保留，请载入最新或另存副本。')}throw e}})}
@@ -18,7 +19,7 @@ export function sharedWorkspace(ctx:{documents:Ref<DiagramDocument[]>;activeId:R
     let records:RecordData[]=await api('/diagrams');const original=localStorage.getItem(KEY)
     if(original&&(!localStorage.getItem(KEY+'-shared-migrated')||unsaved.size)){
       const migrated=!!localStorage.getItem(KEY+'-shared-migrated')
-      for(const local of (JSON.parse(original).documents||[]) as DiagramDocument[]){if(migrated&&!unsaved.has(local.id))continue;const remote=records.find(r=>r.document.id===local.id);if(remote&&signature(remote.document)===signature(local)){clearDirty(local.id);continue}const d=copy(local);if(remote){d.id=newId('diagram');d.title+=' · 本地存档';if(ctx.activeId.value===local.id)ctx.activeId.value=d.id}records.push(await api('/diagrams','POST',{document:d}));clearDirty(local.id)}
+      for(const stored of (JSON.parse(original).documents||[])){const local=validateDocument(stored);if(migrated&&!unsaved.has(local.id))continue;const remote=records.find(r=>r.document.id===local.id);if(remote&&signature(remote.document)===signature(local)){clearDirty(local.id);continue}const d=copy(local);if(remote){d.id=newId('diagram');d.title+=' · 本地存档';if(ctx.activeId.value===local.id)ctx.activeId.value=d.id}records.push(await api('/diagrams','POST',{document:d}));clearDirty(local.id)}
       localStorage.setItem(KEY+'-shared-migrated','1')
     }
     records=await api('/diagrams');if(!records.length)throw new Error('共享工作区没有图形，请通过 MCP 创建或导入')

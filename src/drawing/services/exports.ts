@@ -1,12 +1,14 @@
 import type { DiagramDocument, DiagramScene } from '../core/model'
 import { renderScene, renderDrawio } from '../core/render'
+import { extractContent,projectDocument } from '../core/layers'
 import { toMindTree } from '../core/adapters'
 import { themes } from '../../utils/theme'
 function filename(title:string){return title.replace(/[<>:"/\\|?*\u0000-\u001f]/g,'_').slice(0,100)||'图形'}
 export function download(name:string,content:string,mime:string){const url=URL.createObjectURL(new Blob([content],{type:mime})),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500)}
-export async function exportDocument(d:DiagramDocument,scene:DiagramScene,format:'svg'|'png'|'json'|'drawio'|'fmd'){
+export async function exportDocument(d:DiagramDocument,scene:DiagramScene,format:'svg'|'png'|'json'|'drawio'|'fmd'|'project'){
   const name=filename(d.title)
-  if(format==='json'){download(name+'.json',JSON.stringify(d,null,2),'application/json');return}
+  if(format==='json'){download(name+'.json',JSON.stringify(extractContent(d),null,2),'application/json');return}
+  if(format==='project'){download(name+'.flymind.json',JSON.stringify(projectDocument(d),null,2),'application/json');return}
   if(format==='drawio'){download(name+'.drawio',renderDrawio(scene,d),'application/xml');return}
   if(format==='fmd'){download(name+'.fmd',JSON.stringify({version:'1.0',type:'flymind',metadata:{name:d.title,exportedAt:Date.now()},data:{id:d.id,name:d.title,root:toMindTree(d),theme:themes[0],layout:'logic',canvas:{width:scene.width,height:scene.height}}},null,2),'application/json');return}
   const svg=renderScene(scene,d)

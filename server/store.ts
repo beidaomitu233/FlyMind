@@ -3,6 +3,7 @@ import { resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { validateDocument, copy, type DiagramDocument } from '../src/drawing/core/model'
+import { projectDocument } from '../src/drawing/core/layers'
 import { samples } from '../src/drawing/core/samples'
 import { applyOperations, type DiagramOperation } from '../src/drawing/core/operations'
 export const PROJECT_ROOT=fileURLToPath(new URL('../',import.meta.url))
@@ -19,8 +20,8 @@ export class DiagramStore {
     try{return await fn()}finally{await rm(path,{recursive:true,force:true})}
   }
   async init(){await mkdir(join(this.root,'diagrams'),{recursive:true});await this.lock('initialize',async()=>{try{await stat(join(this.root,'.initialized'));return}catch{}for(const d of samples){try{await stat(this.path(d.id))}catch{await this.write({document:copy(d),revision:1,savedAt:Date.now()})}}await writeFile(join(this.root,'.initialized'),'1')})}
-  async write(r:DiagramRecord){await mkdir(join(this.root,'diagrams'),{recursive:true});const target=this.path(r.document.id),tmp=target+'.'+randomUUID()+'.tmp';try{await writeFile(tmp,JSON.stringify(r,null,2),'utf8');await rename(tmp,target)}finally{await rm(tmp,{force:true})}return r}
-  async get(id:string):Promise<DiagramRecord>{try{return JSON.parse(await readFile(this.path(id),'utf8'))}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')throw new StoreError('图形不存在',404);throw e}}
+  async write(r:DiagramRecord){await mkdir(join(this.root,'diagrams'),{recursive:true});const target=this.path(r.document.id),tmp=target+'.'+randomUUID()+'.tmp';try{await writeFile(tmp,JSON.stringify({...r,document:projectDocument(r.document)},null,2),'utf8');await rename(tmp,target)}finally{await rm(tmp,{force:true})}return r}
+  async get(id:string):Promise<DiagramRecord>{try{const r=JSON.parse(await readFile(this.path(id),'utf8'));return {...r,document:validateDocument(r.document)}}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')throw new StoreError('图形不存在',404);throw e}}
   async list(){const files=await readdir(join(this.root,'diagrams'));return Promise.all(files.filter(f=>f.endsWith('.json')).map(f=>this.get(f.slice(0,-5))))}
   async create(input:unknown){const d=validateDocument(input);this.id(d.id);return this.lock(d.id,async()=>{try{await stat(this.path(d.id));throw new StoreError('该图形 ID 已存在，请读取后更新，或使用新的 ID',409)}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e}d.updatedAt=Date.now();return this.write({document:d,revision:1,savedAt:Date.now()})})}
   async update(id:string,revision:number,input:unknown){return this.change(id,revision,()=>validateDocument(input))}

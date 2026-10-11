@@ -13,6 +13,45 @@ import { duplicateNodes, placeNodes, alignNodes } from '../src/drawing/core/edit
 import { portPoint } from '../src/drawing/core/geometry'
 import { computed, ref } from 'vue'
 import { sharedWorkspace } from '../src/drawing/services/shared'
+import { extractContent,validateContent,composeDocument,replaceContent,replaceRendering,projectDocument,applyContentOperations } from '../src/drawing/core/layers'
+
+test('内容工具拒绝视觉字段；五类纯内容无需坐标、布局行或样式即可渲染',()=>{
+  for(const source of samples){const content=extractContent(source),before=JSON.stringify(content),d=composeDocument(content),scene=layoutDocument(d)
+    assert.equal(scene.nodes.length,content.nodes.length);assert.equal(JSON.stringify(content),before)
+    assert.ok(!Object.hasOwn(content,'presentation'));assert.ok(content.nodes.every(n=>!Object.hasOwn(n,'order')))
+    assert.deepEqual(d.presentation.positions,{})
+    for(let i=0;i<scene.nodes.length;i++)for(let j=i+1;j<scene.nodes.length;j++){const a=scene.nodes[i],b=scene.nodes[j];assert.ok(a.x+a.width<=b.x||b.x+b.width<=a.x||a.y+a.height<=b.y||b.y+b.height<=a.y,`${source.kind}: ${a.node.id} / ${b.node.id} 重叠`)}
+  }
+  const c=extractContent(sampleFor('flowchart'))
+  for(const field of ['order','x','y','width','height','shape','fontSize','icon']){const invalid=copy(c);(invalid.nodes[0] as any)[field]=1;assert.throws(()=>validateContent(invalid),/内容层/)}
+  assert.throws(()=>validateContent({...c,presentation:{}}),/内容层/)
+  const badEdge=copy(c);(badEdge.edges[0] as any).dashed=true;assert.throws(()=>validateContent(badEdge),/内容层/)
+  assert.throws(()=>applyContentOperations(composeDocument(c),[{op:'set_node_presentation',id:c.nodes[0].id,position:{x:100}}]),/configure_rendering/)
+})
+
+test('旧图形迁移到两层，内容修改保留渲染，渲染标准修改保持业务关系不变',()=>{
+  const old=sampleFor('flowchart') as any;old.nodes[0].order=3;old.edges[0].dashed=true;old.presentation.positions.f2={x:700,y:300}
+  const migrated=validateDocument(old);assert.equal(migrated.presentation.ranks!.f1,3);assert.equal(migrated.presentation.edges![old.edges[0].id].dashed,true)
+  assert.ok(!Object.hasOwn(migrated.nodes[0],'order'));assert.ok(!Object.hasOwn(migrated.edges[0],'dashed'))
+  const content=extractContent(migrated);content.nodes[1].label='修改后的步骤'
+  const changed=replaceContent(migrated,content);assert.deepEqual(changed.presentation,migrated.presentation)
+  const configured=replaceRendering(changed,{...changed.presentation,nodeDefaults:{task:{width:260,height:110,shape:'ellipse',fontSize:22}},edgeDefaults:{route:'straight',dashed:true}})
+  assert.deepEqual(extractContent(configured),extractContent(changed));assert.deepEqual(configured.presentation.positions.f2,{x:700,y:300})
+  const scene=layoutDocument(configured),box=scene.nodes.find(n=>n.node.id==='f2')!
+  assert.equal(box.width,260);assert.equal(box.height,110)
+  const svg=renderScene(scene,configured);assert.ok(svg.includes('<ellipse'));assert.ok(svg.includes('stroke-dasharray="7 5"'));assert.ok(!scene.edges[0].path.includes(' H '))
+  const project=projectDocument(configured);assert.equal(project.schemaVersion,2);assert.deepEqual(validateDocument(project),configured)
+  assert.ok(!Object.hasOwn(project.content,'updatedAt'));assert.throws(()=>replaceRendering(changed,{nodes:[]}),/渲染层/)
+  const invalid=copy(changed.presentation);invalid.styles={f1:{shape:'triangle' as any}};assert.throws(()=>replaceRendering(changed,invalid),/形状/)
+  const arch=sampleFor('architecture') as any;arch.groups[0].tone='amber';const a=validateDocument(arch);assert.equal(a.presentation.groups!.app.tone,'amber');assert.ok(!Object.hasOwn(a.groups[0],'tone'))
+})
+
+test('渲染标准尺寸和长文字布局覆盖五类图形；自动布局清除手动排布而保留标准',()=>{
+  for(const kind of ['flowchart','swimlane','mindmap','architecture','dataflow'] as const){const d=composeDocument(extractContent(sampleFor(kind))),type=d.nodes[0].kind;d.presentation.nodeDefaults={[type]:{width:420,height:180}};const scene=layoutDocument(d);assert.ok(scene.nodes[0].width>=420);assert.ok(scene.nodes[0].height>=180)}
+  const d=composeDocument(extractContent(sampleFor('flowchart')));d.nodes[1].label='很长的任务内容，需要由渲染器自动换行和撑开节点。'.repeat(6);const s=layoutDocument(d),a=s.nodes.find(n=>n.node.id==='f2')!,b=s.nodes.find(n=>n.node.id==='f3')!;assert.ok(a.height>70);assert.ok(b.y>=a.y+a.height)
+  d.presentation.nodeDefaults={task:{shape:'ellipse'}};d.presentation.positions.f2={x:900,y:20};d.presentation.ranks={f2:20};d.presentation.edges={fe0:{points:[{x:800,y:50}],dashed:true}}
+  const reset=applyOperations(d,[{op:'reset_layout'}]);assert.deepEqual(reset.presentation.positions,{});assert.deepEqual(reset.presentation.ranks,{});assert.equal(reset.presentation.edges!.fe0.points,undefined);assert.equal(reset.presentation.edges!.fe0.dashed,true);assert.equal(reset.presentation.nodeDefaults!.task!.shape,'ellipse')
+})
 
 test('节点多选复制保留内部连线、样式和路径，调整尺寸后连线仍附着端口',()=>{
   const d=sampleFor('flowchart'),first=d.nodes[0],second=d.nodes[1]
@@ -70,7 +109,7 @@ test('横向泳道布局保留节点归属且同泳道步骤不重叠',()=>{
   assert.ok(consult.x>=goal.x+goal.width)
 })
 test('一般循环流程不丢节点或边',()=>{
-  const d=sampleFor('flowchart');d.nodes.forEach(n=>delete n.order);const scene=layoutDocument(d)
+  const d=sampleFor('flowchart');d.presentation.ranks={};const scene=layoutDocument(d)
   assert.equal(scene.nodes.length,d.nodes.length);assert.equal(scene.edges.length,d.edges.length)
 })
 test('JSON 校验拒绝不存在的端点、泳道和循环父子关系',()=>{
@@ -96,7 +135,7 @@ test('角色拖动、编辑、撤销、重做与本地持久化使用同一份�
   assert.ok(s.current.presentation.positions.request)
   s.undo();assert.equal(s.current.nodes.find(n=>n.id==='request')!.laneId,'customer')
   s.redo();assert.equal(s.current.nodes.find(n=>n.id==='request')!.laneId,'bd')
-  assert.equal(JSON.parse(storage.get('flymind-drawing-studio-v1')!).documents[0].nodes[0].laneId,'bd')
+  assert.equal(JSON.parse(storage.get('flymind-drawing-studio-v1')!).documents[0].content.nodes[0].laneId,'bd')
   s.selection={type:'lane',id:'bd'};const length=s.current.lanes.length;s.removeSelection();assert.equal(s.current.lanes.length,length)
 })
 
@@ -112,7 +151,7 @@ test('数据流多源汇聚使用各自入口，反馈连线绕过卡片且位�
 })
 
 test('数据流自动排序忽略反馈边且长说明撑开卡片，纯节点不受样式污染',()=>{
-  const d=sampleFor('dataflow');d.nodes.forEach(n=>delete n.order);d.nodes=d.nodes.filter(n=>n.kind!=='note')
+  const d=sampleFor('dataflow');d.presentation.ranks={};d.nodes=d.nodes.filter(n=>n.kind!=='note')
   const scene=layoutDocument(d),source=scene.nodes.find(n=>n.node.id==='his')!,integration=scene.nodes.find(n=>n.node.id==='integration')!,analysis=scene.nodes.find(n=>n.node.id==='analysis')!,review=scene.nodes.find(n=>n.node.id==='review')!
   assert.ok(integration.y>source.y+source.height);assert.ok(analysis.y>integration.y+integration.height);assert.ok(review.y>analysis.y+analysis.height)
   const tall=sampleFor('dataflow');tall.nodes[0].description='非常长的系统说明'.repeat(45);const box=layoutDocument(tall).nodes[0]
@@ -132,7 +171,7 @@ test('旧存档只补一次数据流示例，卡片编辑、删除、撤销与�
   s.selection={type:'node',id:'his'};s.removeSelection();assert.equal(s.current.nodes.some(n=>n.id==='his'),false);assert.equal(s.current.presentation.cards!.his,undefined);assert.ok(!s.current.edges.some(e=>e.source==='his'))
   s.undo();assert.equal(s.current.presentation.cards!.his.icon,'check')
   s.commit(d=>{d.edges.find(e=>e.id==='confirm')!.kind='feedback'})
-  assert.equal(JSON.parse(storage.get(key)!).documents.find((d:any)=>d.kind==='dataflow').edges.find((e:any)=>e.id==='confirm').kind,'feedback')
+  assert.equal(JSON.parse(storage.get(key)!).documents.find((d:any)=>d.content.kind==='dataflow').content.edges.find((e:any)=>e.id==='confirm').kind,'feedback')
   s.deleteDocument('sample-dataflow');setActivePinia(createPinia());assert.equal(useStudio().documents.length,1)
 })
 

@@ -3,8 +3,8 @@ export type NodeKind = 'task' | 'decision' | 'start' | 'end' | 'module' | 'topic
 export interface CardStyle { icon?: 'database' | 'network' | 'check' | 'none'; tone?: 'blue' | 'teal'; variant?: 'card' | 'band' }
 export interface Point { x:number; y:number }
 export type Port='top'|'right'|'bottom'|'left'
-export interface NodeStyle { fill?:string; stroke?:string; textColor?:string; fontSize?:number }
-export interface EdgeStyle { color?:string; width?:number; sourcePort?:Port; targetPort?:Port; points?:Point[]; labelPosition?:Point; arrow?:'end'|'both'|'none' }
+export interface NodeStyle { fill?:string; stroke?:string; textColor?:string; fontSize?:number;shape?:NodeShape }
+export interface EdgeStyle { color?:string; width?:number; sourcePort?:Port; targetPort?:Port; points?:Point[]; labelPosition?:Point; arrow?:'end'|'both'|'none';dashed?:boolean;route?:LineRoute }
 export type ThemeName = 'blue' | 'indigo' | 'forest'
 export interface DiagramNode {
   id: string
@@ -14,17 +14,17 @@ export interface DiagramNode {
   phaseId?: string
   groupId?: string
   parentId?: string
-  order?: number
+  color?: string
   description?: string
   items?: string[]
   badge?: string
 }
-export interface DiagramEdge { id: string; source: string; target: string; label?: string; dashed?: boolean; kind?: 'flow' | 'feedback' }
+export interface DiagramEdge { id: string; source: string; target: string; label?: string; kind?: 'flow' | 'feedback' }
 export interface DiagramLane { id: string; label: string }
 export interface DiagramPhase { id: string; label: string }
-export interface DiagramGroup { id: string; label: string; tone?: 'blue' | 'green' | 'amber'; kind?: 'layer' | 'governance' }
+export interface DiagramGroup { id: string; label: string; color?:string; kind?: 'layer' | 'governance' }
 export interface Box { x: number; y: number; width: number; height: number }
-export interface DiagramDocument {
+export interface DiagramContent {
   schemaVersion: 1
   id: string
   title: string
@@ -34,7 +34,10 @@ export interface DiagramDocument {
   lanes: DiagramLane[]
   phases: DiagramPhase[]
   groups: DiagramGroup[]
-  presentation: { theme: ThemeName; orientation: 'vertical' | 'horizontal'; positions: Record<string, Partial<Box>>; cards?: Record<string, CardStyle>; styles?:Record<string,NodeStyle>; edges?:Record<string,EdgeStyle> }
+}
+// A transient editor/engine view. Files and MCP expose the two layers separately.
+export interface DiagramDocument extends DiagramContent {
+  presentation: RenderingConfig
   updatedAt: number
 }
 export interface SceneNode extends Box { node: DiagramNode; color: string; fill: string; textColor: string }
@@ -52,13 +55,19 @@ export function newId(prefix='n') { return `${prefix}_${Math.random().toString(3
 export function copy<T>(value:T):T { return JSON.parse(JSON.stringify(value)) }
 export function validateDocument(input: unknown): DiagramDocument {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('图形数据应为 JSON 对象')
-  const d=copy(input) as DiagramDocument
+  const source=copy(input) as any
+  const d=(source.schemaVersion===2&&source.content?{...source.content,presentation:source.rendering,updatedAt:source.updatedAt}:source) as DiagramDocument
   if(d.schemaVersion!==1) throw new Error('schemaVersion 必须为 1')
   if(!Object.hasOwn(kindLabels,d.kind)) throw new Error('不支持的图形类型')
   if(typeof d.title!=='string'||!d.title.trim()||d.title.length>160) throw new Error('请输入 1–160 字的图形标题')
   if(!Array.isArray(d.nodes)||!d.nodes.length||d.nodes.length>500) throw new Error('图形需要 1–500 个节点')
   for(const key of ['edges','lanes','phases','groups'] as const) { if(d[key]===undefined) (d as any)[key]=[]; if(!Array.isArray(d[key])) throw new Error(`${key} 应为数组`) }
   if(d.edges.length>2000) throw new Error('连线数量不能超过 2000')
+  d.presentation=d.presentation||defaultRendering(d.kind)
+  // Import migration only: move old cosmetic fields out of content.
+  for(const n of d.nodes as any[]){if(n?.order!==undefined){(d.presentation.ranks??={})[n.id]=n.order;delete n.order}}
+  for(const e of d.edges as any[]){if(e?.dashed!==undefined){(d.presentation.edges??={})[e.id]={...d.presentation.edges?.[e.id],dashed:e.dashed};delete e.dashed}}
+  for(const g of d.groups as any[]){if(g?.tone!==undefined){(d.presentation.groups??={})[g.id]={...d.presentation.groups?.[g.id],tone:g.tone};delete g.tone}}
   const ids=new Set<string>()
   for(const n of d.nodes) {
     if(!n||typeof n.id!=='string'||!n.id||ids.has(n.id)) throw new Error('节点 ID 缺失或重复')
@@ -66,7 +75,7 @@ export function validateDocument(input: unknown): DiagramDocument {
     if(['x','y','width','height','style','icon','tone','variant','fill','stroke','textColor','fontSize'].some(key=>Object.hasOwn(n,key)))throw new Error('节点层不存放坐标和样式，请使用 presentation.positions、presentation.styles 或 presentation.cards')
     if(typeof n.label!=='string'||!n.label.trim()||n.label.length>500) throw new Error('节点文字应为 1–500 字')
     if(!['task','decision','start','end','module','topic','card','note'].includes(n.kind)) throw new Error(`节点 ${n.id} 的类型无效`)
-    if(n.order!==undefined&&(!Number.isInteger(n.order)||n.order<0||n.order>200)) throw new Error('order 应为 0–200 的整数')
+    if(n.color!==undefined&&!/^#[0-9a-f]{6}$/i.test(n.color))throw new Error('可选节点颜色应为 #RRGGBB')
     if(n.items!==undefined&&(!Array.isArray(n.items)||n.items.length>30||n.items.some(x=>typeof x!=='string'||x.length>200))) throw new Error('模块条目应为不超过 30 项的文字数组')
     if(n.badge!==undefined&&(typeof n.badge!=='string'||n.badge.length>30))throw new Error('标记应为 30 字以内的文字')
     if(n.description!==undefined&&(typeof n.description!=='string'||n.description.length>4000))throw new Error('备注应为 4000 字以内的文字')
@@ -74,7 +83,7 @@ export function validateDocument(input: unknown): DiagramDocument {
   const listIds=(list:Array<{id:string;label:string}>)=>{const set=new Set<string>();for(const x of list){if(!x||typeof x.id!=='string'||!x.id||set.has(x.id)||typeof x.label!=='string'||!x.label.trim()||x.label.length>160)throw new Error('分组、泳道或阶段 ID/名称无效');set.add(x.id)}return set}
   const lanes=listIds(d.lanes),phases=listIds(d.phases),groups=listIds(d.groups)
   if(d.lanes.length>30||d.phases.length>30||d.groups.length>30)throw new Error('泳道、阶段和分层各最多 30 个')
-  for(const g of d.groups){if(g.kind&&!['layer','governance'].includes(g.kind))throw new Error('分层 kind 无效');if(g.tone&&!['blue','green','amber'].includes(g.tone))throw new Error('分层 tone 无效')}
+  for(const g of d.groups){if(g.kind&&!['layer','governance'].includes(g.kind))throw new Error('分层 kind 无效');if(g.color!==undefined&&!/^#[0-9a-f]{6}$/i.test(g.color))throw new Error('可选分层颜色应为 #RRGGBB')}
   if(d.kind==='swimlane'&&!d.lanes.length) throw new Error('泳道图至少需要一个角色泳道')
   if(d.kind==='architecture'&&!d.groups.length) throw new Error('架构图至少需要一个分层')
   for(const n of d.nodes){
@@ -111,9 +120,15 @@ export function validateDocument(input: unknown): DiagramDocument {
   const map=(value:unknown,name:string)=>{if(!value||typeof value!=='object'||Array.isArray(value))throw new Error(`${name} 应为对象`)}
   const color=(v:unknown)=>typeof v==='string'&&/^#[0-9a-f]{6}$/i.test(v)
   const point=(p:Point)=>p&&typeof p==='object'&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&Math.abs(p.x)<=50000&&Math.abs(p.y)<=50000
-  if(d.presentation.styles!==undefined){map(d.presentation.styles,'styles');for(const [id,s] of Object.entries(d.presentation.styles)){if(!ids.has(id)){delete d.presentation.styles[id];continue}map(s,'节点样式');for(const k of ['fill','stroke','textColor'] as const)if(s[k]!==undefined&&!color(s[k]))throw new Error('颜色必须为 #RRGGBB');if(s.fontSize!==undefined&&(!Number.isFinite(s.fontSize)||s.fontSize<10||s.fontSize>48))throw new Error('字号范围为 10–48')}}
-  if(d.presentation.edges!==undefined){map(d.presentation.edges,'edges');const ports=['top','right','bottom','left'];for(const [id,s] of Object.entries(d.presentation.edges)){if(!edgeIds.has(id)){delete d.presentation.edges[id];continue}map(s,'连线样式');if(s.color!==undefined&&!color(s.color))throw new Error('颜色必须为 #RRGGBB');if(s.width!==undefined&&(!Number.isFinite(s.width)||s.width<1||s.width>8))throw new Error('连线宽度范围为 1–8');if(s.sourcePort!==undefined&&!ports.includes(s.sourcePort)||s.targetPort!==undefined&&!ports.includes(s.targetPort))throw new Error('连线端口无效');if(s.arrow!==undefined&&!['end','both','none'].includes(s.arrow))throw new Error('箭头无效');if(s.points!==undefined&&(!Array.isArray(s.points)||s.points.length>40||s.points.some(p=>!point(p))))throw new Error('连线路径点无效');if(s.labelPosition!==undefined&&!point(s.labelPosition))throw new Error('连线标签位置无效')}}
+  if(d.presentation.ranks){map(d.presentation.ranks,'ranks');for(const [id,r] of Object.entries(d.presentation.ranks)){if(!ids.has(id)){delete d.presentation.ranks[id];continue}if(!Number.isInteger(r)||r<0||r>200)throw new Error('渲染布局行应为 0–200 的整数')}}
+  if(d.presentation.groups){map(d.presentation.groups,'groups');for(const [id,s] of Object.entries(d.presentation.groups)){if(!groups.has(id)){delete d.presentation.groups[id];continue}map(s,'分组渲染配置');if(s.tone&&!['blue','green','amber'].includes(s.tone))throw new Error('分组配色无效');if(s.columns!==undefined&&(!Number.isInteger(s.columns)||s.columns<1||s.columns>10))throw new Error('分组列数应为 1–10')}}
+  if(d.presentation.nodeDefaults){map(d.presentation.nodeDefaults,'nodeDefaults');for(const [kind,s] of Object.entries(d.presentation.nodeDefaults)){if(!['task','decision','start','end','module','topic','card','note'].includes(kind))throw new Error('标准节点类型无效');map(s,'标准节点配置');for(const key of ['width','height'] as const)if(s[key]!==undefined&&(!Number.isFinite(s[key])||s[key]!<32||s[key]!>2000))throw new Error('标准节点尺寸应为 32–2000');if(s.fontSize!==undefined&&(!Number.isFinite(s.fontSize)||s.fontSize<10||s.fontSize>48))throw new Error('字号范围为 10–48');if(s.shape&&!['rectangle','rounded','ellipse','diamond'].includes(s.shape))throw new Error('节点形状无效');for(const key of ['fill','stroke','textColor'] as const)if(s[key]!==undefined&&!color(s[key]))throw new Error('颜色必须为 #RRGGBB')}}
+  const checkEdge=(s:EdgeStyle)=>{if(s.route&&!['orthogonal','straight','curved'].includes(s.route))throw new Error('连接线类型无效');if(s.dashed!==undefined&&typeof s.dashed!=='boolean')throw new Error('虚线配置无效');if(s.color!==undefined&&!color(s.color))throw new Error('颜色必须为 #RRGGBB');if(s.width!==undefined&&(!Number.isFinite(s.width)||s.width<1||s.width>8))throw new Error('连线宽度范围为 1–8');if(s.arrow&&!['end','both','none'].includes(s.arrow))throw new Error('箭头无效')}
+  if(d.presentation.edgeDefaults){map(d.presentation.edgeDefaults,'edgeDefaults');checkEdge(d.presentation.edgeDefaults)}
+  if(d.presentation.styles!==undefined){map(d.presentation.styles,'styles');for(const [id,s] of Object.entries(d.presentation.styles)){if(!ids.has(id)){delete d.presentation.styles[id];continue}map(s,'节点样式');if(s.shape&&!['rectangle','rounded','ellipse','diamond'].includes(s.shape))throw new Error('节点形状无效');for(const k of ['fill','stroke','textColor'] as const)if(s[k]!==undefined&&!color(s[k]))throw new Error('颜色必须为 #RRGGBB');if(s.fontSize!==undefined&&(!Number.isFinite(s.fontSize)||s.fontSize<10||s.fontSize>48))throw new Error('字号范围为 10–48')}}
+  if(d.presentation.edges!==undefined){map(d.presentation.edges,'edges');const ports=['top','right','bottom','left'];for(const [id,s] of Object.entries(d.presentation.edges)){if(d.kind==='mindmap')d.nodes.filter(n=>n.parentId).forEach(n=>edgeIds.add(`parent_${n.id}`));if(!edgeIds.has(id)){delete d.presentation.edges[id];continue}map(s,'连线样式');checkEdge(s);if(s.color!==undefined&&!color(s.color))throw new Error('颜色必须为 #RRGGBB');if(s.width!==undefined&&(!Number.isFinite(s.width)||s.width<1||s.width>8))throw new Error('连线宽度范围为 1–8');if(s.sourcePort!==undefined&&!ports.includes(s.sourcePort)||s.targetPort!==undefined&&!ports.includes(s.targetPort))throw new Error('连线端口无效');if(s.arrow!==undefined&&!['end','both','none'].includes(s.arrow))throw new Error('箭头无效');if(s.points!==undefined&&(!Array.isArray(s.points)||s.points.length>40||s.points.some(p=>!point(p))))throw new Error('连线路径点无效');if(s.labelPosition!==undefined&&!point(s.labelPosition))throw new Error('连线标签位置无效')}}
   d.id=typeof d.id==='string'&&d.id?d.id:newId('diagram')
   d.updatedAt=Number.isFinite(d.updatedAt)?d.updatedAt:Date.now()
   return d
 }
+import { defaultRendering, type RenderingConfig, type LineRoute, type NodeShape } from './render-config'

@@ -1,0 +1,312 @@
+{
+  "schemaVersion": 2,
+  "content": {
+    "schemaVersion": 1,
+    "id": "sample-swimlane",
+    "title": "工业客户项目对接流程",
+    "kind": "swimlane",
+    "nodes": [
+      {
+        "id": "request",
+        "label": "提出需求",
+        "kind": "task",
+        "laneId": "customer",
+        "phaseId": "intake"
+      },
+      {
+        "id": "screen",
+        "label": "需求初筛",
+        "kind": "task",
+        "laneId": "bd",
+        "phaseId": "intake"
+      },
+      {
+        "id": "context",
+        "label": "了解客户背景\n与原始需求",
+        "kind": "task",
+        "laneId": "pm",
+        "phaseId": "intake"
+      },
+      {
+        "id": "goal",
+        "label": "客户目标\n是否明确",
+        "kind": "decision",
+        "laneId": "pm",
+        "phaseId": "consult"
+      },
+      {
+        "id": "consulting",
+        "label": "售前咨询",
+        "kind": "task",
+        "laneId": "pm",
+        "phaseId": "consult"
+      },
+      {
+        "id": "match",
+        "label": "是否匹配\n涂码业务",
+        "kind": "decision",
+        "laneId": "pm",
+        "phaseId": "consult"
+      },
+      {
+        "id": "feedback",
+        "label": "反馈沟通信息",
+        "kind": "task",
+        "laneId": "bd",
+        "phaseId": "consult"
+      },
+      {
+        "id": "stop",
+        "label": "沟通终止合作",
+        "kind": "end",
+        "laneId": "customer",
+        "phaseId": "consult"
+      },
+      {
+        "id": "customer-needs",
+        "label": "需求沟通",
+        "kind": "task",
+        "laneId": "customer",
+        "phaseId": "analysis"
+      },
+      {
+        "id": "pm-needs",
+        "label": "需求沟通",
+        "kind": "task",
+        "laneId": "pm",
+        "phaseId": "analysis"
+      },
+      {
+        "id": "solution",
+        "label": "软硬件方案输出",
+        "kind": "task",
+        "laneId": "pm",
+        "phaseId": "analysis"
+      },
+      {
+        "id": "proposal",
+        "label": "方案沟通",
+        "kind": "task",
+        "laneId": "pm",
+        "phaseId": "clarify"
+      },
+      {
+        "id": "agree",
+        "label": "客户是否\n确认需求",
+        "kind": "decision",
+        "laneId": "customer",
+        "phaseId": "clarify"
+      },
+      {
+        "id": "revise",
+        "label": "方案修改",
+        "kind": "task",
+        "laneId": "pm",
+        "phaseId": "clarify"
+      },
+      {
+        "id": "confirm",
+        "label": "确认项目范围",
+        "kind": "task",
+        "laneId": "customer",
+        "phaseId": "delivery"
+      },
+      {
+        "id": "handoff",
+        "label": "项目交接",
+        "kind": "task",
+        "laneId": "pm",
+        "phaseId": "delivery"
+      },
+      {
+        "id": "plan",
+        "label": "启动与交付计划",
+        "kind": "task",
+        "laneId": "project",
+        "phaseId": "delivery"
+      },
+      {
+        "id": "done",
+        "label": "项目落地",
+        "kind": "end",
+        "laneId": "project",
+        "phaseId": "delivery"
+      }
+    ],
+    "edges": [
+      {
+        "id": "e0",
+        "source": "request",
+        "target": "screen"
+      },
+      {
+        "id": "e1",
+        "source": "screen",
+        "target": "context"
+      },
+      {
+        "id": "e2",
+        "source": "context",
+        "target": "goal"
+      },
+      {
+        "id": "e3",
+        "source": "goal",
+        "target": "consulting",
+        "label": "N"
+      },
+      {
+        "id": "e4",
+        "source": "goal",
+        "target": "match",
+        "label": "Y"
+      },
+      {
+        "id": "e5",
+        "source": "consulting",
+        "target": "match"
+      },
+      {
+        "id": "e6",
+        "source": "match",
+        "target": "feedback",
+        "label": "N"
+      },
+      {
+        "id": "e7",
+        "source": "feedback",
+        "target": "stop"
+      },
+      {
+        "id": "e8",
+        "source": "match",
+        "target": "pm-needs",
+        "label": "Y"
+      },
+      {
+        "id": "e9",
+        "source": "customer-needs",
+        "target": "pm-needs"
+      },
+      {
+        "id": "e10",
+        "source": "pm-needs",
+        "target": "customer-needs"
+      },
+      {
+        "id": "e11",
+        "source": "pm-needs",
+        "target": "solution"
+      },
+      {
+        "id": "e12",
+        "source": "solution",
+        "target": "proposal"
+      },
+      {
+        "id": "e13",
+        "source": "proposal",
+        "target": "agree"
+      },
+      {
+        "id": "e14",
+        "source": "agree",
+        "target": "revise",
+        "label": "N"
+      },
+      {
+        "id": "e15",
+        "source": "revise",
+        "target": "proposal"
+      },
+      {
+        "id": "e16",
+        "source": "agree",
+        "target": "confirm",
+        "label": "Y"
+      },
+      {
+        "id": "e17",
+        "source": "confirm",
+        "target": "handoff"
+      },
+      {
+        "id": "e18",
+        "source": "handoff",
+        "target": "plan"
+      },
+      {
+        "id": "e19",
+        "source": "plan",
+        "target": "done"
+      }
+    ],
+    "lanes": [
+      {
+        "id": "customer",
+        "label": "客户"
+      },
+      {
+        "id": "bd",
+        "label": "BD"
+      },
+      {
+        "id": "pm",
+        "label": "产品经理（兼售前）"
+      },
+      {
+        "id": "project",
+        "label": "项目经理"
+      }
+    ],
+    "phases": [
+      {
+        "id": "intake",
+        "label": "需求导入"
+      },
+      {
+        "id": "consult",
+        "label": "业务咨询"
+      },
+      {
+        "id": "analysis",
+        "label": "需求分析"
+      },
+      {
+        "id": "clarify",
+        "label": "需求澄清"
+      },
+      {
+        "id": "delivery",
+        "label": "项目交付"
+      }
+    ],
+    "groups": []
+  },
+  "rendering": {
+    "theme": "indigo",
+    "orientation": "vertical",
+    "positions": {},
+    "ranks": {
+      "request": 0,
+      "screen": 0,
+      "context": 0,
+      "goal": 0,
+      "consulting": 1,
+      "match": 2,
+      "feedback": 2,
+      "stop": 2,
+      "customer-needs": 0,
+      "pm-needs": 0,
+      "solution": 1,
+      "proposal": 0,
+      "agree": 0,
+      "revise": 1,
+      "confirm": 0,
+      "handoff": 0,
+      "plan": 0,
+      "done": 1
+    }
+  },
+  "updatedAt": 1791738479652
+}

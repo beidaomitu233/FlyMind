@@ -14,7 +14,7 @@
         <path v-if="wire" :d="`M ${wire.start.x} ${wire.start.y} L ${wire.end.x} ${wire.end.y}`" fill="none" stroke="#7768df" :stroke-width="2/scale" stroke-dasharray="6 4"/>
         <rect v-if="marquee" :x="marquee.x" :y="marquee.y" :width="marquee.width" :height="marquee.height" fill="#7768df" fill-opacity=".08" stroke="#7768df" :stroke-width="1/scale"/>
       </svg>
-      <textarea v-if="editing" ref="inlineField" v-model="editing.text" class="drawing-inline-editor" aria-label="编辑节点文字" :style="{left:editing.box.x+'px',top:editing.box.y+'px',width:editing.box.width+'px',height:Math.max(64,editing.box.height)+'px',fontSize:(document.presentation.styles?.[editing.id]?.fontSize||18)+'px'}" @pointerdown.stop @dblclick.stop @keydown.stop="editKey" @blur="finishEdit"/>
+      <textarea v-if="editing" ref="inlineField" v-model="editing.text" class="drawing-inline-editor" aria-label="编辑节点文字" :style="{left:editing.box.x+'px',top:editing.box.y+'px',width:editing.box.width+'px',height:Math.max(64,editing.box.height)+'px',fontSize:(document.presentation.styles?.[editing.id]?.fontSize||nodePreset(document,document.nodes.find(n=>n.id===editing!.id)!.kind).fontSize)+'px'}" @pointerdown.stop @dblclick.stop @keydown.stop="editKey" @blur="finishEdit"/>
     </div>
     <div class="canvas-zoom" @pointerdown.stop><button title="适应画布" aria-label="适应画布" @click="fit"><Icon name="fit" :size="16"/></button><i/><button title="缩小" aria-label="缩小" @click="zoom(scale-.1)">−</button><button class="zoom-value" title="恢复 100%" @click="zoom(1)">{{Math.round(scale*100)}}%</button><button title="放大" aria-label="放大" @click="zoom(scale+.1)">＋</button></div>
     <span class="canvas-hint">{{tool==='connect'?'依次选择起点与终点':tool==='pan'||space?'拖动画布 · Ctrl + 滚轮缩放':'框选 / Shift 多选 · 空格拖动画布 · 双击编辑'}}</span>
@@ -25,6 +25,7 @@ import {computed,onMounted,onUnmounted,ref,watch,nextTick} from 'vue'
 import {copy,type DiagramDocument,type DiagramScene,type Point,type Box,type Port,type EdgeStyle} from '../core/model'
 import {portPoint,nearestPort} from '../core/geometry'
 import {layoutDocument} from '../core/layout'
+import {nodePreset} from '../core/render-config'
 import {renderScene} from '../core/render'
 import Icon from './Icon.vue'
 const props=defineProps<{document:DiagramDocument;scene:DiagramScene;selectedId:string|null;selectedIds?:string[];tool:'select'|'pan'|'connect'}>()
