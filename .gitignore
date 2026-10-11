@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.vscode/
+.idea/
+AIThinkMap/
+__pycache__/
+*.pyc
+*.db
+.qoder/
+.playwright-cli/
+output/playwright/
+data/

@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "id": "sample-mindmap",
+  "title": "产品从想法到交付",
+  "kind": "mindmap",
+  "nodes": [
+    {
+      "id": "root",
+      "label": "产品从想法到交付",
+      "kind": "topic"
+    },
+    {
+      "id": "m0",
+      "label": "发现问题",
+      "kind": "topic",
+      "parentId": "root"
+    },
+    {
+      "id": "m0_0",
+      "label": "用户访谈",
+      "kind": "topic",
+      "parentId": "m0"
+    },
+    {
+      "id": "m0_1",
+      "label": "现状流程",
+      "kind": "topic",
+      "parentId": "m0"
+    },
+    {
+      "id": "m0_2",
+      "label": "机会判断",
+      "kind": "topic",
+      "parentId": "m0"
+    },
+    {
+      "id": "m1",
+      "label": "定义方案",
+      "kind": "topic",
+      "parentId": "root"
+    },
+    {
+      "id": "m1_0",
+      "label": "目标与范围",
+      "kind": "topic",
+      "parentId": "m1"
+    },
+    {
+      "id": "m1_1",
+      "label": "功能结构",
+      "kind": "topic",
+      "parentId": "m1"
+    },
+    {
+      "id": "m1_2",
+      "label": "业务规则",
+      "kind": "topic",
+      "parentId": "m1"
+    },
+    {
+      "id": "m2",
+      "label": "设计产品",
+      "kind": "topic",
+      "parentId": "root"
+    },
+    {
+      "id": "m2_0",
+      "label": "信息架构",
+      "kind": "topic",
+      "parentId": "m2"
+    },
+    {
+      "id": "m2_1",
+      "label": "交互原型",
+      "kind": "topic",
+      "parentId": "m2"
+    },
+    {
+      "id": "m2_2",
+      "label": "需求评审",
+      "kind": "topic",
+      "parentId": "m2"
+    },
+    {
+      "id": "m3",
+      "label": "验证与交付",
+      "kind": "topic",
+      "parentId": "root"
+    },
+    {
+      "id": "m3_0",
+      "label": "研发协作",
+      "kind": "topic",
+      "parentId": "m3"
+    },
+    {
+      "id": "m3_1",
+      "label": "验收测试",
+      "kind": "topic",
+      "parentId": "m3"
+    },
+    {
+      "id": "m3_2",
+      "label": "上线复盘",
+      "kind": "topic",
+      "parentId": "m3"
+    }
+  ],
+  "edges": [],
+  "lanes": [],
+  "phases": [],
+  "groups": [],
+  "presentation": {
+    "theme": "indigo",
+    "orientation": "vertical",
+    "positions": {}
+  },
+  "updatedAt": 1791725361960
+}

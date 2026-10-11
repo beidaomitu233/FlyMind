@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "id": "sample-flowchart",
+  "title": "客户问题处理流程",
+  "kind": "flowchart",
+  "nodes": [
+    {
+      "id": "f1",
+      "label": "收到客户问题",
+      "kind": "start",
+      "order": 0
+    },
+    {
+      "id": "f2",
+      "label": "客服初步判断",
+      "kind": "task",
+      "order": 1
+    },
+    {
+      "id": "f3",
+      "label": "能否直接解决？",
+      "kind": "decision",
+      "order": 2
+    },
+    {
+      "id": "f4",
+      "label": "回复客户",
+      "kind": "task",
+      "order": 3
+    },
+    {
+      "id": "f5",
+      "label": "升级研发处理",
+      "kind": "task",
+      "order": 3
+    },
+    {
+      "id": "f6",
+      "label": "复现问题并修复",
+      "kind": "task",
+      "order": 4
+    },
+    {
+      "id": "f7",
+      "label": "客户确认结果",
+      "kind": "decision",
+      "order": 5
+    },
+    {
+      "id": "f8",
+      "label": "关闭问题",
+      "kind": "end",
+      "order": 6
+    }
+  ],
+  "edges": [
+    {
+      "id": "fe0",
+      "source": "f1",
+      "target": "f2"
+    },
+    {
+      "id": "fe1",
+      "source": "f2",
+      "target": "f3"
+    },
+    {
+      "id": "fe2",
+      "source": "f3",
+      "target": "f4",
+      "label": "是"
+    },
+    {
+      "id": "fe3",
+      "source": "f3",
+      "target": "f5",
+      "label": "否"
+    },
+    {
+      "id": "fe4",
+      "source": "f5",
+      "target": "f6"
+    },
+    {
+      "id": "fe5",
+      "source": "f6",
+      "target": "f4"
+    },
+    {
+      "id": "fe6",
+      "source": "f4",
+      "target": "f7"
+    },
+    {
+      "id": "fe7",
+      "source": "f7",
+      "target": "f8",
+      "label": "确认"
+    },
+    {
+      "id": "fe8",
+      "source": "f7",
+      "target": "f5",
+      "label": "未解决"
+    }
+  ],
+  "lanes": [],
+  "phases": [],
+  "groups": [],
+  "presentation": {
+    "theme": "indigo",
+    "orientation": "vertical",
+    "positions": {}
+  },
+  "updatedAt": 1791725361960
+}

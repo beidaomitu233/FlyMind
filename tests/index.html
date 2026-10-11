@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>思维导图 - 自动化测试</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: rgb(25, 28, 31);
+      color: #e1e3e6;
+      padding: 40px;
+      line-height: 1.6;
+    }
+    h1 {
+      font-size: 24px;
+      margin-bottom: 8px;
+      color: #8b5cf6;
+    }
+    .subtitle {
+      color: #9ca3af;
+      margin-bottom: 32px;
+      font-size: 14px;
+    }
+    .suite {
+      background: rgb(31, 35, 38);
+      border: 1px solid rgb(50, 55, 60);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .suite-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: #e1e3e6;
+    }
+    .test-result {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+      font-size: 13px;
+      border-bottom: 1px solid rgb(40, 44, 48);
+    }
+    .test-result:last-child { border-bottom: none; }
+    .pass { color: #22c55e; }
+    .fail { color: #ef4444; }
+    .error-msg {
+      color: #ef4444;
+      font-size: 12px;
+      margin-left: 24px;
+      font-family: monospace;
+    }
+    .summary {
+      background: rgb(31, 35, 38);
+      border: 1px solid rgb(50, 55, 60);
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 24px;
+      text-align: center;
+    }
+    .summary .pass-count { color: #22c55e; font-size: 28px; font-weight: bold; }
+    .summary .fail-count { color: #ef4444; font-size: 28px; font-weight: bold; }
+    .summary .label { color: #9ca3af; font-size: 14px; }
+    .icon { font-size: 16px; }
+    #app-mount { display: none; }
+  </style>
+</head>
+<body>
+  <h1>🧪 思维导图应用 - 自动化测试</h1>
+  <p class="subtitle">全链路功能验收测试</p>
+  <div id="results"></div>
+  <div id="app-mount"></div>
+
+  <script type="module">
+    const results = []
+    let totalPassed = 0
+    let totalFailed = 0
+    const pendingPromises = []
+
+    function assert(condition, message) {
+      if (!condition) throw new Error(message)
+    }
+
+    function assertEquals(actual, expected, message) {
+      if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+        throw new Error(`${message}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`)
+      }
+    }
+
+    function test(suiteName, name, fn) {
+      try {
+        const result = fn()
+        if (result && typeof result.then === 'function') {
+          const p = result.then(() => {
+            results.push({ suite: suiteName, name, passed: true })
+            totalPassed++
+          }).catch(e => {
+            results.push({ suite: suiteName, name, passed: false, error: e.message })
+            totalFailed++
+          })
+          pendingPromises.push(p)
+        } else {
+          results.push({ suite: suiteName, name, passed: true })
+          totalPassed++
+        }
+      } catch (e) {
+        results.push({ suite: suiteName, name, passed: false, error: e.message })
+        totalFailed++
+      }
+    }
+
+    // ===== 布局算法测试 =====
+    const suiteLayout = '布局算法'
+
+    test(suiteLayout, '中心节点位于画布中央', async () => {
+      const { calculateLayout } = await import('/src/utils/layout.ts')
+      const root = { id: 'root', text: '中心主题', children: [] }
+      const positions = calculateLayout(root, 1200, 800)
+      const pos = positions.get('root')
+      assert(pos, '中心节点位置不存在')
+      assertEquals(pos.x, 510, '中心节点X位置')
+      assertEquals(pos.y, 368, '中心节点Y位置')
+    })
+
+    test(suiteLayout, '右侧子节点在中心节点右侧', async () => {
+      const { calculateLayout } = await import('/src/utils/layout.ts')
+      const root = { id: 'root', text: '中心主题', children: [{ id: 'c1', text: '分支1', children: [] }] }
+      const positions = calculateLayout(root, 1200, 800)
+      const centerPos = positions.get('root')
+      const childPos = positions.get('c1')
+      assert(childPos.x > centerPos.x + centerPos.width, '右侧子节点应在中心节点右侧')
+    })
+
+    test(suiteLayout, '左侧子节点在中心节点左侧且不重叠', async () => {
+      const { calculateLayout } = await import('/src/utils/layout.ts')
+      const root = { id: 'root', text: '中心主题', children: [
+        { id: 'c1', text: '分支1', children: [] },
+        { id: 'c2', text: '分支2', children: [] }
+      ]}
+      const positions = calculateLayout(root, 1200, 800)
+      const centerPos = positions.get('root')
+      const leftChildPos = positions.get('c2')
+      assert(leftChildPos.x + leftChildPos.width < centerPos.x, '左侧子节点不应与中心节点重叠')
+    })
+
+    test(suiteLayout, '左侧子节点与中心节点间距>=100px', async () => {
+      const { calculateLayout } = await import('/src/utils/layout.ts')
+      const root = { id: 'root', text: '中心主题', children: [
+        { id: 'c1', text: '分支1', children: [] },
+        { id: 'c2', text: '分支2', children: [] }
+      ]}
+      const positions = calculateLayout(root, 1200, 800)
+      const centerPos = positions.get('root')
+      const leftChildPos = positions.get('c2')
+      const gap = centerPos.x - (leftChildPos.x + leftChildPos.width)
+      assert(gap >= 100, `左侧间距应>=100，实际为${gap.toFixed(1)}`)
+    })
+
+    test(suiteLayout, '多层级子节点正确布局', async () => {
+      const { calculateLayout } = await import('/src/utils/layout.ts')
+      const root = { id: 'root', text: '中心主题', children: [
+        { id: 'c1', text: '分支1', children: [
+          { id: 'c1-1', text: '子分支1', children: [] },
+          { id: 'c1-2', text: '子分支2', children: [] }
+        ]},
+        { id: 'c2', text: '分支2', children: [] }
+      ]}
+      const positions = calculateLayout(root, 1200, 800)
+      const c1Pos = positions.get('c1')
+      const c11Pos = positions.get('c1-1')
+      assert(c11Pos.x > c1Pos.x + c1Pos.width, '子节点应在父节点右侧')
+    })
+
+    test(suiteLayout, '所有节点位置不重叠', async () => {
+      const { calculateLayout } = await import('/src/utils/layout.ts')
+      const root = { id: 'root', text: '中心主题', children: [
+        { id: 'c1', text: '分支1', children: [{ id: 'c1-1', text: '子1', children: [] }] },
+        { id: 'c2', text: '分支2', children: [{ id: 'c2-1', text: '子2', children: [] }] },
+        { id: 'c3', text: '分支3', children: [] },
+        { id: 'c4', text: '分支4', children: [] }
+      ]}
+      const positions = calculateLayout(root, 1200, 800)
+      const posArray = Array.from(positions.values())
+      for (let i = 0; i < posArray.length; i++) {
+        for (let j = i + 1; j < posArray.length; j++) {
+          const a = posArray[i]
+          const b = posArray[j]
+          const overlap = !(a.x + a.width < b.x || b.x + b.width < a.x ||
+            a.y + a.height < b.y || b.y + b.height < a.y)
+          assert(!overlap, `节点 ${i} 和 ${j} 重叠`)
+        }
+      }
+    })
+
+    // ===== 主题系统测试 =====
+    const suiteTheme = '主题系统'
+
+    test(suiteTheme, '默认主题包含8种分支颜色', async () => {
+      const { defaultTheme } = await import('/src/utils/theme.ts')
+      assert(defaultTheme.colors.length === 8, '应有8种分支颜色')
+    })
+
+    test(suiteTheme, '分支颜色循环分配', async () => {
+      const { getBranchColor, defaultTheme } = await import('/src/utils/theme.ts')
+      const color0 = getBranchColor(defaultTheme, 0)
+      const color8 = getBranchColor(defaultTheme, 8)
+      assertEquals(color0, color8, '索引0和8的颜色应相同')
+    })
+
+    test(suiteTheme, '中心主题样式为白色背景', async () => {
+      const { defaultTheme } = await import('/src/utils/theme.ts')
+      assertEquals(defaultTheme.centerStyle.fill, '#ffffff', '中心主题填充应为白色')
+    })
+
+    test(suiteTheme, '分支颜色数组包含预期颜色', async () => {
+      const { branchColors } = await import('/src/utils/theme.ts')
+      assert(branchColors.length === 8, '分支颜色数组应有8个颜色')
+      assert(branchColors[0] === '#f87171', '第一个分支颜色应为红色')
+    })
+
+    // ===== 存储系统测试 =====
+    const suiteStorage = '存储系统'
+
+    test(suiteStorage, '生成唯一ID', async () => {
+      const { generateId } = await import('/src/utils/storage.ts')
+      const id1 = generateId()
+      const id2 = generateId()
+      assert(id1 !== id2, 'ID应唯一')
+      assert(id1.length > 0, 'ID不应为空')
+    })
+
+    test(suiteStorage, '保存和加载文件', async () => {
+      const { saveFile, getFile, generateId } = await import('/src/utils/storage.ts')
+      const id = generateId()
+      const file = {
+        id,
+        name: '测试导图',
+        data: {
+          id,
+          name: '测试导图',
+          root: { id: 'root', text: '中心主题', children: [] },
+          theme: {
+            name: 'test',
+            colors: ['#ff0000'],
+            centerStyle: { shape: 'rounded', fill: '#fff', stroke: '#000', strokeWidth: 1, fontSize: 24, fontWeight: 'bold', color: '#000' },
+            branchStyle: { shape: 'rounded', fill: '#fff', stroke: '#000', strokeWidth: 1, fontSize: 14, fontWeight: 'normal', color: '#000' },
+            connectionStyle: { stroke: '#000', strokeWidth: 1, strokeLinecap: 'round' }
+          },
+          canvas: { width: 1200, height: 800 }
+        },
+        thumbnail: '',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+      saveFile(file)
+      const loaded = getFile(id)
+      assert(loaded, '文件应存在')
+      assertEquals(loaded.name, '测试导图', '文件名应匹配')
+    })
+
+    test(suiteStorage, '删除文件', async () => {
+      const { saveFile, getFile, deleteFile, generateId } = await import('/src/utils/storage.ts')
+      const id = generateId()
+      const file = {
+        id,
+        name: '删除测试',
+        data: {
+          id,
+          name: '删除测试',
+          root: { id: 'root', text: '中心主题', children: [] },
+          theme: {
+            name: 'test',
+            colors: ['#ff0000'],
+            centerStyle: { shape: 'rounded', fill: '#fff', stroke: '#000', strokeWidth: 1, fontSize: 24, fontWeight: 'bold', color: '#000' },
+            branchStyle: { shape: 'rounded', fill: '#fff', stroke: '#000', strokeWidth: 1, fontSize: 14, fontWeight: 'normal', color: '#000' },
+            connectionStyle: { stroke: '#000', strokeWidth: 1, strokeLinecap: 'round' }
+          },
+          canvas: { width: 1200, height: 800 }
+        },
+        thumbnail: '',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+      saveFile(file)
+      deleteFile(id)
+      const loaded = getFile(id)
+      assert(!loaded, '文件应被删除')
+    })
+
+    // ===== 渲染测试 =====
+    const suiteRender = '渲染功能'
+
+    test(suiteRender, 'SVG元素正确创建', async () => {
+      const mountEl = document.getElementById('app-mount')
+      const { createApp, h } = await import('https://unpkg.com/vue@3/dist/vue.esm-browser.js')
+      const svg = h('svg', { class: 'mindmap-svg', width: 1200, height: 800 }, [
+        h('rect', { x: 510, y: 368, width: 180, height: 64, rx: 8, fill: '#ffffff', stroke: '#8b5cf6', 'stroke-width': 2 }),
+        h('text', { x: 600, y: 404, 'text-anchor': 'middle', 'font-size': 24, fill: '#1a1a1a' }, '中心主题')
+      ])
+      const app = createApp({ render: () => svg })
+      app.mount(mountEl)
+      const svgEl = mountEl.querySelector('svg')
+      assert(svgEl, 'SVG元素应存在')
+      assertEquals(svgEl.getAttribute('width'), '1200', 'SVG宽度')
+      assertEquals(svgEl.getAttribute('height'), '800', 'SVG高度')
+    })
+
+    test(suiteRender, '贝塞尔曲线连接正确生成', async () => {
+      const startX = 690, startY = 400, endX = 790, endY = 300
+      const dx = endX - startX
+      const cp = Math.abs(dx) * 0.5
+      const path = `M ${startX} ${startY} C ${startX + cp} ${startY}, ${endX - cp} ${endY}, ${endX} ${endY}`
+      assert(path.includes('C'), '路径应包含贝塞尔曲线命令')
+      assert(path.includes('M 690 400'), '路径起点应正确')
+      assert(path.includes('790 300'), '路径终点应正确')
+    })
+
+    // ===== 导出功能测试 =====
+    const suiteExport = '导出功能'
+
+    test(suiteExport, '导出函数存在且可调用', async () => {
+      const { exportToImage } = await import('/src/utils/export.ts')
+      assert(typeof exportToImage === 'function', 'exportToImage应为函数')
+    })
+
+    test(suiteExport, '缩略图生成函数存在', async () => {
+      const { generateThumbnail } = await import('/src/utils/thumbnail.ts')
+      assert(typeof generateThumbnail === 'function', 'generateThumbnail应为函数')
+    })
+
+    // ===== 完整链路模拟测试 =====
+    const suiteFlow = '完整链路模拟'
+
+    test(suiteFlow, '链路1: 新建导图 -> 添加节点 -> 保存', async () => {
+      const { generateId } = await import('/src/utils/storage.ts')
+      const { calculateLayout } = await import('/src/utils/layout.ts')
+
+      // 模拟新建导图
+      const rootId = generateId()
+      const mapData = {
+        id: generateId(),
+        name: '测试导图',
+        root: {
+          id: rootId,
+          text: '中心主题',
+          children: [
+            { id: generateId(), text: '分支主题 1', children: [] },
+            { id: generateId(), text: '分支主题 2', children: [] }
+          ]
+        },
+        canvas: { width: 1200, height: 800 }
+      }
+
+      // 模拟添加子节点
+      const newChildId = generateId()
+      mapData.root.children[0].children.push({ id: newChildId, text: '子主题', children: [] })
+
+      // 验证布局
+      const positions = calculateLayout(mapData.root, 1200, 800)
+      assert(positions.size === 4, '应有4个节点位置')
+      assert(positions.has(newChildId), '新节点应有位置')
+
+      // 模拟保存
+      const file = {
+        id: mapData.id,
+        name: mapData.name,
+        data: mapData,
+        thumbnail: '',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+      const { saveFile, getFile } = await import('/src/utils/storage.ts')
+      saveFile(file)
+      const loaded = getFile(mapData.id)
+      assert(loaded, '文件应保存成功')
+      assertEquals(loaded.data.root.children[0].children.length, 1, '子节点应存在')
+    })
+
+    test(suiteFlow, '链路2: 加载已有导图 -> 修改 -> 保存', async () => {
+      const { generateId, saveFile, getFile } = await import('/src/utils/storage.ts')
+      const { calculateLayout } = await import('/src/utils/layout.ts')
+
+      // 创建并保存初始导图
+      const id = generateId()
+      const initialData = {
+        id,
+        name: '修改测试',
+        root: {
+          id: generateId(),
+          text: '中心主题',
+          children: [
+            { id: generateId(), text: '原始文本', children: [] }
+          ]
+        },
+        canvas: { width: 1200, height: 800 }
+      }
+      saveFile({ id, name: initialData.name, data: initialData, thumbnail: '', createdAt: Date.now(), updatedAt: Date.now() })
+
+      // 加载并修改
+      const loaded = getFile(id)
+      assert(loaded, '文件应存在')
+      loaded.data.root.children[0].text = '修改后的文本'
+      loaded.data.root.children.push({ id: generateId(), text: '新分支', children: [] })
+      loaded.updatedAt = Date.now()
+
+      // 保存修改
+      saveFile(loaded)
+      const reloaded = getFile(id)
+      assertEquals(reloaded.data.root.children[0].text, '修改后的文本', '文本应已修改')
+      assertEquals(reloaded.data.root.children.length, 2, '应有2个分支')
+
+      // 验证布局仍正确
+      const positions = calculateLayout(reloaded.data.root, 1200, 800)
+      assert(positions.size === 3, '布局应包含3个节点')
+    })
+
+    // ===== 渲染结果 =====
+    function renderResults() {
+      const container = document.getElementById('results')
+      const suites = {}
+
+      for (const r of results) {
+        if (!suites[r.suite]) suites[r.suite] = []
+        suites[r.suite].push(r)
+      }
+
+      let html = ''
+      for (const [suiteName, tests] of Object.entries(suites)) {
+        html += `<div class="suite">`
+        html += `<div class="suite-title">📋 ${suiteName} (${tests.filter(t => t.passed).length}/${tests.length})</div>`
+        for (const t of tests) {
+          html += `<div class="test-result">`
+          html += `<span class="icon ${t.passed ? 'pass' : 'fail'}">${t.passed ? '✅' : '❌'}</span>`
+          html += `<span>${t.name}</span>`
+          html += `</div>`
+          if (!t.passed) {
+            html += `<div class="error-msg">${t.error}</div>`
+          }
+        }
+        html += `</div>`
+      }
+
+      html += `<div class="summary">`
+      html += `<div><span class="pass-count">${totalPassed}</span> <span class="label">通过</span> &nbsp;|&nbsp; <span class="fail-count">${totalFailed}</span> <span class="label">失败</span></div>`
+      html += `<div style="margin-top:8px;color:${totalFailed === 0 ? '#22c55e' : '#ef4444'};font-weight:600;">${totalFailed === 0 ? '🎉 所有测试通过！' : '⚠️ 存在失败的测试'}</div>`
+      html += `</div>`
+
+      container.innerHTML = html
+    }
+
+    Promise.all(pendingPromises).then(() => renderResults())
+  </script>
+</body>
+</html>

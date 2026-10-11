@@ -1,0 +1,520 @@
+{
+  "schemaVersion": 1,
+  "id": "sample-architecture",
+  "title": "生殖专科 AI 辅助诊疗｜总体架构",
+  "kind": "architecture",
+  "nodes": [
+    {
+      "id": "doctor",
+      "label": "生殖医生 / 医师工作台",
+      "kind": "module",
+      "groupId": "app",
+      "items": [
+        "患者概览页",
+        "诊疗决策页",
+        "报告页",
+        "工作台 / 检查 / 随访 / 患者周期"
+      ]
+    },
+    {
+      "id": "ultrasound",
+      "label": "超声医生 / 超声工作站",
+      "kind": "module",
+      "groupId": "app",
+      "items": [
+        "检查任务页",
+        "智能报告页"
+      ]
+    },
+    {
+      "id": "lab",
+      "label": "实验室 / 胚胎 / 遗传人员",
+      "kind": "module",
+      "groupId": "app",
+      "items": [
+        "检验终端",
+        "PGT 页"
+      ],
+      "badge": "2期"
+    },
+    {
+      "id": "patient",
+      "label": "患者 / 患者触达端",
+      "kind": "module",
+      "groupId": "app",
+      "items": [
+        "随访问答页",
+        "报告查询页"
+      ],
+      "badge": "2期"
+    },
+    {
+      "id": "platform",
+      "label": "平台运营 / 管理看板",
+      "kind": "module",
+      "groupId": "app",
+      "items": [
+        "运营监控页",
+        "科研分析页"
+      ],
+      "badge": "2期"
+    },
+    {
+      "id": "primary",
+      "label": "基层医生 / 基层协作端",
+      "kind": "module",
+      "groupId": "app",
+      "items": [
+        "AI 筛查页",
+        "会诊转诊页"
+      ],
+      "badge": "3期"
+    },
+    {
+      "id": "b1",
+      "label": "01 智能超声影像分析",
+      "kind": "module",
+      "groupId": "business",
+      "items": [
+        "超声任务与阅片页",
+        "测量数据 / 报告页",
+        "卵泡自动识别与计数",
+        "子宫内膜自动测量",
+        "卵巢体积估算",
+        "报告整合与回写"
+      ],
+      "badge": "1期"
+    },
+    {
+      "id": "b3",
+      "label": "03 辅助诊断决策",
+      "kind": "module",
+      "groupId": "business",
+      "items": [
+        "患者生育力总览页",
+        "病因分析 / 建议页",
+        "卵巢储备综合评估",
+        "不孕原因分类",
+        "生育力综合评分",
+        "证据链与差异提示"
+      ],
+      "badge": "2期"
+    },
+    {
+      "id": "b5",
+      "label": "05 胚胎评估与优选",
+      "kind": "module",
+      "groupId": "business",
+      "items": [
+        "胚胎时间序列页",
+        "评级优选 / 报告页",
+        "发育动力学分析",
+        "胚胎形态自动评级",
+        "着床潜能预测",
+        "关键事件标注"
+      ],
+      "badge": "2期"
+    },
+    {
+      "id": "b7",
+      "label": "07 智能随访与全周期管理",
+      "kind": "module",
+      "groupId": "business",
+      "items": [
+        "随访任务工作台",
+        "患者问诊 / 满意度页",
+        "智能随访问答",
+        "多渠道消息触达",
+        "随访异常预警",
+        "节点周期任务"
+      ],
+      "badge": "2期"
+    },
+    {
+      "id": "b9",
+      "label": "09 PGT 遗传咨询辅助",
+      "kind": "module",
+      "groupId": "business",
+      "items": [
+        "家系与遗传风险页",
+        "咨询记录 / 报告页",
+        "遗传风险解读",
+        "PGT 指征提示",
+        "遗传咨询辅助",
+        "知识图谱检索"
+      ],
+      "badge": "2期"
+    },
+    {
+      "id": "b2",
+      "label": "02 精液质量 AI 分析",
+      "kind": "module",
+      "groupId": "business",
+      "items": [
+        "精液标本分析页",
+        "指标复核 / 报告页",
+        "精子计数与密度",
+        "精子形态学分析",
+        "WHO 第六版报告",
+        "异常数据采集"
+      ],
+      "badge": "1期"
+    },
+    {
+      "id": "b4",
+      "label": "04 个体化促排方案",
+      "kind": "module",
+      "groupId": "business",
+      "items": [
+        "促排方案推荐页",
+        "剂量 / 机制调整页",
+        "促排方案推荐",
+        "Gn 启动剂量预测",
+        "扳机时机建议",
+        "用药依从监控"
+      ],
+      "badge": "2期"
+    },
+    {
+      "id": "b6",
+      "label": "06 预后预测与风险预警",
+      "kind": "module",
+      "groupId": "business",
+      "items": [
+        "预后风险总览页",
+        "风险处置 / 趋势页",
+        "临床妊娠预测",
+        "OHSS 风险预警",
+        "多胎妊娠风险",
+        "预警处置留痕"
+      ],
+      "badge": "2期"
+    },
+    {
+      "id": "b8",
+      "label": "08 数据看板与质量控制",
+      "kind": "module",
+      "groupId": "business",
+      "items": [
+        "运营监控驾驶舱",
+        "科研检索 / 导出页",
+        "运营数据看板",
+        "科研数据检索",
+        "科室绩效分析",
+        "数据质量监控"
+      ],
+      "badge": "2期"
+    },
+    {
+      "id": "b10",
+      "label": "10 生殖健康区域协同",
+      "kind": "module",
+      "groupId": "business",
+      "items": [
+        "基层筛查 / 转诊页",
+        "中心会诊 / 质控页",
+        "基层 AI 辅助筛查",
+        "远程会诊支持",
+        "区域质控协同",
+        "转诊状态跟踪"
+      ],
+      "badge": "3期"
+    },
+    {
+      "id": "s1",
+      "label": "统一入口与协作",
+      "kind": "module",
+      "groupId": "system",
+      "items": [
+        "角色 / 机构门户",
+        "患者周期主题索引",
+        "跨系统待办",
+        "操作留痕"
+      ]
+    },
+    {
+      "id": "s2",
+      "label": "临床审核与报告",
+      "kind": "module",
+      "groupId": "system",
+      "items": [
+        "AI 结果复核",
+        "报告模板与版本",
+        "签名与归档",
+        "HIS / LIS / EMR 回写"
+      ]
+    },
+    {
+      "id": "s3",
+      "label": "可复用组件库",
+      "kind": "module",
+      "groupId": "system",
+      "items": [
+        "影像 / 视频阅片器",
+        "时序 / 趋势图表",
+        "评级与风险展示",
+        "问卷 / 表单组件"
+      ]
+    },
+    {
+      "id": "s4",
+      "label": "接口与异步任务",
+      "kind": "module",
+      "groupId": "system",
+      "items": [
+        "多系统接口适配",
+        "主数据关联",
+        "任务与状态管理",
+        "失败重试与补偿"
+      ]
+    },
+    {
+      "id": "s5",
+      "label": "配置与运行治理",
+      "kind": "module",
+      "groupId": "system",
+      "items": [
+        "规则 / 阈值配置",
+        "权限与授权",
+        "运行监控告警",
+        "应用发布与回滚"
+      ]
+    },
+    {
+      "id": "a1",
+      "label": "01 模型算法协同",
+      "kind": "module",
+      "groupId": "ai",
+      "items": [
+        "影像检测 / 分割 / 测量",
+        "视频跟踪 / 胚胎时序",
+        "决策建议 / 结果预测",
+        "风险预测 / 临床规则"
+      ]
+    },
+    {
+      "id": "a2",
+      "label": "02 AI 知识库",
+      "kind": "module",
+      "groupId": "ai",
+      "items": [
+        "指南 / SOP / 知识图谱",
+        "解析 / 混合检索 / 重排",
+        "专家审核 / 检索权限",
+        "证据引用 / 版本有效期"
+      ]
+    },
+    {
+      "id": "a3",
+      "label": "03 Agent 与临床工作流",
+      "kind": "module",
+      "groupId": "ai",
+      "items": [
+        "场景路由 / 工具契约",
+        "Agent 编排",
+        "执行跟踪 / 权限 / 轨迹",
+        "人工审核 / 超时补偿"
+      ]
+    },
+    {
+      "id": "a4",
+      "label": "04 数据集与标注",
+      "kind": "module",
+      "groupId": "ai",
+      "items": [
+        "样本抽样 / 标注流水线",
+        "双人复核 / 专家仲裁",
+        "患者分组 / 测试集隔离"
+      ]
+    },
+    {
+      "id": "a5",
+      "label": "05 训练与微调",
+      "kind": "module",
+      "groupId": "ai",
+      "items": [
+        "视觉迁移学习 / 预测建模",
+        "大模型 SFT / LoRA",
+        "实验追踪 / 沙盒环境"
+      ]
+    },
+    {
+      "id": "a6",
+      "label": "06 模型与应用评测",
+      "kind": "module",
+      "groupId": "ai",
+      "items": [
+        "算法 / RAG / Agent 评测",
+        "分组性能 / 专家盲评",
+        "安全 / 压测 / 上线门槛"
+      ]
+    },
+    {
+      "id": "a7",
+      "label": "07 MaaS 模型服务管理",
+      "kind": "module",
+      "groupId": "ai",
+      "items": [
+        "模型目录 / 统一 API",
+        "鉴权 / 机构应用配额",
+        "版本路由 / 容量与成本"
+      ]
+    },
+    {
+      "id": "a8",
+      "label": "08 推理服务与并发",
+      "kind": "module",
+      "groupId": "ai",
+      "items": [
+        "在线 / 视频 / 批量队列",
+        "预热 / 批处理 / 缓存",
+        "容量观测 / 扩容 / 降级"
+      ]
+    },
+    {
+      "id": "a9",
+      "label": "09 发布与运行治理",
+      "kind": "module",
+      "groupId": "ai",
+      "items": [
+        "模型 / 知识 / 规则绑定",
+        "影子 / 灰度 / 整组回滚",
+        "审计 / 反馈 / 受控更新"
+      ]
+    },
+    {
+      "id": "d1",
+      "label": "院方数据库",
+      "kind": "module",
+      "groupId": "data",
+      "items": [
+        "影像设备",
+        "检验与实验室",
+        "区域网络",
+        "临床数据",
+        "科研平台"
+      ]
+    },
+    {
+      "id": "d2",
+      "label": "统一信息化系统",
+      "kind": "module",
+      "groupId": "data",
+      "items": [
+        "HIS",
+        "LIS",
+        "PACS",
+        "EMR"
+      ]
+    },
+    {
+      "id": "d3",
+      "label": "数据定义标准化",
+      "kind": "module",
+      "groupId": "data",
+      "items": [
+        "数据字典 / 单位 / 术语",
+        "脱敏 / 权限 / 加密",
+        "实体关联 / 时间",
+        "数据版本 / 审计",
+        "临床 / 科研数据边界"
+      ]
+    },
+    {
+      "id": "g1",
+      "label": "01 反馈入池",
+      "kind": "module",
+      "groupId": "governance",
+      "items": [
+        "医师修正 / 失败案例",
+        "运行指标 / 临床结局",
+        "授权后进入候选池"
+      ]
+    },
+    {
+      "id": "g2",
+      "label": "02 复核评测",
+      "kind": "module",
+      "groupId": "governance",
+      "items": [
+        "专家审核 / 样本去重",
+        "算法分组 / 回归评估",
+        "判断数据或模型问题"
+      ]
+    },
+    {
+      "id": "g3",
+      "label": "03 输出调优",
+      "kind": "module",
+      "groupId": "governance",
+      "items": [
+        "知识 / 规则 / 模型更新",
+        "提交测试 / 模型对比",
+        "保留全部制品版本"
+      ]
+    },
+    {
+      "id": "g4",
+      "label": "04 沉淀入库",
+      "kind": "module",
+      "groupId": "governance",
+      "items": [
+        "临床 / 技术准入评审",
+        "灰度 / 运行监测",
+        "独立评测 / 专家标准"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "data-standard-1",
+      "source": "d1",
+      "target": "d3"
+    },
+    {
+      "id": "data-standard-2",
+      "source": "d2",
+      "target": "d3"
+    }
+  ],
+  "lanes": [],
+  "phases": [],
+  "groups": [
+    {
+      "id": "app",
+      "label": "01\n应用层",
+      "tone": "blue"
+    },
+    {
+      "id": "business",
+      "label": "02\n业务层",
+      "tone": "green"
+    },
+    {
+      "id": "system",
+      "label": "03\n系统层",
+      "tone": "blue"
+    },
+    {
+      "id": "ai",
+      "label": "04\nAI 层",
+      "tone": "green"
+    },
+    {
+      "id": "data",
+      "label": "05\n数据层",
+      "tone": "blue"
+    },
+    {
+      "id": "governance",
+      "label": "持续改进与全程治理",
+      "kind": "governance"
+    }
+  ],
+  "presentation": {
+    "theme": "blue",
+    "orientation": "vertical",
+    "positions": {}
+  },
+  "updatedAt": 1791725361960
+}
