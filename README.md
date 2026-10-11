@@ -1,54 +1,86 @@
 # FlyMind Studio
 
-基于 `D:\AIBuilder\flyMind` 复制的第一阶段绘图工作区。打开首页即可新建和编辑泳道图、流程图、架构图、思维导图与数据流架构图，无需登录或启动后端。
+给 AI 使用的独立绘图引擎与网页编辑器。Codex 编写 JSON，FlyMind MCP 保存和渲染图形，用户在网页继续编辑，AI 读取最新版本再修改与交付。无需模型 API Key。
 
-在此目录运行 `npm run dev`，打开 <http://127.0.0.1:5178/>。也可以运行 `start-studio.ps1`。换机器使用 Node.js 20.19+，先运行 `npm ci`。生产构建：`npm run build`；核心检查：`npm test`。
+## 启动
 
-## 绘图能力
-
-- 泳道图：角色列、阶段行、判断节点、N/Y 分支、循环回流；支持横向和纵向。跨泳道拖动会同步更新角色归属。
-- 流程图：独立节点与有向连线，支持循环；连线选择正交路径并避开其他节点。
-- 架构图：分层、模块、模块内条目和贯穿各层的治理区。模块可编辑、拖动并重新布局。
-- 思维导图：复用原项目的树形布局，支持主题编辑、添加子主题、父主题调整和分支删除。
-- 数据流架构图：卡片式系统集成与数据闭环，支持多源汇聚、集成横幅、分析与人工确认、反馈回流和文字注释。可编辑标题、可见说明、布局行、图标与配色；升级后会向已有工作区补充一次医院系统集成示例，保留已有图形。
-- 共用操作：拖拽、缩放、自动布局、连线、节点属性、撤销/重做、本地自动保存、JSON/FMD/Markdown 导入；导出 SVG、PNG、JSON、draw.io，思维导图另可导出 FMD。
-
-快捷键：V 选择，H 移动画布，C 连线，Delete 删除选中对象，Ctrl+Z 撤销，Ctrl+Shift+Z 重做。双击节点进入文字编辑；Ctrl+滚轮围绕鼠标缩放。
-
-`examples/architecture.*` 按图 1 的五层模块结构和治理区重绘。`examples/swimlane.*` 按图 2 的角色与阶段结构重绘；截图之外的“项目交付”阶段是展示功能用的补充示例，不代表原业务记录。图形文字均为可编辑数据，未把截图作为画布背景。
-
-`examples/dataflow.*` 按医院系统集成截图重绘。这类图属于卡片式数据流架构表达，未使用严格 DFD 的标准符号。新建时选择“数据流架构图”，勾选“使用示例数据”即可复用。节点的 `order` 表示布局行；同一行等宽排列，单卡片行铺满。`description` 显示在标题下方；`kind=note` 显示独立文字。`presentation.cards` 保存图标、配色和卡片/横幅形式；`edges.kind=feedback` 让回流线从卡片下方绕行。拖动保留手动位置，自动布局清除手动位置并按行重排；说明文字会自动换行并撑高布局。
-
-## 独立绘图边界
-
-```text
-src/drawing/
-  core/model.ts       节点、连线、泳道、阶段和分层；输入校验
-  core/layout.ts      节点关系 → 带几何位置的场景
-  core/dataflow.ts    卡片布局、文字尺寸和数据回流路由
-  core/render.ts      场景 → SVG / draw.io XML
-  core/adapters.ts    JSON、旧 FMD 和 Markdown 适配
-  state/studio.ts     文件、选中状态、编辑历史、本地存储
-  ui/DiagramCanvas.vue  仅通过 props 和事件与宿主通信的画布
-  ui/Studio.vue       当前工作区页面
-  services/exports.ts 浏览器下载与 PNG 转换
-```
-
-节点层的 `nodes/edges/lanes/phases/groups` 只描述含义与关系。手动位置放在 `presentation.positions`，配色和方向也归 presentation。布局结果是临时场景，渲染器不修改原始节点数据。SVG 和 PNG 使用同一份场景，JSON 保留语义和手动位置。draw.io 是可编辑的交换导出，样式由 draw.io 自身解释；本阶段不提供 draw.io XML 回读。
-
-`core/index.ts` 是绘图引擎入口，不依赖项目管理、认证、API Key、数据库或 Vue store。画布组件不调用业务服务。后续工作台的材料、MCP 和生成任务可作为外围适配器接入，绘图引擎接收经过校验的文档即可。
-
-## 从 Codex 发起
-
-页面的“图形数据”或“导入图形”弹窗中，点击“复制给 Codex”，把生成规则与当前图形结构粘贴进 Codex 对话。将 Codex 返回的 JSON 导入页面，即可编辑与导出。本阶段的新工作区不直接调用模型 API，也不宣称已连接 MCP。
-
-独立渲染无需浏览器：
+Node.js 20.19+：
 
 ```powershell
-npm run render -- examples/swimlane.json output/swimlane.svg
-npm run render -- examples/architecture.json output/architecture.drawio
+npm ci
+npm run build
+npm run setup:codex
+npm run dev
 ```
 
-这条命令也可由 Codex 调用。`npm run examples` 可重新生成五类示例文件。
+开发页面：<http://127.0.0.1:5178/>。共享服务使用 5179。生产运行 `npm start`，打开 <http://127.0.0.1:5179/>。`start-studio.ps1` 也可启动开发环境。
 
-原项目页面和 AI 后端代码保留在副本中，原版入口为 `/#/legacy`，后端仍按原项目的配置启动。新工作区的数据单独存于当前浏览器的 `flymind-drawing-studio-v1`；建议通过 JSON 导出备份。跨浏览器和跨设备同步属于后续持久化适配工作。
+注册后重新加载 Codex MCP 配置，让新会话发现 `flymind` 工具。MCP 首次绘图调用可自动启动本机编辑服务。详细配置见 [连接 Codex](docs/CODEX_SETUP.md)。
+
+## AI 绘图
+
+完整规则：[AI 绘图说明](docs/AI_DRAWING_GUIDE.md)。网页底部“AI 绘图说明”可直接查看；MCP 的 `get_drawing_guide` 返回相同文档和指定图形的完整模板。
+
+| 类型 | JSON kind | 表达能力 |
+|---|---|---|
+| 泳道图 | swimlane | 角色、阶段、判断分支、循环、横向/纵向 |
+| 流程图 | flowchart | 开始/结束、处理、判断、有向关系与回流 |
+| 架构图 | architecture | 分层、模块、模块条目、治理区 |
+| 思维导图 | mindmap | 中心主题、父子主题、分支 |
+| 数据流架构图 | dataflow | 系统卡片、多源汇聚、集成横幅、反馈闭环 |
+
+数据流架构图使用卡片表达，不是严格 DFD 标准符号。当前不宣称覆盖全部 UML 或 BPMN。
+
+调用顺序：`get_drawing_guide → create_diagram → get_diagram → patch_diagram`。创建和修改直接返回 PNG 图片、SVG/JSON/draw.io 文件及编辑链接。单独重新导出用 `export_diagram`。修改前读取最新 `revision`，以 `expectedRevision` 提交；过期修改会被拒绝。工具共有 8 个，支持完整替换和原子增量操作。
+
+可以对 Codex 说：
+
+> 使用 FlyMind，按这些材料绘制泳道图，返回图片、SVG/JSON 和编辑链接。保留判断出口和回流。
+
+> 读取图形 ID xxx 的最新版本，把售前咨询拆成两个步骤，保留我在网页调整的颜色和位置，再给我图片。
+
+## 网页编辑
+
+- 框选、Shift 多选、批量拖动、复制节点及内部连线、对齐和等距分布。
+- 双击节点直接编辑文字；拖动右下角调整尺寸；属性面板设置位置、尺寸、配色、字号。
+- 从节点四侧端口拖出连线；拖动连线端点改接节点；拖动折点或双击线路增加折点；拖动分支文字位置。
+- 调整起点/终点、端口、箭头、虚线、颜色和线宽，恢复自动路径。
+- 增删泳道、阶段和分层，调整顺序；删除有节点的分组时指定迁移目标。
+- 思维导图通过父主题调整关系；删除主题同时删除子分支。
+- 自动布局、撤销/重做、文件复制、搜索与删除；导入 JSON/FMD/Markdown。
+- 导出 PNG、SVG、JSON、draw.io；思维导图另支持 FMD。draw.io 文件可在 draw.io 中继续编辑，当前不支持 XML 回读。
+
+快捷键：V 选择、H 移动画布、C 连线；空格或中键拖动画布；Ctrl+滚轮缩放；Ctrl+A 全选、Ctrl+D 复制、方向键微调（Shift 加快）、Delete 删除、Ctrl+Z 撤销、Ctrl+Shift+Z 重做、Ctrl+S 保存。节点文字编辑时 Enter 保存，Shift+Enter 换行，Esc 取消。
+
+## 数据与独立组件
+
+```text
+src/drawing/core/         纯文档模型、校验、布局、渲染、增量修改
+src/drawing/ui/           画布与工作区；画布通过 props/事件通信
+src/drawing/state/        选择、编辑历史和文件管理
+src/drawing/services/     共享服务适配、浏览器导出
+server/store.ts          跨进程文件锁、原子保存、版本保护
+server/runtime.ts        网页共享接口和本机编辑服务
+server/mcp.ts            Codex MCP 工具与资源
+server/artifacts.ts      SVG / PNG / JSON / draw.io 制品
+```
+
+节点层 `nodes/edges/lanes/phases/groups` 描述业务含义和关系。位置、颜色、卡片样式、连线端口与路径放在 `presentation`。布局生成临时场景，渲染不修改节点层。`core/index.ts` 不依赖 Vue store、AI 平台、项目管理、认证或 API Key；后续功能作为外围适配器接入。
+
+网页与 MCP 共用 `data/diagrams/`。版本制品放在 `data/artifacts/<id>/r<revision>/`，保留每次交付。浏览器 localStorage 作为本地备份；首次连接会迁移旧图形，冲突存档另存副本。网页保存遇到版本冲突时，可载入最新或把本地修改另存副本。本阶段只提供本机共享，编辑链接不能作为跨设备公开链接。
+
+`data/`、环境变量文件、日志、依赖和测试截图不提交到 GitHub。换机器时需要另行备份 data/。
+
+## 验证与独立渲染
+
+```powershell
+npm test
+npm run build
+npm run render -- examples/swimlane.json output/swimlane.svg
+npm run render -- examples/architecture.json output/architecture.drawio
+npm run examples
+```
+
+测试覆盖节点与渲染分离、五类布局、循环分支、输入校验、多人版本冲突、批量编辑及真实 STDIO MCP 的图片与文件交付。
+
+源项目 `D:\AIBuilder\flyMind` 保留不动；原应用副本入口在 `/#/legacy`，其 AI 后端仍使用原配置。五类参考示例位于 examples/；泳道图截图之外的“项目交付”是演示补充，不代表原业务记录。

@@ -2,6 +2,7 @@ import { calculateLayout } from '../../utils/layout'
 import type { MindNode } from '../../types/mindmap'
 import { palette, type DiagramDocument, type DiagramScene, type SceneNode, type DiagramNode, type DiagramEdge } from './model'
 import { layoutDataflow, routeDataflow } from './dataflow'
+import { nearestPort, pathPoints, polyline, portPoint } from './geometry'
 
 export function layoutDocument(d:DiagramDocument):DiagramScene {
   const p=palette[d.presentation.theme], scene:DiagramScene=d.kind==='dataflow'?layoutDataflow(d,flowRanks({...d,edges:d.edges.filter(e=>e.kind!=='feedback')})):{width:1200,height:800,nodes:[],edges:[],containers:[]}
@@ -67,6 +68,7 @@ export function layoutDocument(d:DiagramDocument):DiagramScene {
     for(const [rank,nodes] of buckets){nodes.forEach((n,i)=>{const decision=n.kind==='decision',w=decision?184:200,h=decision?112:70;add(n,horizontal?80+rank*290:80+(maxWidth-nodes.length*260)/2+i*260,horizontal?80+(maxWidth-nodes.length*260)/2+i*260:80+rank*160,w,h,decision?p.accent:p.brand,decision?p.accentSoft:n.kind==='start'||n.kind==='end'?p.soft:'#fff')})}
   }
   for(const n of scene.nodes){scene.width=Math.max(scene.width,n.x+n.width+64);scene.height=Math.max(scene.height,n.y+n.height+64)}
+  for(const n of scene.nodes){const style=d.presentation.styles?.[n.node.id];if(style){n.fill=style.fill||n.fill;n.color=style.stroke||n.color;n.textColor=style.textColor||n.textColor}}
   if(d.kind==='mindmap'){scene.width=Math.max(...scene.nodes.map(n=>n.x+n.width))+64;scene.height=Math.max(...scene.nodes.map(n=>n.y+n.height))+64}
   if(d.kind==='flowchart'){scene.width=Math.max(...scene.nodes.map(n=>n.x+n.width))+80;scene.height=Math.max(...scene.nodes.map(n=>n.y+n.height))+80}
   const edges:DiagramEdge[]=d.kind==='mindmap'?d.nodes.filter(n=>n.parentId).map(n=>({id:`parent_${n.id}`,source:n.parentId!,target:n.id})):d.edges
@@ -74,9 +76,17 @@ export function layoutDocument(d:DiagramDocument):DiagramScene {
   for(const edge of edges){const a=scene.nodes.find(n=>n.node.id===edge.source),b=scene.nodes.find(n=>n.node.id===edge.target);if(!a||!b)continue
     const color=d.kind==='mindmap'?b.color:d.kind==='dataflow'?a.color:p.edge
     const cardRoute=d.kind==='dataflow'?routeDataflow(a,b,edge,scene.nodes,edge.kind==='feedback'?feedbackIndex++:0):undefined
-    const route=cardRoute||routeEdge(a,b,d.kind==='mindmap',d.presentation.orientation==='vertical',edge.source+edge.target,scene.nodes)
+    let route=cardRoute||routeEdge(a,b,d.kind==='mindmap',d.presentation.orientation==='vertical',edge.source+edge.target,scene.nodes)
+    const style=d.presentation.edges?.[edge.id],automatic=pathPoints(route.path)
+    if(style?.points||style?.sourcePort||style?.targetPort){
+      const start=portPoint(a,style.sourcePort||nearestPort(a,automatic[0]||{x:b.x,y:b.y})),end=portPoint(b,style.targetPort||nearestPort(b,automatic.at(-1)||{x:a.x,y:a.y}))
+      const points=style.points!==undefined?style.points:automatic.slice(1,-1)
+      const all=[start,...points,end];route={...route,path:polyline(all),labelX:all[Math.floor((all.length-1)/2)].x,labelY:all[Math.floor((all.length-1)/2)].y-16}
+      for(const p of all){scene.width=Math.max(scene.width,p.x+64);scene.height=Math.max(scene.height,p.y+64)}
+    }
+    if(style?.labelPosition)route={...route,labelX:style.labelPosition.x,labelY:style.labelPosition.y}
     if(cardRoute)scene.height=Math.max(scene.height,cardRoute.extentY+32)
-    scene.edges.push({edge,...route,color})
+    scene.edges.push({edge,...route,color:style?.color||color,points:pathPoints(route.path)})
   }
   return scene
 }

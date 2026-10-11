@@ -1,0 +1,5 @@
+import type { Box, Point, Port } from './model'
+export function portPoint(n:Box,port:Port):Point {return port==='top'?{x:n.x+n.width/2,y:n.y}:port==='bottom'?{x:n.x+n.width/2,y:n.y+n.height}:port==='left'?{x:n.x,y:n.y+n.height/2}:{x:n.x+n.width,y:n.y+n.height/2}}
+export function nearestPort(n:Box,p:Point):Port {return (['top','right','bottom','left'] as Port[]).sort((a,b)=>{const u=portPoint(n,a),v=portPoint(n,b);return Math.hypot(u.x-p.x,u.y-p.y)-Math.hypot(v.x-p.x,v.y-p.y)})[0]}
+export function pathPoints(path:string):Point[]{const tokens=path.trim().split(/\s+/),points:Point[]=[];let x=0,y=0;for(let i=0;i<tokens.length;){const cmd=tokens[i++];if(cmd==='M'){x=Number(tokens[i++]);y=Number(tokens[i++])}else if(cmd==='H')x=Number(tokens[i++]);else if(cmd==='V')y=Number(tokens[i++]);else if(cmd==='L'){x=Number(tokens[i++]);y=Number(tokens[i++])}else return [];points.push({x,y})}return points}
+export function polyline(points:Point[]){return points.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ')}

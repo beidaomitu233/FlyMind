@@ -8,6 +8,42 @@ import { renderScene, renderDrawio } from '../src/drawing/core/render'
 import { parseDocument, toMindTree, fromMarkdown } from '../src/drawing/core/adapters'
 import { useStudio } from '../src/drawing/state/studio'
 import { cardMetrics } from '../src/drawing/core/dataflow'
+import { applyOperations } from '../src/drawing/core/operations'
+import { duplicateNodes, placeNodes, alignNodes } from '../src/drawing/core/editor'
+import { portPoint } from '../src/drawing/core/geometry'
+import { computed, ref } from 'vue'
+import { sharedWorkspace } from '../src/drawing/services/shared'
+
+test('节点多选复制保留内部连线、样式和路径，调整尺寸后连线仍附着端口',()=>{
+  const d=sampleFor('flowchart'),first=d.nodes[0],second=d.nodes[1]
+  d.presentation.styles={[first.id]:{fill:'#eeeeff',fontSize:22}}
+  d.presentation.edges={[d.edges[0].id]:{sourcePort:'right',targetPort:'left',points:[{x:400,y:220}],arrow:'both'}}
+  const oldNodes=d.nodes.length,oldEdges=d.edges.length,scene=layoutDocument(d)
+  const duplicated=duplicateNodes(d,scene,[first.id,second.id])
+  assert.equal(d.nodes.length,oldNodes+2);assert.equal(d.edges.length,oldEdges+1)
+  assert.deepEqual(d.presentation.styles[duplicated[0]],d.presentation.styles[first.id])
+  assert.ok(d.edges.some(e=>e.source===duplicated[0]&&e.target===duplicated[1]))
+  placeNodes(d,layoutDocument(d),{[first.id]:{x:80,y:90,width:280,height:120}})
+  const resized=layoutDocument(d),node=resized.nodes.find(n=>n.node.id===first.id)!,edge=resized.edges.find(e=>e.edge.id===d.edges[0].id)!
+  assert.equal(node.width,280);assert.deepEqual(edge.points![0],portPoint(node,'right'))
+  alignNodes(d,resized,duplicated,'left');const aligned=layoutDocument(d).nodes.filter(n=>duplicated.includes(n.node.id))
+  assert.equal(aligned[0].x,aligned[1].x);validateDocument(d)
+})
+
+test('分组删除必须迁移节点，重排保持业务归属，路径和配色校验独立于节点层',()=>{
+  const d=sampleFor('swimlane'),before=JSON.stringify(d)
+  assert.throws(()=>applyOperations(d,[{op:'remove_container',collection:'lanes',id:'customer'}]),/moveTo/)
+  assert.equal(JSON.stringify(d),before)
+  const migrated=applyOperations(d,[{op:'remove_container',collection:'lanes',id:'customer',moveTo:'bd'},{op:'reorder_container',collection:'lanes',id:'project',index:0}])
+  assert.equal(migrated.nodes.find(n=>n.id==='request')!.laneId,'bd')
+  assert.equal(migrated.lanes[0].id,'project');assert.equal(migrated.edges.length,d.edges.length)
+  assert.throws(()=>applyOperations(d,[{op:'set_node_presentation',id:'request',style:{fill:'red'}}]),/#RRGGBB/)
+  assert.throws(()=>applyOperations(d,[{op:'set_edge_presentation',id:d.edges[0].id,style:{points:[{x:NaN,y:4}]}}]),/路径点/)
+  const styled=applyOperations(d,[{op:'set_node_presentation',id:'request',style:{fill:'#eeeeff',fontSize:24},position:{width:260}},{op:'set_edge_presentation',id:d.edges[0].id,style:{color:'#ff3366',arrow:'both',width:3}}])
+  const svg=renderScene(layoutDocument(styled),styled)
+  assert.ok(svg.includes('#ff3366'));assert.ok(svg.includes('marker-start'));assert.ok(svg.includes('font-size="24"'))
+  assert.deepEqual(styled.nodes,d.nodes)
+})
 
 for(const example of samples)test(`${example.kind}：纯数据布局和渲染不修改节点层`,()=>{
   const d=validateDocument(example),before=JSON.stringify(d),scene=layoutDocument(d),svg=renderScene(scene,d),xml=renderDrawio(scene,d)
@@ -98,4 +134,33 @@ test('旧存档只补一次数据流示例，卡片编辑、删除、撤销与�
   s.commit(d=>{d.edges.find(e=>e.id==='confirm')!.kind='feedback'})
   assert.equal(JSON.parse(storage.get(key)!).documents.find((d:any)=>d.kind==='dataflow').edges.find((e:any)=>e.id==='confirm').kind,'feedback')
   s.deleteDocument('sample-dataflow');setActivePinia(createPinia());assert.equal(useStudio().documents.length,1)
+})
+
+test('共享保存断网后不被轮询覆盖，重新加载保留未同步内容为副本',async()=>{
+  const key='flymind-drawing-studio-v1',storage=new Map<string,string>(),originalFetch=globalThis.fetch
+  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(k:string)=>storage.get(k)||null,setItem:(k:string,v:string)=>storage.set(k,v)}})
+  Object.defineProperty(globalThis,'window',{configurable:true,value:{location:{hash:'#/',search:''}}})
+  Object.defineProperty(globalThis,'document',{configurable:true,value:{activeElement:null}})
+  const d=sampleFor('flowchart'),records=[{document:copy(d),revision:1,savedAt:Date.now()}];let offline=false
+  globalThis.fetch=(async(_url:string,options:any)=>{
+    if(offline)throw new Error('offline')
+    if(options.method==='POST'){const doc=JSON.parse(options.body).document,r={document:doc,revision:1,savedAt:Date.now()};records.push(r);return Response.json(r,{status:201})}
+    if(options.method==='GET')return Response.json(records)
+    throw new Error('unexpected request')
+  }) as any
+  const context=()=>{const documents=ref([copy(d)]),activeId=ref(d.id);return {documents,activeId,current:computed(()=>documents.value.find(x=>x.id===activeId.value)!),storageError:ref(''),notify:()=>{},reset:()=>{}}}
+  try {
+    storage.set(key,JSON.stringify({documents:[d],activeId:d.id}));storage.set(key+'-shared-migrated','1')
+    const ctx=context(),shared=sharedWorkspace(ctx);await shared.initialize()
+    ctx.current.value.nodes[0].label='断网时的人工修改';offline=true;shared.save(ctx.current.value);await shared.retrySync()
+    storage.set(key,JSON.stringify({documents:ctx.documents.value,activeId:ctx.activeId.value}))
+    records[0].revision=2;records[0].document.nodes[0].label='AI 的另一个修改';offline=false
+    await shared.refreshRemote();assert.equal(ctx.current.value.nodes[0].label,'断网时的人工修改')
+    const recovered=context(),reloaded=sharedWorkspace(recovered);await reloaded.initialize()
+    assert.equal(records.length,2)
+    assert.equal(records[0].document.nodes[0].label,'AI 的另一个修改')
+    assert.equal(records[1].document.nodes[0].label,'断网时的人工修改')
+    assert.equal(recovered.current.value.nodes[0].label,'断网时的人工修改')
+    assert.ok(recovered.current.value.title.endsWith('本地存档'))
+  }finally{globalThis.fetch=originalFetch}
 })

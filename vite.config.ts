@@ -14,6 +14,8 @@ export default defineConfig({
     port: 5178,
     strictPort: true,
     proxy: {
+      '/studio-api': { target: 'http://127.0.0.1:5179', changeOrigin: true },
+      '/artifacts': { target: 'http://127.0.0.1:5179', changeOrigin: true },
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true

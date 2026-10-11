@@ -12,3 +12,6 @@ __pycache__/
 .playwright-cli/
 output/playwright/
 data/
+.env
+.env.*
+!.env.example

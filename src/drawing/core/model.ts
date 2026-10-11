@@ -1,6 +1,10 @@
 export type DiagramKind = 'swimlane' | 'flowchart' | 'architecture' | 'mindmap' | 'dataflow'
 export type NodeKind = 'task' | 'decision' | 'start' | 'end' | 'module' | 'topic' | 'card' | 'note'
 export interface CardStyle { icon?: 'database' | 'network' | 'check' | 'none'; tone?: 'blue' | 'teal'; variant?: 'card' | 'band' }
+export interface Point { x:number; y:number }
+export type Port='top'|'right'|'bottom'|'left'
+export interface NodeStyle { fill?:string; stroke?:string; textColor?:string; fontSize?:number }
+export interface EdgeStyle { color?:string; width?:number; sourcePort?:Port; targetPort?:Port; points?:Point[]; labelPosition?:Point; arrow?:'end'|'both'|'none' }
 export type ThemeName = 'blue' | 'indigo' | 'forest'
 export interface DiagramNode {
   id: string
@@ -30,12 +34,12 @@ export interface DiagramDocument {
   lanes: DiagramLane[]
   phases: DiagramPhase[]
   groups: DiagramGroup[]
-  presentation: { theme: ThemeName; orientation: 'vertical' | 'horizontal'; positions: Record<string, Partial<Box>>; cards?: Record<string, CardStyle> }
+  presentation: { theme: ThemeName; orientation: 'vertical' | 'horizontal'; positions: Record<string, Partial<Box>>; cards?: Record<string, CardStyle>; styles?:Record<string,NodeStyle>; edges?:Record<string,EdgeStyle> }
   updatedAt: number
 }
 export interface SceneNode extends Box { node: DiagramNode; color: string; fill: string; textColor: string }
 export interface SceneContainer extends Box { id: string; label: string; kind: 'title' | 'lane' | 'phase' | 'layer' | 'governance'; tone?: string; vertical?: boolean }
-export interface SceneEdge { edge: DiagramEdge; path: string; labelX: number; labelY: number; color: string }
+export interface SceneEdge { edge: DiagramEdge; path: string; labelX: number; labelY: number; color: string; points?:Point[] }
 export interface DiagramScene { width: number; height: number; nodes: SceneNode[]; edges: SceneEdge[]; containers: SceneContainer[] }
 export const kindLabels: Record<DiagramKind, string> = { swimlane: '泳道图', flowchart: '流程图', architecture: '架构图', mindmap: '思维导图', dataflow: '数据流架构图' }
 export function cardStyle(d:DiagramDocument,id:string):Required<CardStyle> { return {icon:'none',tone:'blue',variant:'card',...d.presentation.cards?.[id]} }
@@ -59,7 +63,7 @@ export function validateDocument(input: unknown): DiagramDocument {
   for(const n of d.nodes) {
     if(!n||typeof n.id!=='string'||!n.id||ids.has(n.id)) throw new Error('节点 ID 缺失或重复')
     ids.add(n.id)
-    if(['x','y','width','height','style','icon','tone','variant'].some(key=>Object.hasOwn(n,key)))throw new Error('节点层不存放坐标和样式，请使用 presentation.positions 或 presentation.cards')
+    if(['x','y','width','height','style','icon','tone','variant','fill','stroke','textColor','fontSize'].some(key=>Object.hasOwn(n,key)))throw new Error('节点层不存放坐标和样式，请使用 presentation.positions、presentation.styles 或 presentation.cards')
     if(typeof n.label!=='string'||!n.label.trim()||n.label.length>500) throw new Error('节点文字应为 1–500 字')
     if(!['task','decision','start','end','module','topic','card','note'].includes(n.kind)) throw new Error(`节点 ${n.id} 的类型无效`)
     if(n.order!==undefined&&(!Number.isInteger(n.order)||n.order<0||n.order>200)) throw new Error('order 应为 0–200 的整数')
@@ -104,6 +108,11 @@ export function validateDocument(input: unknown): DiagramDocument {
       if(s.variant!==undefined&&!['card','band'].includes(s.variant))throw new Error('卡片布局无效')
     }
   }
+  const map=(value:unknown,name:string)=>{if(!value||typeof value!=='object'||Array.isArray(value))throw new Error(`${name} 应为对象`)}
+  const color=(v:unknown)=>typeof v==='string'&&/^#[0-9a-f]{6}$/i.test(v)
+  const point=(p:Point)=>p&&typeof p==='object'&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&Math.abs(p.x)<=50000&&Math.abs(p.y)<=50000
+  if(d.presentation.styles!==undefined){map(d.presentation.styles,'styles');for(const [id,s] of Object.entries(d.presentation.styles)){if(!ids.has(id)){delete d.presentation.styles[id];continue}map(s,'节点样式');for(const k of ['fill','stroke','textColor'] as const)if(s[k]!==undefined&&!color(s[k]))throw new Error('颜色必须为 #RRGGBB');if(s.fontSize!==undefined&&(!Number.isFinite(s.fontSize)||s.fontSize<10||s.fontSize>48))throw new Error('字号范围为 10–48')}}
+  if(d.presentation.edges!==undefined){map(d.presentation.edges,'edges');const ports=['top','right','bottom','left'];for(const [id,s] of Object.entries(d.presentation.edges)){if(!edgeIds.has(id)){delete d.presentation.edges[id];continue}map(s,'连线样式');if(s.color!==undefined&&!color(s.color))throw new Error('颜色必须为 #RRGGBB');if(s.width!==undefined&&(!Number.isFinite(s.width)||s.width<1||s.width>8))throw new Error('连线宽度范围为 1–8');if(s.sourcePort!==undefined&&!ports.includes(s.sourcePort)||s.targetPort!==undefined&&!ports.includes(s.targetPort))throw new Error('连线端口无效');if(s.arrow!==undefined&&!['end','both','none'].includes(s.arrow))throw new Error('箭头无效');if(s.points!==undefined&&(!Array.isArray(s.points)||s.points.length>40||s.points.some(p=>!point(p))))throw new Error('连线路径点无效');if(s.labelPosition!==undefined&&!point(s.labelPosition))throw new Error('连线标签位置无效')}}
   d.id=typeof d.id==='string'&&d.id?d.id:newId('diagram')
   d.updatedAt=Number.isFinite(d.updatedAt)?d.updatedAt:Date.now()
   return d

@@ -1,15 +1,17 @@
 import { cardStyle, palette, type DiagramDocument, type DiagramScene, type SceneNode, type CardStyle } from './model'
 import { cardMetrics } from './dataflow'
 import { wrapText as wrap } from './text'
+import { pathPoints } from './geometry'
 export const xml=(v:unknown)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]!))
 function text(value:string,x:number,y:number,size:number,color:string,max=999,bold=false,anchor='middle'){
   const lines=wrap(value,max),dy=size*1.45,start=y-(lines.length-1)*dy/2
   return `<text x="${x}" y="${start}" text-anchor="${anchor}" dominant-baseline="middle" fill="${color}" font-size="${size}" font-weight="${bold?600:400}">${lines.map((line,i)=>`<tspan x="${x}" dy="${i?dy:0}">${xml(line)}</tspan>`).join('')}</text>`
 }
-export function renderScene(scene:DiagramScene,d:DiagramDocument,selectedId:string|null=null):string {
+export function renderScene(scene:DiagramScene,d:DiagramDocument,selectedId:string|string[]|null=null):string {
   const p=palette[d.presentation.theme]
+  const isSelected=(id:string)=>Array.isArray(selectedId)?selectedId.includes(id):id===selectedId
   let output=`<svg xmlns="http://www.w3.org/2000/svg" width="${scene.width}" height="${scene.height}" viewBox="0 0 ${scene.width} ${scene.height}" style="font-family:Inter,Segoe UI,Microsoft YaHei,sans-serif" role="img" aria-label="${xml(d.title)}"><defs><linearGradient id="titleGradient"><stop stop-color="${p.dark}"/><stop offset="1" stop-color="${p.brand}"/></linearGradient><filter id="nodeShadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#244f73" flood-opacity=".055"/></filter>`
-  const edgeColors=new Set(scene.edges.map(e=>e.color));edgeColors.forEach(color=>output+=`<marker id="arrow-${color.slice(1)}" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L8 4.5 L0 9" fill="${color}"/></marker>`)
+  const edgeColors=new Set(scene.edges.map(e=>e.color));edgeColors.forEach(color=>output+=`<marker id="arrow-${color.slice(1)}" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0 0 L8 4.5 L0 9" fill="${color}"/></marker>`)
   output+='</defs>'
   for(const c of scene.containers){
     const {x,y,width:w,height:h}=c
@@ -29,13 +31,13 @@ export function renderScene(scene:DiagramScene,d:DiagramDocument,selectedId:stri
     if(c.kind==='governance'){output+=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="#eef1fa" stroke="#bbc5e0"/>`+text(c.label,x+w/2,y+26,13,'#465473',8,true)}
     output+='</g>'
   }
-  for(const e of scene.edges){const selected=e.edge.id===selectedId;output+=`<path data-edge-id="${xml(e.edge.id)}" d="${e.path}" fill="none" stroke="transparent" stroke-width="14" style="cursor:pointer"/><path data-edge-id="${xml(e.edge.id)}" d="${e.path}" fill="none" stroke="${selected?'#7166dc':e.color}" stroke-width="${selected?3:d.kind==='dataflow'?2.5:1.7}" stroke-linejoin="round" stroke-linecap="round" ${e.edge.dashed?'stroke-dasharray="7 5"':''} ${d.kind!=='mindmap'?`marker-end="url(#arrow-${e.color.slice(1)})"`:''}/>`}
-  scene.nodes.forEach(n=>output+=renderNode(n,d,n.node.id===selectedId))
-  for(const e of scene.edges)if(e.edge.label){const size=d.kind==='dataflow'?22:13,height=size+10,width=Math.max(22,e.edge.label.length*size+12);output+=`<g data-edge-id="${xml(e.edge.id)}" style="cursor:pointer"><rect x="${e.labelX-width/2}" y="${e.labelY-height/2}" width="${width}" height="${height}" rx="4" fill="#fff"/>`+text(e.edge.label,e.labelX,e.labelY,size,e.color,999,d.kind==='dataflow')+'</g>'}
+  for(const e of scene.edges){const selected=isSelected(e.edge.id),style=d.presentation.edges?.[e.edge.id],arrow=style?.arrow||(d.kind==='mindmap'?'none':'end');output+=`<path data-edge-id="${xml(e.edge.id)}" d="${e.path}" fill="none" stroke="transparent" stroke-width="14" style="cursor:pointer"/><path data-edge-id="${xml(e.edge.id)}" d="${e.path}" fill="none" stroke="${selected?'#7166dc':e.color}" stroke-width="${selected?3:style?.width||(d.kind==='dataflow'?2.5:1.7)}" stroke-linejoin="round" stroke-linecap="round" ${e.edge.dashed?'stroke-dasharray="7 5"':''} ${arrow!=='none'?`marker-end="url(#arrow-${e.color.slice(1)})"`:''} ${arrow==='both'?`marker-start="url(#arrow-${e.color.slice(1)})"`:''}/>`}
+  scene.nodes.forEach(n=>output+=renderNode(n,d,isSelected(n.node.id)))
+  for(const e of scene.edges)if(e.edge.label){const size=d.kind==='dataflow'?22:13,height=size+10,width=Math.max(22,e.edge.label.length*size+12);output+=`<g data-edge-id="${xml(e.edge.id)}" data-label-id="${xml(e.edge.id)}" style="cursor:move"><rect x="${e.labelX-width/2}" y="${e.labelY-height/2}" width="${width}" height="${height}" rx="4" fill="#fff"/>`+text(e.edge.label,e.labelX,e.labelY,size,e.color,999,d.kind==='dataflow')+'</g>'}
   return output+'</svg>'
 }
 function renderNode(n:SceneNode,d:DiagramDocument,selected:boolean):string {
-  const {x,y,width:w,height:h,node,color,fill,textColor}=n,stroke=node.badge==='3期'?'#df913d':color
+  const {x,y,width:w,height:h,node,color,fill,textColor}=n,stroke=node.badge==='3期'?'#df913d':color,fontSize=d.presentation.styles?.[node.id]?.fontSize
   let out=`<g data-node-id="${xml(node.id)}" style="cursor:grab" role="button" aria-label="${xml(node.label)}" tabindex="0">`
   if(selected)out+=`<rect x="${x-6}" y="${y-6}" width="${w+12}" height="${h+12}" rx="12" fill="#6862db" fill-opacity=".06" stroke="#7768df" stroke-width="1.5" stroke-dasharray="4 3"/>`
   if(d.kind==='dataflow')return out+renderCard(n,d)+'</g>'
@@ -46,11 +48,11 @@ function renderNode(n:SceneNode,d:DiagramDocument,selected:boolean):string {
     if(governance){out+=text(node.label,x+w/2,y+24,13,textColor,9,true);(node.items||[]).forEach((item,i)=>out+=text(item,x+w/2,y+56+i*24,10,textColor,10));}
     else {
       const cols=w<260?1:2,gap=8,pad=12,cellW=(w-pad*2-gap*(cols-1))/cols
-      out+=text(node.label,x+pad,y+22,Math.min(15,w<260?13:15),textColor,(w-24-(node.badge?36:0))/14,true,'start')
+      out+=text(node.label,x+pad,y+22,fontSize||Math.min(15,w<260?13:15),textColor,(w-24-(node.badge?36:0))/(fontSize||14),true,'start')
       if(node.badge){out+=`<rect x="${x+w-46}" y="${y+10}" width="34" height="20" rx="10" fill="${stroke}"/>`+text(node.badge,x+w-29,y+20,10,'#fff')}
       ;(node.items||[]).forEach((item,i)=>{const ix=x+pad+(i%cols)*(cellW+gap),iy=y+44+Math.floor(i/cols)*28;out+=`<rect x="${ix}" y="${iy}" width="${cellW}" height="22" rx="3" fill="#fff" stroke="${stroke}" stroke-opacity=".22"/>`+text(item,ix+7,iy+11,Math.min(12,cellW/(item.length||1)),textColor,999,false,'start')})
     }
-  }else out+=text(node.label,x+w/2,y+h/2,d.kind==='mindmap'?16:17,textColor,node.kind==='decision'?7:(w-24)/17,node.kind==='topic'&&!node.parentId)
+  }else {const size=fontSize||(d.kind==='mindmap'?16:17);out+=text(node.label,x+w/2,y+h/2,size,textColor,node.kind==='decision'?(w/2-8)/size:(w-24)/size,node.kind==='topic'&&!node.parentId)}
   return out+'</g>'
 }
 
@@ -66,7 +68,7 @@ function renderCard(n:SceneNode,d:DiagramDocument){
   const {x,y,width:w,height:h,node,color,fill,textColor}=n,style=cardStyle(d,node.id),m=cardMetrics(d,node,w)
   let out=''
   if(node.kind!=='note'){
-    out+=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="14" fill="${fill}" stroke="#ccdee7" stroke-width="1.5" filter="url(#nodeShadow)"/>`
+    out+=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="14" fill="${fill}" stroke="${d.presentation.styles?.[node.id]?.stroke||'#ccdee7'}" stroke-width="1.5" filter="url(#nodeShadow)"/>`
     if(!m.centered)out+=`<path d="M ${x+14} ${y+18} V ${y+h-18}" stroke="${color}" stroke-width="4"/>`
   }
   const tx=m.centered?x+w/2:x+m.pad,anchor=m.centered?'middle':'start'
@@ -90,17 +92,14 @@ export function renderDrawio(scene:DiagramScene,d:DiagramDocument):string {
       const ty=m.pad+m.iconHeight,align=m.centered?'center':'left'
       cells.push(`<mxCell id="${id}-title" value="${xml(n.node.label)}" style="text;html=0;whiteSpace=wrap;align=${align};fontStyle=1;fontSize=${m.titleSize};fontColor=${n.textColor};" vertex="1" parent="${id}"><mxGeometry x="${m.pad}" y="${ty}" width="${n.width-m.pad*2}" height="${m.titleHeight}" as="geometry"/></mxCell>`)
       if(n.node.description)cells.push(`<mxCell id="${id}-body" value="${xml(n.node.description)}" style="text;html=0;whiteSpace=wrap;align=${align};fontSize=${m.bodySize};fontColor=#657e8d;" vertex="1" parent="${id}"><mxGeometry x="${m.pad}" y="${ty+m.titleHeight+14}" width="${n.width-m.pad*2}" height="${m.bodyHeight}" as="geometry"/></mxCell>`)
-    }else cells.push(`<mxCell id="n-${xml(n.node.id)}" value="${xml(n.node.label+(n.node.items?.length?'\n'+n.node.items.join(' · '):''))}" style="${n.node.kind==='decision'?'rhombus;':n.node.kind==='start'||n.node.kind==='end'?'ellipse;':'rounded=1;'}whiteSpace=wrap;html=0;fillColor=${n.fill};strokeColor=${n.color};fontColor=${n.textColor};fontSize=16;" vertex="1" parent="1"><mxGeometry x="${n.x}" y="${n.y}" width="${n.width}" height="${n.height}" as="geometry"/></mxCell>`)
+    }else cells.push(`<mxCell id="n-${xml(n.node.id)}" value="${xml(n.node.label+(n.node.items?.length?'\n'+n.node.items.join(' · '):''))}" style="${n.node.kind==='decision'?'rhombus;':n.node.kind==='start'||n.node.kind==='end'?'ellipse;':'rounded=1;'}whiteSpace=wrap;html=0;fillColor=${n.fill};strokeColor=${n.color};fontColor=${n.textColor};fontSize=${d.presentation.styles?.[n.node.id]?.fontSize||16};" vertex="1" parent="1"><mxGeometry x="${n.x}" y="${n.y}" width="${n.width}" height="${n.height}" as="geometry"/></mxCell>`)
   })
   scene.edges.forEach(e=>{
-    const points=d.kind==='dataflow'?pathPoints(e.path):[]
+    const style=d.presentation.edges?.[e.edge.id],points=d.kind==='mindmap'&&!style?[]:pathPoints(e.path)
     const a=scene.nodes.find(n=>n.node.id===e.edge.source)!,b=scene.nodes.find(n=>n.node.id===e.edge.target)!
     const first=points[0],last=points.at(-1),ports=first&&last?`exitX=${(first.x-a.x)/a.width};exitY=${(first.y-a.y)/a.height};entryX=${(last.x-b.x)/b.width};entryY=${(last.y-b.y)/b.height};`:''
-    cells.push(`<mxCell id="e-${xml(e.edge.id)}" value="${xml(e.edge.label||'')}" style="${points.length?'':'edgeStyle=orthogonalEdgeStyle;'}${ports}rounded=1;html=0;endArrow=${d.kind==='mindmap'?'none':'block'};strokeColor=${e.color};dashed=${e.edge.dashed?1:0};" edge="1" parent="1" source="n-${xml(e.edge.source)}" target="n-${xml(e.edge.target)}"><mxGeometry relative="1" as="geometry">${points.length>2?`<Array as="points">${points.slice(1,-1).map(p=>`<mxPoint x="${p.x}" y="${p.y}"/>`).join('')}</Array>`:''}</mxGeometry></mxCell>`)
+    const arrow=style?.arrow||(d.kind==='mindmap'?'none':'end')
+    cells.push(`<mxCell id="e-${xml(e.edge.id)}" value="${xml(e.edge.label||'')}" style="${points.length?'':'edgeStyle=orthogonalEdgeStyle;'}${ports}rounded=1;html=0;endArrow=${arrow==='none'?'none':'block'};startArrow=${arrow==='both'?'block':'none'};strokeWidth=${style?.width||1.7};strokeColor=${e.color};dashed=${e.edge.dashed?1:0};" edge="1" parent="1" source="n-${xml(e.edge.source)}" target="n-${xml(e.edge.target)}"><mxGeometry relative="1" as="geometry">${points.length>2?`<Array as="points">${points.slice(1,-1).map(p=>`<mxPoint x="${p.x}" y="${p.y}"/>`).join('')}</Array>`:''}</mxGeometry></mxCell>`)
   })
   return `<?xml version="1.0" encoding="UTF-8"?><mxfile host="FlyMind"><diagram name="${xml(d.title)}"><mxGraphModel pageWidth="${scene.width}" pageHeight="${scene.height}"><root>${cells.join('')}</root></mxGraphModel></diagram></mxfile>`
-}
-function pathPoints(path:string){
-  const tokens=path.trim().split(/\s+/),points:Array<{x:number;y:number}>=[];let x=0,y=0
-  for(let i=0;i<tokens.length;){const cmd=tokens[i++];if(cmd==='M'){x=Number(tokens[i++]);y=Number(tokens[i++])}else if(cmd==='H')x=Number(tokens[i++]);else if(cmd==='V')y=Number(tokens[i++]);else return [];points.push({x,y})}return points
 }

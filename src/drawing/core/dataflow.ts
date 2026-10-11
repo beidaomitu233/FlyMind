@@ -3,7 +3,7 @@ import { wrapText } from './text'
 
 export function cardMetrics(d:DiagramDocument,node:DiagramNode,width:number){
   const style=cardStyle(d,node.id),centered=node.kind==='note'||style.variant==='band'
-  const titleSize=width<360?23:28,bodySize=width<360?19:23,pad=28
+  const titleSize=d.presentation.styles?.[node.id]?.fontSize||(width<360?23:28),bodySize=d.presentation.styles?.[node.id]?.fontSize?Math.max(10,titleSize-4):width<360?19:23,pad=28
   const titleLines=wrapText(node.label,(width-pad*2)/titleSize)
   const bodyLines=node.description?wrapText(node.description,(width-pad*2)/bodySize):[]
   const iconHeight=!centered&&style.icon!=='none'?52:0

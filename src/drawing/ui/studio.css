@@ -57,7 +57,16 @@
 .drawing-canvas{position:relative;flex:1;min-height:0;overflow:hidden;background-color:#f8f9fc;background-image:radial-gradient(#d4d9e3 .7px,transparent .7px);background-size:20px 20px;touch-action:none;cursor:default}
 .drawing-canvas.hand-tool{cursor:grab}.drawing-canvas.panning{cursor:grabbing}.drawing-canvas.connect-tool{cursor:crosshair}
 .drawing-world{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
-.drawing-world>svg{display:block;overflow:visible;background:white;box-shadow:0 8px 35px #44516c08;border-radius:4px}
+.drawing-svg>svg{display:block;overflow:visible;background:white;box-shadow:0 8px 35px #44516c08;border-radius:4px}
+.drawing-handles{position:absolute;inset:0;overflow:visible;pointer-events:none}
+.drawing-handles .resize-handle{pointer-events:all;cursor:nwse-resize}
+.drawing-handles .port-handle{pointer-events:all;cursor:crosshair}
+.drawing-handles .edge-handle{pointer-events:all;cursor:move}
+.drawing-inline-editor{position:absolute;border:2px solid #7768df;border-radius:6px;background:#fff;padding:8px;resize:none;outline:none;text-align:center;line-height:1.5;box-shadow:0 4px 12px #6256cf20}
+.studio-number-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.studio-number-grid .studio-field{margin-bottom:12px}
+.studio-colors{display:flex;gap:10px;margin-top:10px}.studio-colors label{display:flex;flex-direction:column;gap:5px;align-items:center}.studio-colors input{width:42px;height:28px;padding:2px;border:1px solid #e1e5ed;border-radius:5px;cursor:pointer}
+.studio-action-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:15px}.studio-action-grid button{padding:8px;border:1px solid #e5e7f0;font-size:11px}
+.studio-storage-error{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.studio-storage-error button{border:1px solid #e5c7b1;padding:4px 8px;font-size:11px}
 .drawing-world [data-node-id]:focus{outline:0;filter:drop-shadow(0 0 3px #9a81ee)}
 .canvas-zoom{position:absolute;right:22px;bottom:22px;display:flex;align-items:center;padding:5px;border-radius:8px;background:#fff;border:1px solid #e4e8ef;box-shadow:0 3px 12px #2c3a5210}
 .studio-root .canvas-zoom button{height:26px;width:29px;color:#7f889a;font-size:16px}
