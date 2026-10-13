@@ -9,6 +9,7 @@ import sharp from 'sharp'
 import { DiagramStore, PROJECT_ROOT } from '../server/store'
 import { extractContent } from '../src/drawing/core/layers'
 import { sampleFor } from '../src/drawing/core/samples'
+import {copy} from '../src/drawing/core/model'
 
 test('共享文件存储：并发修改仅成功一次，非法增量修改不改变文件', async()=>{
   const root=await mkdtemp(join(tmpdir(),'flymind-store-'))
@@ -27,6 +28,15 @@ test('共享文件存储：并发修改仅成功一次，非法增量修改不�
     await assert.rejects(store.patch(d.id,2,[{op:'set_title',title:'不应保存'},{op:'remove_container',collection:'lanes',id:'customer'}]),/moveTo/)
     assert.equal(await readFile(store.path(d.id),'utf8'),before)
     await assert.rejects(store.get('../outside'),/图形 ID/)
+    const locked=copy((await store.get(d.id)).document);locked.presentation.objects={groups:{pair:['request','screen']},locked:['request'],order:locked.nodes.map(n=>n.id)}
+    await store.update(d.id,2,locked);const frozen=await store.get(d.id);assert.ok(frozen.document.presentation.positions.request.width)
+    await assert.rejects(store.patch(d.id,3,[{op:'update_node',id:'request',changes:{label:'不应修改'}}]),/锁定/)
+    await assert.rejects(store.patch(d.id,3,[{op:'remove_node',id:'request'}]),/锁定/)
+    await assert.rejects(store.patch(d.id,3,[{op:'set_node_presentation',id:'request',position:{x:0}}]),/锁定/)
+    const enlarged=await store.patch(d.id,3,[{op:'add_node',node:{id:'new',label:'增加步骤',kind:'task',laneId:'customer',phaseId:'intake'}}]);assert.deepEqual(enlarged.document.presentation.positions.request,frozen.document.presentation.positions.request)
+    // Undoing a lock restores the preceding rendering snapshot and unlocks it.
+    const unlocked=copy(locked);unlocked.presentation.objects!.locked=[]
+    await store.update(d.id,4,unlocked);assert.equal((await store.get(d.id)).revision,5)
   } finally {await rm(root,{recursive:true,force:true})}
 })
 
@@ -94,6 +104,17 @@ test('真实 STDIO MCP：发现工具、读取规则、生成五类图片、读�
     const mixed=await client.callTool({name:'create_diagram',arguments:{content:{...contentAfter.content,id:'mixed-invalid',presentation:{positions:{}}}}});assert.equal(mixed.isError,true)
     const mixedPatch=await client.callTool({name:'patch_diagram',arguments:{id:data.diagramId,expectedRevision:4,operations:[{op:'update_node',id:'request',changes:{order:1}}]}});assert.equal(mixedPatch.isError,true)
     assert.equal(((await call('get_diagram',{id:data.diagramId})).structuredContent as any).revision,4)
+    const visual=(await call('get_rendering_config',{id:data.diagramId})).structuredContent as any
+    visual.rendering.objects={groups:{pair:['request','screen']},locked:['request'],order:contentAfter.content.nodes.map((n:any)=>n.id)}
+    await call('configure_rendering',{id:data.diagramId,expectedRevision:4,rendering:visual.rendering})
+    const lockedConfig=(await call('get_rendering_config',{id:data.diagramId})).structuredContent as any
+    assert.ok(lockedConfig.rendering.positions.request.width);assert.equal(lockedConfig.rendering.objects.groups.pair.length,2)
+    const blocked=await client.callTool({name:'patch_diagram',arguments:{id:data.diagramId,expectedRevision:5,operations:[{op:'update_node',id:'request',changes:{label:'不应覆盖锁定对象'}}]}})
+    assert.equal(blocked.isError,true);assert.match((blocked.content as any[])[0].text,/锁定/)
+    lockedConfig.rendering.objects.locked=[]
+    await call('configure_rendering',{id:data.diagramId,expectedRevision:5,rendering:lockedConfig.rendering})
+    const unlocked=await call('patch_diagram',{id:data.diagramId,expectedRevision:6,operations:[{op:'update_node',id:'request',changes:{label:'解锁后 AI 修改'}}]})
+    assert.equal((unlocked.structuredContent as any).revision,7)
     assert.ok((await client.readResource({uri:'flymind://guide'})).contents.length)
   } finally {await client.close();await rm(root,{recursive:true,force:true})}
 })

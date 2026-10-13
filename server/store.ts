@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { validateDocument, copy, type DiagramDocument } from '../src/drawing/core/model'
 import { projectDocument } from '../src/drawing/core/layers'
+import { assertLockedObjects,freezeNewLocks } from '../src/drawing/core/objects'
 import { samples } from '../src/drawing/core/samples'
 import { applyOperations, type DiagramOperation } from '../src/drawing/core/operations'
 export const PROJECT_ROOT=fileURLToPath(new URL('../',import.meta.url))
@@ -23,9 +24,9 @@ export class DiagramStore {
   async write(r:DiagramRecord){await mkdir(join(this.root,'diagrams'),{recursive:true});const target=this.path(r.document.id),tmp=target+'.'+randomUUID()+'.tmp';try{await writeFile(tmp,JSON.stringify({...r,document:projectDocument(r.document)},null,2),'utf8');await rename(tmp,target)}finally{await rm(tmp,{force:true})}return r}
   async get(id:string):Promise<DiagramRecord>{try{const r=JSON.parse(await readFile(this.path(id),'utf8'));return {...r,document:validateDocument(r.document)}}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')throw new StoreError('图形不存在',404);throw e}}
   async list(){const files=await readdir(join(this.root,'diagrams'));return Promise.all(files.filter(f=>f.endsWith('.json')).map(f=>this.get(f.slice(0,-5))))}
-  async create(input:unknown){const d=validateDocument(input);this.id(d.id);return this.lock(d.id,async()=>{try{await stat(this.path(d.id));throw new StoreError('该图形 ID 已存在，请读取后更新，或使用新的 ID',409)}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e}d.updatedAt=Date.now();return this.write({document:d,revision:1,savedAt:Date.now()})})}
+  async create(input:unknown){const d=validateDocument(input);freezeNewLocks(d);this.id(d.id);return this.lock(d.id,async()=>{try{await stat(this.path(d.id));throw new StoreError('该图形 ID 已存在，请读取后更新，或使用新的 ID',409)}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e}d.updatedAt=Date.now();return this.write({document:d,revision:1,savedAt:Date.now()})})}
   async update(id:string,revision:number,input:unknown){return this.change(id,revision,()=>validateDocument(input))}
   async patch(id:string,revision:number,ops:DiagramOperation[]){return this.change(id,revision,d=>applyOperations(d,ops))}
-  async change(id:string,revision:number,fn:(d:DiagramDocument)=>DiagramDocument){return this.lock(id,async()=>{const prev=await this.get(id);if(!Number.isInteger(revision)||revision!==prev.revision)throw new StoreError(`版本冲突：当前为 ${prev.revision}，请读取最新图形后再修改`,409,prev.revision);const next=validateDocument(fn(copy(prev.document)));next.id=id;next.updatedAt=Date.now();return this.write({document:next,revision:prev.revision+1,savedAt:Date.now()})})}
+  async change(id:string,revision:number,fn:(d:DiagramDocument)=>DiagramDocument){return this.lock(id,async()=>{const prev=await this.get(id);if(!Number.isInteger(revision)||revision!==prev.revision)throw new StoreError(`版本冲突：当前为 ${prev.revision}，请读取最新图形后再修改`,409,prev.revision);const next=validateDocument(fn(copy(prev.document)));assertLockedObjects(prev.document,next);freezeNewLocks(next,prev.document);next.id=id;next.updatedAt=Date.now();return this.write({document:next,revision:prev.revision+1,savedAt:Date.now()})})}
   async delete(id:string,revision:number){await this.lock(id,async()=>{const prev=await this.get(id);if(revision!==prev.revision)throw new StoreError('版本冲突，请读取最新图形',409);await rm(this.path(id))})}
 }

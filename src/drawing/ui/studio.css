@@ -62,6 +62,10 @@
 .drawing-handles .resize-handle{pointer-events:all;cursor:nwse-resize}
 .drawing-handles .port-handle{pointer-events:all;cursor:crosshair}
 .drawing-handles .edge-handle{pointer-events:all;cursor:move}
+.canvas-menu{position:fixed;z-index:150;width:216px;padding:6px;background:#fff;border:1px solid #e6e7f0;border-radius:10px;box-shadow:0 10px 40px #27334a24;font-size:12px;max-height:calc(100vh - 16px);overflow:auto}
+.canvas-menu button{display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px 10px;border:0;border-radius:5px;background:none;text-align:left;color:#34425b;cursor:pointer}
+.canvas-menu button:hover,.canvas-menu summary:hover{background:#f1effc;color:#6c60cf}.canvas-menu kbd{font:10px 'Segoe UI',sans-serif;color:#9a9faf}.canvas-menu hr{border:0;border-top:1px solid #ececf2;margin:5px 4px}.canvas-menu .danger{color:#bf5252}.canvas-menu summary{padding:8px 10px;cursor:pointer;border-radius:5px}.canvas-menu details button{padding-left:20px}
+.studio-lock-row{display:flex;align-items:center;justify-content:space-between;color:#7a7d91;font-size:12px;margin-bottom:14px}
 .drawing-inline-editor{position:absolute;border:2px solid #7768df;border-radius:6px;background:#fff;padding:8px;resize:none;outline:none;text-align:center;line-height:1.5;box-shadow:0 4px 12px #6256cf20}
 .studio-number-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.studio-number-grid .studio-field{margin-bottom:12px}
 .studio-colors{display:flex;gap:10px;margin-top:10px}.studio-colors label{display:flex;flex-direction:column;gap:5px;align-items:center}.studio-colors input{width:42px;height:28px;padding:2px;border:1px solid #e1e5ed;border-radius:5px;cursor:pointer}
@@ -129,3 +133,5 @@
 @media(max-width:640px){.studio-inspector{position:absolute;right:0;top:70px;bottom:0;width:240px;z-index:10;box-shadow:-10px 0 25px #2c3a5210}.studio-document-name input{width:150px}.studio-header-actions{gap:2px}.studio-header-actions .studio-export-wrap{margin-left:2px}.studio-primary{padding:7px 9px!important}.studio-toolbar .studio-text-btn{padding:0 6px}.studio-toolbar{overflow:auto}.studio-root .studio-toolbar .studio-icon{min-width:27px;width:27px}.studio-type-grid button>div{height:90px}.studio-dialog-actions{flex-wrap:wrap}.studio-dialog-actions .studio-secondary:first-child{margin-right:0}}
 
 .studio-layer-tabs{padding:0 22px;margin:0;gap:24px}.studio-layer-tabs button{flex:1;text-align:center}
+.studio-inspector-fields{border:0;margin:0;padding:0;min-width:0}.studio-inspector-fields:disabled{opacity:.55}
+.drawing-svg{user-select:none}

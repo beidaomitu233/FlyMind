@@ -82,6 +82,12 @@ export function validateDocument(input: unknown): DiagramDocument {
   }
   const listIds=(list:Array<{id:string;label:string}>)=>{const set=new Set<string>();for(const x of list){if(!x||typeof x.id!=='string'||!x.id||set.has(x.id)||typeof x.label!=='string'||!x.label.trim()||x.label.length>160)throw new Error('分组、泳道或阶段 ID/名称无效');set.add(x.id)}return set}
   const lanes=listIds(d.lanes),phases=listIds(d.phases),groups=listIds(d.groups)
+  if(d.presentation.objects){
+    const o=d.presentation.objects
+    if(typeof o!=='object'||Array.isArray(o)||Object.keys(o).some(k=>!['groups','locked','order'].includes(k)))throw new Error('画布对象配置无效')
+    for(const key of ['locked','order'] as const)if(o[key]!==undefined){if(!Array.isArray(o[key])||o[key]!.some(id=>typeof id!=='string')||new Set(o[key]).size!==o[key]!.length)throw new Error('画布对象列表无效');o[key]=o[key]!.filter(id=>ids.has(id))}
+    if(o.groups){if(typeof o.groups!=='object'||Array.isArray(o.groups)||Object.keys(o.groups).length>500)throw new Error('画布组合无效');const grouped=new Set<string>();for(const [id,members] of Object.entries(o.groups)){if(!/^[a-zA-Z0-9_-]{1,100}$/.test(id)||!Array.isArray(members)||members.some(n=>typeof n!=='string')||new Set(members).size!==members.length)throw new Error('画布组合无效');o.groups[id]=members.filter(n=>ids.has(n));if(o.groups[id].length<2){delete o.groups[id];continue}for(const n of o.groups[id]){if(grouped.has(n))throw new Error('节点只能属于一个画布组合');grouped.add(n)}}}
+  }
   if(d.lanes.length>30||d.phases.length>30||d.groups.length>30)throw new Error('泳道、阶段和分层各最多 30 个')
   for(const g of d.groups){if(g.kind&&!['layer','governance'].includes(g.kind))throw new Error('分层 kind 无效');if(g.color!==undefined&&!/^#[0-9a-f]{6}$/i.test(g.color))throw new Error('可选分层颜色应为 #RRGGBB')}
   if(d.kind==='swimlane'&&!d.lanes.length) throw new Error('泳道图至少需要一个角色泳道')
@@ -99,6 +105,7 @@ export function validateDocument(input: unknown): DiagramDocument {
   for(const e of d.edges){if(!e||typeof e.id!=='string'||!e.id||edgeIds.has(e.id)||!ids.has(e.source)||!ids.has(e.target))throw new Error('连线 ID 无效或端点不存在');edgeIds.add(e.id);if(e.label!==undefined&&(typeof e.label!=='string'||e.label.length>200))throw new Error('连线文字过长');if(e.kind!==undefined&&!['flow','feedback'].includes(e.kind))throw new Error('连线类型无效')}
   if(d.kind==='mindmap') {
     if(d.nodes.filter(n=>!n.parentId).length!==1) throw new Error('思维导图需要一个中心主题')
+    if(d.edges.some(e=>d.nodes.some(n=>n.parentId&&e.id===`parent_${n.id}`)))throw new Error('连线 ID 与自动父子连线重复，请为额外连线使用其他 ID')
     for(const n of d.nodes){const seen=new Set<string>();let cur:DiagramNode|undefined=n;while(cur){if(seen.has(cur.id))throw new Error('思维导图不能循环引用父节点');seen.add(cur.id);cur=d.nodes.find(x=>x.id===cur!.parentId)}}
   }
   d.presentation=d.presentation||{theme:'indigo',orientation:'vertical',positions:{}}

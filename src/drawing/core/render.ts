@@ -3,6 +3,7 @@ import { nodePreset, edgePreset } from './render-config'
 import { cardMetrics } from './dataflow'
 import { wrapText as wrap } from './text'
 import { pathPoints } from './geometry'
+import { orderedNodes,isLocked } from './objects'
 export const xml=(v:unknown)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]!))
 function text(value:string,x:number,y:number,size:number,color:string,max=999,bold=false,anchor='middle'){
   const lines=wrap(value,max),dy=size*1.45,start=y-(lines.length-1)*dy/2
@@ -33,13 +34,13 @@ export function renderScene(scene:DiagramScene,d:DiagramDocument,selectedId:stri
     output+='</g>'
   }
   for(const e of scene.edges){const selected=isSelected(e.edge.id),style=d.presentation.edges?.[e.edge.id],arrow=style?.arrow||edgePreset(d).arrow;output+=`<path data-edge-id="${xml(e.edge.id)}" d="${e.path}" fill="none" stroke="transparent" stroke-width="14" style="cursor:pointer"/><path data-edge-id="${xml(e.edge.id)}" d="${e.path}" fill="none" stroke="${selected?'#7166dc':e.color}" stroke-width="${selected?3:style?.width||edgePreset(d).width}" stroke-linejoin="round" stroke-linecap="round" ${(style?.dashed??edgePreset(d).dashed)?'stroke-dasharray="7 5"':''} ${arrow!=='none'?`marker-end="url(#arrow-${e.color.slice(1)})"`:''} ${arrow==='both'?`marker-start="url(#arrow-${e.color.slice(1)})"`:''}/>`}
-  scene.nodes.forEach(n=>output+=renderNode(n,d,isSelected(n.node.id)))
+  for(const node of orderedNodes(d)){const n=scene.nodes.find(n=>n.node.id===node.id);if(n)output+=renderNode(n,d,isSelected(n.node.id))}
   for(const e of scene.edges)if(e.edge.label){const size=d.kind==='dataflow'?22:13,height=size+10,width=Math.max(22,e.edge.label.length*size+12);output+=`<g data-edge-id="${xml(e.edge.id)}" data-label-id="${xml(e.edge.id)}" style="cursor:move"><rect x="${e.labelX-width/2}" y="${e.labelY-height/2}" width="${width}" height="${height}" rx="4" fill="#fff"/>`+text(e.edge.label,e.labelX,e.labelY,size,e.color,999,d.kind==='dataflow')+'</g>'}
   return output+'</svg>'
 }
 function renderNode(n:SceneNode,d:DiagramDocument,selected:boolean):string {
   const {x,y,width:w,height:h,node,color,fill,textColor}=n,stroke=node.badge==='3期'?'#df913d':color,fontSize=d.presentation.styles?.[node.id]?.fontSize||nodePreset(d,node.kind).fontSize,shape=d.presentation.styles?.[node.id]?.shape||nodePreset(d,node.kind).shape
-  let out=`<g data-node-id="${xml(node.id)}" style="cursor:grab" role="button" aria-label="${xml(node.label)}" tabindex="0">`
+  let out=`<g data-node-id="${xml(node.id)}" data-locked="${isLocked(d,node.id)}" style="cursor:${isLocked(d,node.id)?'default':'grab'}" role="button" aria-label="${xml(node.label)}" tabindex="0">`
   if(selected)out+=`<rect x="${x-6}" y="${y-6}" width="${w+12}" height="${h+12}" rx="12" fill="#6862db" fill-opacity=".06" stroke="#7768df" stroke-width="1.5" stroke-dasharray="4 3"/>`
   if(d.kind==='dataflow')return out+renderCard(n,d)+'</g>'
   if(shape==='diamond')out+=`<path d="M${x+w/2} ${y} L${x+w} ${y+h/2} L${x+w/2} ${y+h} L${x} ${y+h/2} Z" fill="${fill}" stroke="${stroke}" stroke-width="1.6"/>`
@@ -86,7 +87,7 @@ function drawioShape(n:SceneNode,d:DiagramDocument){const shape=d.presentation.s
 export function renderDrawio(scene:DiagramScene,d:DiagramDocument):string {
   const cells=['<mxCell id="0"/>','<mxCell id="1" parent="0"/>']
   scene.containers.forEach(c=>cells.push(`<mxCell id="c-${xml(c.id)}" value="${xml(c.label)}" style="rounded=1;whiteSpace=wrap;html=0;fillColor=${c.kind==='title'?palette[d.presentation.theme].brand:'#edf3fa'};fontColor=${c.kind==='title'?'#ffffff':'#34516e'};" vertex="1" parent="1"><mxGeometry x="${c.x}" y="${c.y}" width="${c.width}" height="${c.height}" as="geometry"/></mxCell>`))
-  scene.nodes.forEach(n=>{
+  orderedNodes(d).map(node=>scene.nodes.find(n=>n.node.id===node.id)!).forEach(n=>{
     if(d.kind==='dataflow'){
       const m=cardMetrics(d,n.node,n.width),s=cardStyle(d,n.node.id),id=`n-${xml(n.node.id)}`
       cells.push(`<mxCell id="${id}" value="" style="${drawioShape(n,d)}arcSize=8;fillColor=${n.node.kind==='note'?'none':n.fill};strokeColor=${n.node.kind==='note'?'none':'#ccdee7'};" vertex="1" parent="1"><mxGeometry x="${n.x}" y="${n.y}" width="${n.width}" height="${n.height}" as="geometry"/></mxCell>`)

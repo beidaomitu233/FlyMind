@@ -45,6 +45,11 @@ const edgeDefault=z.strictObject({route:z.enum(['orthogonal','straight','curved'
 const port=z.enum(['top','right','bottom','left'])
 const edgeStyle=edgeDefault.extend({sourcePort:port.optional(),targetPort:port.optional(),points:z.array(point).max(40).optional(),labelPosition:point.optional()})
 export const renderingSchema=z.strictObject({
+  objects:z.strictObject({
+    groups:z.record(z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/),z.array(ref).min(2).max(500)).optional().describe('画布组合 ID → 节点 ID；不嵌套，节点最多属于一个组合'),
+    locked:z.array(ref).max(500).optional().describe('锁定节点 ID；编辑前显式解锁'),
+    order:z.array(ref).max(500).optional().describe('节点从底到顶的顺序，不改变业务节点数组')
+  }).optional().describe('画布组合、锁定与堆叠顺序，独立于业务分层'),
   theme:z.enum(['blue','indigo','forest']).optional(),orientation:z.enum(['vertical','horizontal']).optional(),
   nodeDefaults:z.partialRecord(nodeKind,preset).optional(),edgeDefaults:edgeDefault.optional(),
   positions:z.record(z.string(),z.strictObject({x:coordinate.optional(),y:coordinate.optional(),width:z.number().min(32).max(50000).optional(),height:z.number().min(32).max(50000).optional()})).optional(),

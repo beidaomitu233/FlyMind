@@ -15,6 +15,7 @@ export interface RenderingConfig {
   cards?:Record<string,CardStyle>
   styles?:Record<string,NodeStyle>
   edges?:Record<string,EdgeStyle>
+  objects?:{groups?:Record<string,string[]>;locked?:string[];order?:string[]}
 }
 export const standardNodePresets:Record<NodeKind,NodePreset>={
   task:{width:200,height:70,fontSize:17,shape:'rounded'},

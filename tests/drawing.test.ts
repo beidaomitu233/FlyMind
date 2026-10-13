@@ -60,7 +60,9 @@ test('节点多选复制保留内部连线、样式和路径，调整尺寸后�
   const oldNodes=d.nodes.length,oldEdges=d.edges.length,scene=layoutDocument(d)
   const duplicated=duplicateNodes(d,scene,[first.id,second.id])
   assert.equal(d.nodes.length,oldNodes+2);assert.equal(d.edges.length,oldEdges+1)
-  assert.deepEqual(d.presentation.styles[duplicated[0]],d.presentation.styles[first.id])
+  const pastedStyle=d.presentation.styles[duplicated[0]]!,originalBox=scene.nodes.find(n=>n.node.id===first.id)!
+  assert.equal(pastedStyle.fill,'#eeeeff');assert.equal(pastedStyle.fontSize,22)
+  assert.equal(pastedStyle.stroke,originalBox.color);assert.equal(pastedStyle.textColor,originalBox.textColor)
   assert.ok(d.edges.some(e=>e.source===duplicated[0]&&e.target===duplicated[1]))
   placeNodes(d,layoutDocument(d),{[first.id]:{x:80,y:90,width:280,height:120}})
   const resized=layoutDocument(d),node=resized.nodes.find(n=>n.node.id===first.id)!,edge=resized.edges.find(e=>e.edge.id===d.edges[0].id)!

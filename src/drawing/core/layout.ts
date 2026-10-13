@@ -73,7 +73,7 @@ export function layoutDocument(d:DiagramDocument):DiagramScene {
   for(const n of scene.nodes){if(n.node.color)n.color=n.node.color;const style={...d.presentation.nodeDefaults?.[n.node.kind],...d.presentation.styles?.[n.node.id]};if(style){n.fill=style.fill||n.fill;n.color=style.stroke||n.color;n.textColor=style.textColor||n.textColor}}
   if(d.kind==='mindmap'){scene.width=Math.max(...scene.nodes.map(n=>n.x+n.width))+64;scene.height=Math.max(...scene.nodes.map(n=>n.y+n.height))+64}
   if(d.kind==='flowchart'){scene.width=Math.max(...scene.nodes.map(n=>n.x+n.width))+80;scene.height=Math.max(...scene.nodes.map(n=>n.y+n.height))+80}
-  const edges:DiagramEdge[]=d.kind==='mindmap'?d.nodes.filter(n=>n.parentId).map(n=>({id:`parent_${n.id}`,source:n.parentId!,target:n.id})):d.edges
+  const edges:DiagramEdge[]=d.kind==='mindmap'?[...d.nodes.filter(n=>n.parentId).map(n=>({id:`parent_${n.id}`,source:n.parentId!,target:n.id})),...d.edges]:d.edges
   let feedbackIndex=0
   for(const edge of edges){const a=scene.nodes.find(n=>n.node.id===edge.source),b=scene.nodes.find(n=>n.node.id===edge.target);if(!a||!b)continue
     const defaults=edgePreset(d),style=d.presentation.edges?.[edge.id],routeType=style?.route||defaults.route,color=defaults.color||(d.kind==='mindmap'?b.color:d.kind==='dataflow'?a.color:p.edge)
