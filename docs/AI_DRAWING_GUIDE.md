@@ -15,6 +15,20 @@ AI 提供内容，FlyMind 自动布局并渲染。普通绘图只提交 `content
 
 ## 2. 支持的图形
 
+### 工作区分组（图形列表）
+
+工作区分组是文件管理元数据，不放进 `content` 或 `rendering`，也不等于架构图的 `groups`、泳道/阶段或画布组合。
+
+1. `list_workspace_groups` 获取现有分组；需要时 `create_workspace_group({"name":"客户项目"})`，使用返回的 `group.id`。
+2. `create_diagram({"content":{...},"workspaceGroupId":"返回的分组 ID"})` 可直接归入分组；省略时未分组。
+3. `list_diagrams({"workspaceGroupId":"分组 ID","sortBy":"updated"})` 列出组内图形；`sortBy:"created"` 按创建时间，`workspaceGroupId:null` 筛选未分组，省略则全部。返回 `createdAt/updatedAt/workspaceGroupId` 元数据。
+4. 先 `get_diagram`，再 `move_diagram_to_group({"id":"图形 ID","workspaceGroupId":"目标分组 ID 或 null","expectedWorkspaceGroupId":"刚读取的所属分组 ID 或 null"})`；实际 null 不加引号。移动不改变内容、渲染和图形 revision。
+5. 分组改名或删除先读取最新分组 revision，调用 `rename_workspace_group` 或 `delete_workspace_group` 并携带 `expectedRevision`。删除分组保留图形，全部转为未分组。
+
+已删除图形 ID 有持久删除记录，`DELETED` 表示禁止用旧备份重建；仅用户要求恢复时，使用新 ID 显式创建副本。发生 `CONFLICT` 必须重新读取并合并。网页的“待恢复内容”不会自动上传。
+
+### 绘图类型
+
 | kind | 图形 | 内容规则 |
 |---|---|---|
 | swimlane | 泳道图 | lanes 是角色，phases 是阶段；节点有 laneId，有阶段时必须有 phaseId；edges 表达交接与分支 |
@@ -213,7 +227,7 @@ edges/lanes/phases/groups 可省略，自动补空数组。思维导图通过 pa
 
 存储结构是 `{schemaVersion:2,content:{...},rendering:{...},updatedAt:...}`。外层存储记录有 revision/savedAt；内容本身没有时间或版本锁字段。旧版本平铺文档通过导入/存储读取兼容：order → rendering.ranks、edges.dashed → rendering.edges、groups.tone → rendering.groups。兼容入口与新内容工具严格校验分开。
 
-0.5.1 起，createdAt 是工作区及存储记录的独立元数据，MCP 元数据结果也返回该值，列表按其倒序排列。编辑和渲染不改变创建时间；新建、复制及导入生成新时间。旧图优先从 r1 工作区制品的创建/保存时间恢复，缺失时以文件历史时间估算并固定保存，不改变原 revision、savedAt 或业务内容。不要把 createdAt 写进 content 或 rendering。
+createdAt 是工作区及存储记录的独立元数据，MCP 同时返回 createdAt / updatedAt。0.6.0 起列表默认最近修改在前，也可选择最近创建。编辑和渲染不改变创建时间；新建、复制及导入生成新时间。旧图优先从 r1 工作区制品的创建/保存时间恢复，缺失时以文件历史时间估算并固定保存，不改变原 revision、savedAt 或业务内容。不要把时间写进 content 或 rendering。
 
 制品在 `data/artifacts/{diagramId}/r{revision}/`；JSON 内容为 diagram.json，完整工作区为 diagram.project.json。编辑链接仅本机使用。可在 Codex 回复中引用返回的 files.png 绝对路径展示图形，再给出编辑/下载链接。
 

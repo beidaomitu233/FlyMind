@@ -71,7 +71,7 @@ test('真实 STDIO MCP：发现工具、读取规则、生成五类图片、读�
   try {
     await client.connect(transport)
     const tools=(await client.listTools()).tools
-    assert.equal(tools.length,10)
+    assert.equal(tools.length,15)
     for(const tool of tools){assert.ok(tool.title);assert.ok(tool.outputSchema);assert.equal(tool.annotations?.openWorldHint,false);assert.equal(typeof tool.annotations?.readOnlyHint,'boolean');assert.equal(typeof tool.annotations?.idempotentHint,'boolean')}
     const create=tools.find(t=>t.name==='create_diagram')!
     const schema=(create.inputSchema.properties as any).content
@@ -79,10 +79,13 @@ test('真实 STDIO MCP：发现工具、读取规则、生成五类图片、读�
     const patch=(tools.find(t=>t.name==='patch_diagram')!.inputSchema.properties as any).operations
     assert.equal(patch.items.oneOf?.length||patch.items.anyOf?.length,11)
     const guide=await call('get_drawing_guide',{kind:'swimlane'})
+    const group=(await call('create_workspace_group',{name:'MCP 项目'})).structuredContent as any
+    assert.equal(group.group.name,'MCP 项目')
     assert.ok((guide.content as any[]).some(c=>c.type==='text'&&c.text.includes('expectedRevision')))
     for(const kind of ['swimlane','flowchart','architecture','mindmap','dataflow'] as const){
       const document=sampleFor(kind);document.id='integration-'+kind
-      const result=await call('create_diagram',{content:extractContent(document)}),data=result.structuredContent as any
+      const result=await call('create_diagram',{content:extractContent(document),workspaceGroupId:group.group.id}),data=result.structuredContent as any
+      assert.equal(data.workspaceGroupId,group.group.id);assert.equal(typeof data.updatedAt,'number')
       assert.equal(data.revision,1)
       assert.equal(typeof data.createdAt,'number')
       const png=(result.content as any[]).find(c=>c.type==='image')
@@ -102,6 +105,15 @@ test('真实 STDIO MCP：发现工具、读取规则、生成五类图片、读�
       const imageResource=await client.readResource({uri:data.resources.png})
       assert.equal((imageResource.contents[0] as any).mimeType,'image/png');assert.equal((imageResource.contents[0] as any).blob,png.data)
     }
+    const grouped=(await call('list_diagrams',{workspaceGroupId:group.group.id,sortBy:'created'})).structuredContent as any
+    assert.equal(grouped.diagrams.length,5)
+    assert.equal(((await call('list_workspace_groups',{})).structuredContent as any).groups.length,1)
+    const renamed=(await call('rename_workspace_group',{id:group.group.id,expectedRevision:1,name:'项目已改名'})).structuredContent as any
+    assert.equal(renamed.group.revision,2)
+    await call('move_diagram_to_group',{id:'integration-flowchart',workspaceGroupId:null,expectedWorkspaceGroupId:group.group.id})
+    const staleMove=await client.callTool({name:'move_diagram_to_group',arguments:{id:'integration-flowchart',workspaceGroupId:group.group.id,expectedWorkspaceGroupId:group.group.id}});assert.equal(staleMove.isError,true)
+    await call('delete_workspace_group',{id:group.group.id,expectedRevision:2})
+    assert.equal(((await call('get_diagram',{id:'integration-swimlane'})).structuredContent as any).workspaceGroupId,null)
     const latest=await call('get_diagram',{id:'integration-swimlane'})
     const data=latest.structuredContent as any
     const changed=await call('patch_diagram',{id:data.diagramId,expectedRevision:data.revision,operations:[{op:'update_node',id:'request',changes:{label:'AI 再次修改'}}]})

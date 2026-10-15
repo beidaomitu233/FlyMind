@@ -59,7 +59,11 @@ export const renderingSchema=z.strictObject({
   styles:z.record(z.string(),nodeStyle).optional(),edges:z.record(z.string(),edgeStyle).optional()
 }).describe('独立完整渲染配置；仅用户明确要求视觉调整时读取并修改，保留其他覆盖')
 
-const metadata={diagramId,title:z.string(),kind:diagramKind,revision,createdAt:z.number().positive().optional(),editorUrl:z.string()}
+const metadata={diagramId,title:z.string(),kind:diagramKind,revision,createdAt:z.number().positive().optional(),updatedAt:z.number().positive(),workspaceGroupId:z.string().nullable(),editorUrl:z.string()}
+export const workspaceGroupSchema=z.object({id:diagramId,name:z.string(),revision,createdAt:z.number().positive(),updatedAt:z.number().positive()})
+export const groupOutput=z.object({group:workspaceGroupSchema})
+export const groupsOutput=z.object({groups:z.array(workspaceGroupSchema)})
+export const successOutput=z.object({success:z.literal(true)})
 export const diagramOutput=z.object({...metadata,content:contentSchema.optional(),documentPath:z.string().optional(),
   files:z.record(z.string(),z.string()).optional(),urls:z.record(z.string(),z.string()).optional(),
   resources:z.record(z.string(),z.string()).optional(),width:z.number().optional(),height:z.number().optional()})

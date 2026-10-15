@@ -163,9 +163,9 @@ test('数据流自动排序忽略反馈边且长说明撑开卡片，纯节点�
   const mixed=copy(tall);(mixed.nodes[0] as any).icon='database';assert.throws(()=>validateDocument(mixed),/节点层/)
 })
 
-test('旧存档只补一次数据流示例，卡片编辑、删除、撤销与回流设置可持久化',()=>{
+test('旧存档不再自动补示例，已有卡片编辑、删除、撤销与回流设置可持久化',()=>{
   const storage=new Map<string,string>(),key='flymind-drawing-studio-v1'
-  storage.set(key,JSON.stringify({documents:[sampleFor('mindmap')],activeId:'sample-mindmap'}))
+  storage.set(key,JSON.stringify({documents:[sampleFor('mindmap'),sampleFor('dataflow')],activeId:'sample-mindmap'}))
   Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(k:string)=>storage.get(k)||null,setItem:(k:string,v:string)=>storage.set(k,v)}})
   setActivePinia(createPinia());const s=useStudio();assert.equal(s.current.kind,'mindmap');assert.equal(s.documents.length,2);s.open('sample-dataflow')
   s.selection={type:'node',id:'his'};s.commit(d=>{d.nodes[0].description='新说明';d.presentation.cards!.his={icon:'check',tone:'teal'}})
@@ -177,7 +177,7 @@ test('旧存档只补一次数据流示例，卡片编辑、删除、撤销与�
   s.deleteDocument('sample-dataflow');setActivePinia(createPinia());assert.equal(useStudio().documents.length,1)
 })
 
-test('共享保存断网后不被轮询覆盖，重新加载保留未同步内容为副本',async()=>{
+test('共享保存断网后不被轮询覆盖，重新加载隔离未同步内容，主动恢复才创建副本',async()=>{
   const key='flymind-drawing-studio-v1',storage=new Map<string,string>(),originalFetch=globalThis.fetch
   Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(k:string)=>storage.get(k)||null,setItem:(k:string,v:string)=>storage.set(k,v)}})
   Object.defineProperty(globalThis,'window',{configurable:true,value:{location:{hash:'#/',search:''}}})
@@ -186,7 +186,7 @@ test('共享保存断网后不被轮询覆盖，重新加载保留未同步内�
   globalThis.fetch=(async(_url:string,options:any)=>{
     if(offline)throw new Error('offline')
     if(options.method==='POST'){const doc=JSON.parse(options.body).document,r={document:doc,revision:1,savedAt:Date.now()};records.push(r);return Response.json(r,{status:201})}
-    if(options.method==='GET')return Response.json(records)
+    if(options.method==='GET')return Response.json({diagrams:records,groups:[],deletedIds:[]})
     throw new Error('unexpected request')
   }) as any
   const context=()=>{const documents=ref([copy(d)]),activeId=ref(d.id);return {documents,activeId,current:computed(()=>documents.value.find(x=>x.id===activeId.value)!),storageError:ref(''),notify:()=>{},reset:()=>{}}}
@@ -198,11 +198,11 @@ test('共享保存断网后不被轮询覆盖，重新加载保留未同步内�
     records[0].revision=2;records[0].document.nodes[0].label='AI 的另一个修改';offline=false
     await shared.refreshRemote();assert.equal(ctx.current.value.nodes[0].label,'断网时的人工修改')
     const recovered=context(),reloaded=sharedWorkspace(recovered);await reloaded.initialize()
-    assert.equal(records.length,2)
+    assert.equal(records.length,1);assert.equal(reloaded.recoveries.value.length,1);await reloaded.restoreRecovery(0);assert.equal(records.length,2)
     assert.equal(records[0].document.nodes[0].label,'AI 的另一个修改')
     assert.equal(records[1].document.nodes[0].label,'断网时的人工修改')
     assert.equal(recovered.current.value.nodes[0].label,'断网时的人工修改')
-    assert.ok(recovered.current.value.title.endsWith('本地存档'))
+    assert.ok(recovered.current.value.title.endsWith('恢复副本'))
   }finally{globalThis.fetch=originalFetch}
 })
 
@@ -221,20 +221,20 @@ test('显式编辑链接加载未知图形，输入焦点不阻止导航且保�
   }finally{globalThis.fetch=originalFetch;Object.defineProperty(globalThis,'document',{configurable:true,value:{activeElement:null}})}
 })
 
-test('首次打开不把默认示例迁移为新图，活动旧存档在迁移完成后切换',async()=>{
+test('首次打开不上传默认示例，旧存档仅隔离备份且不自动创建重复图形',async()=>{
   const originalFetch=globalThis.fetch,storage=new Map<string,string>(),key='flymind-drawing-studio-v1',d=sampleFor('flowchart')
   Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(k:string)=>storage.get(k)||null,setItem:(k:string,v:string)=>storage.set(k,v)}})
   Object.defineProperty(globalThis,'window',{configurable:true,value:{location:{hash:'#/',search:''}}})
   const records=[{document:copy(d),revision:1,savedAt:1}];let posts=0
   const context=()=>{const documents=ref([copy(d)]),activeId=ref(d.id);return {documents,activeId,current:computed(()=>documents.value.find(x=>x.id===activeId.value)!),storageError:ref(''),notify:()=>{},reset:()=>{}}}
-  globalThis.fetch=(async(_url:string,opts:any)=>{if(opts.method==='POST'){posts++;const document=JSON.parse(opts.body).document;const r={document,revision:1,savedAt:1};records.push(r);return Response.json(r,{status:201})}return Response.json(records)}) as any
+  globalThis.fetch=(async(_url:string,opts:any)=>{if(opts.method==='POST'){posts++;const document=JSON.parse(opts.body).document;const r={document,revision:1,savedAt:1};records.push(r);return Response.json(r,{status:201})}return Response.json({diagrams:records,groups:[],deletedIds:[]})}) as any
   try{
     const fresh=context(),shared=sharedWorkspace(fresh)
     const seed=copy(d);seed.nodes[0].label='默认示例与远端不同';storage.set(key,JSON.stringify({documents:[seed],activeId:d.id}))
     await shared.initialize();assert.equal(posts,0);assert.equal(fresh.documents.value.length,1)
     storage.delete(key+'-shared-migrated');storage.set(key,JSON.stringify({documents:[seed],activeId:d.id}))
     const prior=context(),recover=sharedWorkspace(prior)
-    globalThis.fetch=(async(_url:string,opts:any)=>{assert.ok(prior.current.value,'迁移期间活动图形必须存在');if(opts.method==='POST'){const document=JSON.parse(opts.body).document,r={document,revision:1,savedAt:1};records.push(r);await Promise.resolve();assert.ok(prior.current.value);return Response.json(r,{status:201})}return Response.json(records)}) as any
-    await recover.initialize();assert.ok(prior.current.value.title.endsWith('本地存档'));assert.equal(prior.current.value.nodes[0].label,seed.nodes[0].label)
+    globalThis.fetch=(async(_url:string,opts:any)=>{assert.ok(prior.current.value,'迁移期间活动图形必须存在');if(opts.method==='POST'){const document=JSON.parse(opts.body).document,r={document,revision:1,savedAt:1};records.push(r);await Promise.resolve();assert.ok(prior.current.value);return Response.json(r,{status:201})}return Response.json({diagrams:records,groups:[],deletedIds:[]})}) as any
+    await recover.initialize();assert.equal(records.length,1);assert.equal(recover.recoveries.value.length,1);assert.equal(recover.recoveries.value[0].nodes[0].label,seed.nodes[0].label);assert.equal(prior.current.value.nodes[0].label,d.nodes[0].label)
   }finally{globalThis.fetch=originalFetch}
 })

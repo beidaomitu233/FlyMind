@@ -11,34 +11,32 @@ import { expandGroups,editableSelection,isLocked,assertLockedObjects,freezeNewLo
 import { createFragment,pasteFragment,type SelectionFragment } from '../core/clipboard'
 import type { Point } from '../core/model'
 const KEY='flymind-drawing-studio-v1'
-const DATAFLOW_SEED=KEY+'-dataflow-example'
+
 export type Selection={type:'node'|'edge'|'lane'|'phase'|'group';id:string}|null
 export const useStudio=defineStore('drawing-studio',()=>{
   const documents=ref<DiagramDocument[]>([]),activeId=ref(''),selection=ref<Selection>(null),selectedNodeIds=ref<string[]>([]),storageError=ref(''),notice=ref('')
-  const histories=new Map<string,{items:string[];index:number}>(),recoveryRequired=ref(false)
-  try{const stored=localStorage.getItem(KEY);if(stored){const data=JSON.parse(stored);if(!Array.isArray(data.documents))throw new Error('存档格式无效');documents.value=data.documents.map(validateDocument);activeId.value=data.activeId}}catch{try{localStorage.setItem(`${KEY}-recovery-${Date.now()}`,localStorage.getItem(KEY)||'');storageError.value='原始存档已备份；可重新导入 JSON 备份继续编辑。'}catch{recoveryRequired.value=true;storageError.value='本地存档未能读取；原始存档仍保留。请先导出当前图形备份。'}}
-  if(!documents.value.length)documents.value=copy(samples)
-  let seedDataflow=false
-  try{if(!localStorage.getItem(DATAFLOW_SEED)){if(!documents.value.some(d=>d.kind==='dataflow'))documents.value.push(sampleFor('dataflow'));seedDataflow=true}}catch{}
-  if(!documents.value.some(d=>d.id===activeId.value))activeId.value=documents.value[0].id
-  const current=computed(()=>documents.value.find(d=>d.id===activeId.value)!),scene=computed(()=>layoutDocument(current.value))
+  const histories=new Map<string,{items:string[];index:number}>(),recoveryRequired=ref(false);let hasLocalState=false
+  try{const stored=localStorage.getItem(KEY);if(stored){const data=JSON.parse(stored);if(!Array.isArray(data.documents))throw new Error('存档格式无效');documents.value=data.documents.map(validateDocument);activeId.value=data.activeId;hasLocalState=true}}catch{try{localStorage.setItem(`${KEY}-recovery-${Date.now()}`,localStorage.getItem(KEY)||'');storageError.value='原始存档已备份；可重新导入 JSON 备份继续编辑。'}catch{recoveryRequired.value=true;storageError.value='本地存档未能读取；原始存档仍保留。请先导出当前图形备份。'}}
+  if(!hasLocalState)documents.value=copy(samples)
+  if(!documents.value.some(d=>d.id===activeId.value))activeId.value=documents.value[0]?.id||''
+  const current=computed(()=>documents.value.find(d=>d.id===activeId.value)!),scene=computed(()=>current.value?layoutDocument(current.value):{width:0,height:0,nodes:[],edges:[],containers:[]})
   function history(){let h=histories.get(activeId.value);if(!h){h={items:[JSON.stringify(current.value)],index:0};histories.set(activeId.value,h)}return h}
-  const historyVersion=ref(0),canUndo=computed(()=>{historyVersion.value;return history().index>0}),canRedo=computed(()=>{historyVersion.value;const h=history();return h.index<h.items.length-1})
+  const historyVersion=ref(0),canUndo=computed(()=>{historyVersion.value;return !!current.value&&history().index>0}),canRedo=computed(()=>{historyVersion.value;if(!current.value)return false;const h=history();return h.index<h.items.length-1})
   let noticeTimer:ReturnType<typeof setTimeout>
   function notify(message:string){notice.value=message;clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>notice.value='',3200)}
   const remote=sharedWorkspace({documents,activeId,current,storageError,notify,reset:()=>{histories.clear();clearSelection();historyVersion.value++}})
-  function persist(save=true){if(save)remote.markDirty(current.value.id);try{if(recoveryRequired.value)throw new Error('原始存档待恢复，当前操作暂留在内存中，请导出备份');localStorage.setItem(KEY,JSON.stringify({documents:documents.value.map(projectDocument),activeId:activeId.value}));if(save&&remote.shared.value)remote.save(current.value);if(!remote.shared.value)storageError.value='';return true}catch(e){storageError.value=(e as Error).message||'保存失败，请导出备份';return false}}
+  function persist(save=true){if(save&&!current.value)return false;if(save)remote.markDirty(current.value.id);try{if(recoveryRequired.value)throw new Error('原始存档待恢复，当前操作暂留在内存中，请导出备份');localStorage.setItem(KEY,JSON.stringify({documents:documents.value.map(projectDocument),activeId:activeId.value}));if(save&&remote.shared.value)remote.save(current.value);if(!remote.shared.value)storageError.value='';return true}catch(e){storageError.value=(e as Error).message||'保存失败，请导出备份';return false}}
   function commit(change:(d:DiagramDocument)=>void){let d=copy(current.value);try{change(d);d.updatedAt=Date.now();d=validateDocument(d);assertLockedObjects(current.value,d);freezeNewLocks(d,current.value)}catch(e){notify((e as Error).message);return false}const h=history();h.items=h.items.slice(0,h.index+1);h.items.push(JSON.stringify(d));if(h.items.length>60)h.items.shift();h.index=h.items.length-1;documents.value=documents.value.map(x=>x.id===d.id?d:x);historyVersion.value++;persist();return true}
   function clearSelection(){selection.value=null;selectedNodeIds.value=[]}
   function selectMany(ids:string[]){ids=expandGroups(current.value,ids);selectedNodeIds.value=ids;selection.value=ids.length?{type:'node',id:ids.at(-1)!}:null}
   function select(type:NonNullable<Selection>['type'],id:string,additive=false){if(type==='node'){const members=expandGroups(current.value,[id]);if(additive)selectMany(selectedNodeIds.value.includes(id)?selectedNodeIds.value.filter(x=>!members.includes(x)):[...selectedNodeIds.value,...members]);else if(!selectedNodeIds.value.includes(id))selectMany(members);else selection.value={type,id}}else{selectedNodeIds.value=[];selection.value={type,id}}}
   function open(id:string){activeId.value=id;clearSelection();historyVersion.value++;persist(false)}
-  function addDocument(d:DiagramDocument){try{const next=validateDocument(d);next.id=newId('diagram');next.updatedAt=Date.now();next.createdAt=next.updatedAt;documents.value.push(next);open(next.id);if(remote.shared.value)remote.save(next);else remote.markDirty(next.id);return true}catch(e){notify((e as Error).message);return false}}
+  function addDocument(d:DiagramDocument){try{const next=validateDocument(d);next.id=newId('diagram');next.updatedAt=Date.now();next.createdAt=next.updatedAt;documents.value.push(next);remote.markNew(next.id);open(next.id);if(remote.shared.value)remote.save(next);return true}catch(e){notify((e as Error).message);return false}}
   function create(kind:DiagramKind,example=false){addDocument(example?sampleFor(kind):blankDocument(kind))}
   function undo(){const h=history();if(h.index<=0)return;h.index--;documents.value=documents.value.map(d=>d.id===activeId.value?JSON.parse(h.items[h.index]):d);clearSelection();historyVersion.value++;persist()}
   function redo(){const h=history();if(h.index>=h.items.length-1)return;h.index++;documents.value=documents.value.map(d=>d.id===activeId.value?JSON.parse(h.items[h.index]):d);clearSelection();historyVersion.value++;persist()}
   function updateNode(id:string,changes:Partial<DiagramNode>){commit(d=>{const node=d.nodes.find(n=>n.id===id);if(node)Object.assign(node,changes)})}
-  function setTitle(title:string){commit(d=>{d.title=title.trim()})}
+  function setTitle(title:string){if(current.value?.title!==title.trim())commit(d=>{d.title=title.trim()})}
   function setTheme(theme:ThemeName){commit(d=>{d.presentation.theme=theme})}
   function setOrientation(orientation:'vertical'|'horizontal'){commit(d=>{d.presentation.orientation=orientation;Object.assign(d,applyOperations(d,[{op:'reset_layout'}]))})}
   function autoLayout(){if(commit(d=>{d.presentation.positions=Object.fromEntries(Object.entries(d.presentation.positions).filter(([id])=>isLocked(d,id)));d.presentation.ranks=Object.fromEntries(Object.entries(d.presentation.ranks||{}).filter(([id])=>isLocked(d,id)));for(const s of Object.values(d.presentation.edges||{})){delete s.points;delete s.sourcePort;delete s.targetPort;delete s.labelPosition}}))notify('已按节点关系重新排布')}
@@ -76,7 +74,6 @@ export const useStudio=defineStore('drawing-studio',()=>{
       else {const key=s.type==='lane'?'laneId':s.type==='phase'?'phaseId':'groupId';if(d.nodes.some(n=>n[key]===s.id))throw new Error('请先移动该分组中的节点，再删除分组');const field=s.type==='lane'?'lanes':s.type==='phase'?'phases':'groups';d[field]=d[field].filter(x=>x.id!==s.id)}
     });if(success)clearSelection();return success
   }
-  function deleteDocument(id:string){if(remote.shared.value)remote.remove(id);documents.value=documents.value.filter(d=>d.id!==id);if(!documents.value.length){const d=blankDocument('swimlane');d.createdAt=Date.now();documents.value.push(d);if(remote.shared.value)remote.save(d)}if(id===activeId.value)open(documents.value[0].id);persist(false)}
-  if(seedDataflow&&persist(false))try{localStorage.setItem(DATAFLOW_SEED,'1')}catch{}
+  function deleteDocument(id:string){remote.remove(id);documents.value=documents.value.filter(d=>d.id!==id);histories.delete(id);if(id===activeId.value)activeId.value=documents.value[0]?.id||'';clearSelection();historyVersion.value++;persist(false)}
   return {...remote,documents,activeId,current,scene,selection,selectedNodeIds,storageError,notice,canUndo,canRedo,commit,open,create,addDocument,undo,redo,updateNode,setTitle,setTheme,setOrientation,autoLayout,addNode,moveNode,moveNodes,duplicateNodes,align,fragment,paste,groupSelection,ungroupSelection,lockSelection,reorderSelection,connect,addContainer,renameContainer,containerOp,select,selectMany,clearSelection,removeSelection,deleteDocument,notify,persist}
 })

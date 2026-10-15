@@ -58,7 +58,7 @@ npm run dev
 
 数据流架构图使用卡片表达，不是严格 DFD 标准符号。当前不宣称覆盖全部 UML 或 BPMN。
 
-调用顺序：`get_drawing_guide → create_diagram → get_diagram → patch_diagram`。创建和修改直接返回 PNG 图片、SVG/JSON/draw.io 文件及编辑链接。单独重新导出用 `export_diagram`。修改前读取最新 `revision`，以 `expectedRevision` 提交；过期修改会被拒绝。工具共有 10 个，支持完整替换和原子增量操作。
+调用顺序：`get_drawing_guide → create_diagram → get_diagram → patch_diagram`。创建和修改直接返回 PNG 图片、SVG/JSON/draw.io 文件及编辑链接。单独重新导出用 `export_diagram`。修改前读取最新 `revision`，以 `expectedRevision` 提交；过期修改会被拒绝。工具共有 15 个，支持完整替换、原子增量操作和工作区分组管理。
 
 可以对 Codex 说：
 
@@ -73,23 +73,30 @@ npm run dev
 | 工具 | 输入 | 成功结果 / 效果 |
 |---|---|---|
 | `get_drawing_guide` | 可选 `kind` | `guide` 和可选纯内容 `sample` |
-| `list_diagrams` | 无 | `diagrams` 元数据列表 |
+| `list_diagrams` | 可选 `sortBy`、`workspaceGroupId` | 图形列表；默认最近修改，`created` 按创建时间；分组为 null 筛选未分组 |
 | `get_diagram` | `id`、可选 `preview` | 元数据与 `content`；preview=true 返回制品 |
 | `validate_diagram` | `content` | `valid`、尺寸、节点和连线数量；不保存 |
-| `create_diagram` | `content` | 保存新图形、PNG 和制品 |
+| `create_diagram` | `content`、可选 `workspaceGroupId` | 保存新图形、PNG 和制品，可直接放入工作区分组 |
 | `update_diagram` | `id`、`expectedRevision`、`content` | 替换内容，保留渲染配置 |
 | `patch_diagram` | `id`、`expectedRevision`、`operations` | 原子执行 1–500 项语义操作 |
 | `get_rendering_config` | `id` | 独立 `rendering` 与标准配置 `standards` |
 | `configure_rendering` | `id`、`expectedRevision`、`rendering` | 替换完整渲染配置，内容保持不变 |
 | `export_diagram` | `id` | 导出当前版本的图片和制品 |
+| `list_workspace_groups` | 无 | 读取图形列表分组与版本 |
+| `create_workspace_group` | `name` | 创建工作区分组，返回 `group.id` |
+| `rename_workspace_group` | `id`、`expectedRevision`、`name` | 重命名工作区分组 |
+| `delete_workspace_group` | `id`、`expectedRevision` | 删除分组，组内图形移至未分组 |
+| `move_diagram_to_group` | `id`、`workspaceGroupId`、`expectedWorkspaceGroupId` | 改变图形归属；null 表示未分组，保持绘图内容与渲染不变 |
 
-制品结果的 `structuredContent` 包括 `diagramId/title/kind/revision/editorUrl`、`files`（本机绝对路径）、`urls`（本机下载链接）、`resources`（MCP 可读取 URI）、`width/height`；PNG 另以原生 image 块返回。资源有 `flymind://guide`、`flymind://diagrams/{id}`、`flymind://artifacts/{id}/{revision}/{format}`，format 为 png/svg/json/project.json/drawio。资源链接可通过 MCP `resources/read` 读取，旧版本对应已生成的制品。
+制品结果的 `structuredContent` 包括 `diagramId/title/kind/revision/createdAt/updatedAt/workspaceGroupId/editorUrl`、`files`（本机绝对路径）、`urls`（本机下载链接）、`resources`（MCP 可读取 URI）、`width/height`；PNG 另以原生 image 块返回。资源有 `flymind://guide`、`flymind://diagrams/{id}`、`flymind://artifacts/{id}/{revision}/{format}`，format 为 png/svg/json/project.json/drawio。资源链接可通过 MCP `resources/read` 读取，旧版本对应已生成的制品。
 
-执行失败返回 `isError: true` 和 `{error:{code,message,currentRevision?}}`，常见 code 为 `CONFLICT/NOT_FOUND/BUSY/VALIDATION_FAILED/INTERNAL_ERROR`。输入 schema 不合法由 SDK 拒绝，具体错误格式由 SDK 决定。CONFLICT 重新读取并合并；BUSY 稍后重新读取；校验失败修正参数。禁止自动覆盖版本冲突。
+执行失败返回 `isError: true` 和 `{error:{code,message,currentRevision?}}`，常见 code 为 `CONFLICT/DELETED/NOT_FOUND/BUSY/VALIDATION_FAILED/INTERNAL_ERROR`。输入 schema 不合法由 SDK 拒绝，具体错误格式由 SDK 决定。CONFLICT 重新读取并合并；BUSY 稍后重新读取；校验失败修正参数。禁止自动覆盖版本冲突。
 
 ## 网页编辑
 
-图形按创建时间倒序排列，编辑旧图不会置顶；复制或导入会创建新图。创建时间保存于文档元数据，内容层与渲染层均不承载时间字段。旧图优先从首版制品恢复时间，缺失时以文件历史时间兼容并固定保存。
+列表可选择“最近修改 / 最近创建”，默认最近修改在前，记住排序选择；每项用小号文字展示创建时间，悬停可看完整创建/修改时间。复制或导入会创建新图。时间保存于文档元数据，内容层与渲染层均不承载时间字段。旧图优先从首版制品恢复时间，缺失时以文件历史时间兼容并固定保存。
+
+左侧文件夹按钮管理图形分组，支持创建、直接改名和删除；图形属性“所属分组”用于移动图形，左侧下拉框按分组筛选。删除分组仅将图形移至未分组。工作区分组独立于架构分层、泳道/阶段和画布组合；MCP 同样支持这些操作，见上表与[绘图说明](docs/AI_DRAWING_GUIDE.md)。
 
 复杂泳道按实际文字和线路需求调整节点、泳道宽度与步骤行高；自动正交路线避开节点，双向/回流线路错开通道，连线文字自动换行和避让。长流程默认以可读比例打开，可用 Shift+1 查看全图。手动位置和线路优先；需要重新整理已有手动布局时使用“自动布局”。
 
@@ -124,7 +131,9 @@ server/artifacts.ts      SVG / PNG / JSON / draw.io 制品
 
 内容层 `content` 只含节点、类型、关系和可选语义颜色，不含 order、坐标或美化数据。独立 `rendering` 管理标准节点大小/形状/配色、连线走线及手动覆盖。普通 MCP 工具仅接收 content；视觉调整单独使用 get_rendering_config / configure_rendering。存储和工作区导出为 `{schemaVersion:2,content,rendering,updatedAt}`；内容 JSON 导出仅包含语义数据。网页属性与源码编辑均区分内容/渲染标签。旧文档自动迁移。布局生成临时场景，渲染不修改节点层。`core/index.ts` 不依赖 Vue store、AI 平台、项目管理、认证或 API Key；后续功能作为外围适配器接入。
 
-网页与 MCP 共用 `data/diagrams/`。版本制品放在 `data/artifacts/<id>/r<revision>/`，保留每次交付。浏览器 localStorage 作为本地备份；首次连接会迁移旧图形，冲突存档另存副本。网页保存遇到版本冲突时，可载入最新或把本地修改另存副本。本阶段只提供本机共享，编辑链接不能作为跨设备公开链接。
+网页与 MCP 共用 `data/diagrams/`；后台是图形列表的数据依据。分组和归属在 `data/workspace.json`，删除记录与原图备份在 `data/trash/<id>.json`；先原子保存删除记录再移除活动文件，已删除 ID 的创建/修改被拒绝（HTTP 410 / MCP `DELETED`），避免旧页面、旧备份或重启让图形复活。删除最后一张图后工作区保持空白。删除记录不自动清理，迁移数据时需一并保留。
+
+版本制品放在 `data/artifacts/<id>/r<revision>/`，保留每次交付。浏览器 localStorage 仅作备份和离线操作队列；已知版本且未冲突的修改可重试，断网删除跨刷新重试。旧备份和有冲突的未同步修改不会自动上传为重复图形，而是保存到“待恢复内容”，需要用户主动恢复为新 ID 的图形。网页保存遇到版本冲突时，可载入最新或主动另存副本。已启动的旧 MCP 进程需重新连接以启用新规则。本阶段只提供本机共享，编辑链接不能作为跨设备公开链接。
 
 `data/`、环境变量文件、日志、依赖和测试截图不提交到 GitHub。换机器时需要另行备份 data/。
 
