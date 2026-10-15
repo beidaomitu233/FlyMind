@@ -59,7 +59,7 @@ export const renderingSchema=z.strictObject({
   styles:z.record(z.string(),nodeStyle).optional(),edges:z.record(z.string(),edgeStyle).optional()
 }).describe('独立完整渲染配置；仅用户明确要求视觉调整时读取并修改，保留其他覆盖')
 
-const metadata={diagramId,title:z.string(),kind:diagramKind,revision,editorUrl:z.string()}
+const metadata={diagramId,title:z.string(),kind:diagramKind,revision,createdAt:z.number().positive().optional(),editorUrl:z.string()}
 export const diagramOutput=z.object({...metadata,content:contentSchema.optional(),documentPath:z.string().optional(),
   files:z.record(z.string(),z.string()).optional(),urls:z.record(z.string(),z.string()).optional(),
   resources:z.record(z.string(),z.string()).optional(),width:z.number().optional(),height:z.number().optional()})

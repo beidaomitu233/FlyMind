@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, readFile } from 'node:fs/promises'
+import { mkdtemp, rm, readFile,writeFile,mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -10,6 +10,23 @@ import { DiagramStore, PROJECT_ROOT } from '../server/store'
 import { extractContent } from '../src/drawing/core/layers'
 import { sampleFor } from '../src/drawing/core/samples'
 import {copy} from '../src/drawing/core/model'
+
+test('创建时间不可被编辑覆盖；旧图从首个版本恢复并持久化，列表最新创建在前',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'flymind-dates-'))
+  try{
+    const store=new DiagramStore(root);await store.init();const old=sampleFor('flowchart');old.id='old';old.createdAt=1
+    const first=await store.create(old);assert.ok(first.createdAt!>1)
+    await new Promise(r=>setTimeout(r,8));const next=copy(old);next.id='new';const newest=await store.create(next)
+    const changed=copy(first.document);changed.createdAt=Date.now()+100000;changed.title='旧图编辑'
+    await store.update('old',1,changed);assert.equal((await store.get('old')).createdAt,first.createdAt)
+    assert.ok((await store.list()).findIndex(r=>r.document.id==='new')<(await store.list()).findIndex(r=>r.document.id==='old'))
+    assert.ok(newest.createdAt!>first.createdAt!)
+    const legacy=JSON.parse(await readFile(store.path('old'),'utf8'));delete legacy.createdAt;delete legacy.document.createdAt
+    await writeFile(store.path('old'),JSON.stringify(legacy));const dir=join(root,'artifacts','old','r1');await mkdir(dir,{recursive:true});await writeFile(join(dir,'diagram.project.json'),JSON.stringify({...legacy.document,updatedAt:1000}))
+    await store.init();const migrated=JSON.parse(await readFile(store.path('old'),'utf8'))
+    assert.equal(migrated.createdAt,1000);assert.equal(migrated.document.createdAt,1000);assert.equal(migrated.revision,legacy.revision);assert.equal(migrated.savedAt,legacy.savedAt);assert.deepEqual(migrated.document.content,legacy.document.content)
+  }finally{await rm(root,{recursive:true,force:true})}
+})
 
 test('共享文件存储：并发修改仅成功一次，非法增量修改不改变文件', async()=>{
   const root=await mkdtemp(join(tmpdir(),'flymind-store-'))
@@ -67,6 +84,7 @@ test('真实 STDIO MCP：发现工具、读取规则、生成五类图片、读�
       const document=sampleFor(kind);document.id='integration-'+kind
       const result=await call('create_diagram',{content:extractContent(document)}),data=result.structuredContent as any
       assert.equal(data.revision,1)
+      assert.equal(typeof data.createdAt,'number')
       const png=(result.content as any[]).find(c=>c.type==='image')
       assert.ok(png&&png.mimeType==='image/png')
       const info=await sharp(Buffer.from(png.data,'base64')).metadata()

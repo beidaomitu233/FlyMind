@@ -98,12 +98,13 @@ import { exportDocument } from '../services/exports'
 import DiagramCanvas from './DiagramCanvas.vue'
 import Icon from './Icon.vue'
 import CanvasMenu from './CanvasMenu.vue'
+import {byCreationNewest} from '../core/metadata'
 import {isLocked} from '../core/objects'
 import {writeFragment,readFragment,rememberFragment} from '../services/clipboard'
 import {parseFragment} from '../core/clipboard'
 import type {Point} from '../core/model'
 import './studio.css'
-const route=useRoute(),studio=useStudio(),doc=computed(()=>studio.current),files=computed(()=>studio.documents.filter(d=>d.title.toLowerCase().includes(search.value.toLowerCase())))
+const route=useRoute(),studio=useStudio(),doc=computed(()=>studio.current),files=computed(()=>studio.documents.filter(d=>d.title.toLowerCase().includes(search.value.toLowerCase())).sort(byCreationNewest))
 const context=ref<{screen:Point;point:Point}|null>(null),selectionLocked=computed(()=>studio.selectedNodeIds.some(id=>isLocked(doc.value,id))),selectionGrouped=computed(()=>Object.values(doc.value.presentation.objects?.groups||{}).some(m=>m.some(id=>studio.selectedNodeIds.includes(id))))
 const selectionCanGroup=computed(()=>studio.selectedNodeIds.length>1&&!Object.values(doc.value.presentation.objects?.groups||{}).some(m=>m.length===studio.selectedNodeIds.length&&m.every(id=>studio.selectedNodeIds.includes(id))))
 let pasteSequence=0
@@ -126,7 +127,7 @@ function edgeStyle(id:string,style:EdgeStyle){studio.commit(d=>{(d.presentation.
 function reconnect(id:string,endpoint:'source'|'target',nodeId:string,port:Port){studio.commit(d=>{const e=d.edges.find(e=>e.id===id)!;if(e[endpoint==='source'?'target':'source']===nodeId)throw new Error('连线两端不能为同一节点');e[endpoint]=nodeId;const s=(d.presentation.edges??={})[id]??={};s[endpoint==='source'?'sourcePort':'targetPort']=port;delete s.points})}
 function updateNode(key:keyof DiagramNode,value:unknown){if(!node.value)return;const id=node.value.id;studio.commit(d=>{const n=d.nodes.find(n=>n.id===id)!;Object.assign(n,{[key]:value});if(['laneId','phaseId','groupId','parentId','kind'].includes(key))delete d.presentation.positions[id]})}
 async function addContainer(type:'lane'|'phase'|'group'){studio.addContainer(type);await nextTick();canvas.value?.fit()}
-async function reLayout(){studio.autoLayout();await nextTick();canvas.value?.fit()}
+async function reLayout(){studio.autoLayout();await nextTick();canvas.value?.initialView()}
 function duplicate(){const d=JSON.parse(JSON.stringify(doc.value));d.title+=' · 副本';studio.addDocument(d)}
 function removeFile(id:string){const name=studio.documents.find(d=>d.id===id)!.title;if(window.confirm(`删除“${name}”？`))studio.deleteDocument(id)}
 function openImport(){dataMode.value='import';dataText.value='';dataError.value='';importType.value='json';dataOpen.value=true}

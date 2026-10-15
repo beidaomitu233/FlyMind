@@ -32,7 +32,7 @@ export function replaceContent(d:DiagramDocument,input:unknown):DiagramDocument 
   for(const n of c.nodes){const old=d.nodes.find(x=>x.id===n.id);if(old&&['laneId','phaseId','groupId','parentId'].some(k=>(old as any)[k]!== (n as any)[k]))delete rendering.positions[n.id]}
   const next=composeDocument({...c,id:d.id},rendering);assertLockedObjects(d,next,false);return next
 }
-export function projectDocument(d:DiagramDocument){return {schemaVersion:2 as const,content:extractContent(d),rendering:copy(d.presentation),updatedAt:d.updatedAt}}
+export function projectDocument(d:DiagramDocument){return {schemaVersion:2 as const,content:extractContent(d),rendering:copy(d.presentation),updatedAt:d.updatedAt,...(d.createdAt!==undefined?{createdAt:d.createdAt}:{})}}
 export function applyContentOperations(d:DiagramDocument,operations:unknown):DiagramDocument {
   if(!Array.isArray(operations)||!operations.length||operations.length>500)throw new Error('需要 1–500 个内容操作')
   const parameters:Record<string,string[]>={add_node:['node'],update_node:['id','changes'],remove_node:['id'],add_edge:['edge'],update_edge:['id','changes'],remove_edge:['id'],add_container:['collection','item','index'],update_container:['collection','id','changes'],remove_container:['collection','id','moveTo'],reorder_container:['collection','id','index'],set_title:['title']}

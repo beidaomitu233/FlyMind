@@ -39,10 +39,11 @@ export interface DiagramContent {
 export interface DiagramDocument extends DiagramContent {
   presentation: RenderingConfig
   updatedAt: number
+  createdAt?: number
 }
 export interface SceneNode extends Box { node: DiagramNode; color: string; fill: string; textColor: string }
 export interface SceneContainer extends Box { id: string; label: string; kind: 'title' | 'lane' | 'phase' | 'layer' | 'governance'; tone?: string; vertical?: boolean }
-export interface SceneEdge { edge: DiagramEdge; path: string; labelX: number; labelY: number; color: string; points?:Point[] }
+export interface SceneEdge { edge: DiagramEdge; path: string; labelX: number; labelY: number; color: string; points?:Point[];labelBox?:Box }
 export interface DiagramScene { width: number; height: number; nodes: SceneNode[]; edges: SceneEdge[]; containers: SceneContainer[] }
 export const kindLabels: Record<DiagramKind, string> = { swimlane: '泳道图', flowchart: '流程图', architecture: '架构图', mindmap: '思维导图', dataflow: '数据流架构图' }
 export function cardStyle(d:DiagramDocument,id:string):Required<CardStyle> { return {icon:'none',tone:'blue',variant:'card',...d.presentation.cards?.[id]} }
@@ -56,7 +57,8 @@ export function copy<T>(value:T):T { return JSON.parse(JSON.stringify(value)) }
 export function validateDocument(input: unknown): DiagramDocument {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('图形数据应为 JSON 对象')
   const source=copy(input) as any
-  const d=(source.schemaVersion===2&&source.content?{...source.content,presentation:source.rendering,updatedAt:source.updatedAt}:source) as DiagramDocument
+  const d=(source.schemaVersion===2&&source.content?{...source.content,presentation:source.rendering,updatedAt:source.updatedAt,...(source.createdAt!==undefined?{createdAt:source.createdAt}:{})}:source) as DiagramDocument
+  if(d.createdAt!==undefined&&(!Number.isFinite(d.createdAt)||d.createdAt!<=0))throw new Error('创建时间无效')
   if(d.schemaVersion!==1) throw new Error('schemaVersion 必须为 1')
   if(!Object.hasOwn(kindLabels,d.kind)) throw new Error('不支持的图形类型')
   if(typeof d.title!=='string'||!d.title.trim()||d.title.length>160) throw new Error('请输入 1–160 字的图形标题')

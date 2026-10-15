@@ -220,3 +220,21 @@ test('显式编辑链接加载未知图形，输入焦点不阻止导航且保�
     assert.equal(await shared.ensureDocument(incoming.id),true);assert.equal(calls.length,1)
   }finally{globalThis.fetch=originalFetch;Object.defineProperty(globalThis,'document',{configurable:true,value:{activeElement:null}})}
 })
+
+test('首次打开不把默认示例迁移为新图，活动旧存档在迁移完成后切换',async()=>{
+  const originalFetch=globalThis.fetch,storage=new Map<string,string>(),key='flymind-drawing-studio-v1',d=sampleFor('flowchart')
+  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(k:string)=>storage.get(k)||null,setItem:(k:string,v:string)=>storage.set(k,v)}})
+  Object.defineProperty(globalThis,'window',{configurable:true,value:{location:{hash:'#/',search:''}}})
+  const records=[{document:copy(d),revision:1,savedAt:1}];let posts=0
+  const context=()=>{const documents=ref([copy(d)]),activeId=ref(d.id);return {documents,activeId,current:computed(()=>documents.value.find(x=>x.id===activeId.value)!),storageError:ref(''),notify:()=>{},reset:()=>{}}}
+  globalThis.fetch=(async(_url:string,opts:any)=>{if(opts.method==='POST'){posts++;const document=JSON.parse(opts.body).document;const r={document,revision:1,savedAt:1};records.push(r);return Response.json(r,{status:201})}return Response.json(records)}) as any
+  try{
+    const fresh=context(),shared=sharedWorkspace(fresh)
+    const seed=copy(d);seed.nodes[0].label='默认示例与远端不同';storage.set(key,JSON.stringify({documents:[seed],activeId:d.id}))
+    await shared.initialize();assert.equal(posts,0);assert.equal(fresh.documents.value.length,1)
+    storage.delete(key+'-shared-migrated');storage.set(key,JSON.stringify({documents:[seed],activeId:d.id}))
+    const prior=context(),recover=sharedWorkspace(prior)
+    globalThis.fetch=(async(_url:string,opts:any)=>{assert.ok(prior.current.value,'迁移期间活动图形必须存在');if(opts.method==='POST'){const document=JSON.parse(opts.body).document,r={document,revision:1,savedAt:1};records.push(r);await Promise.resolve();assert.ok(prior.current.value);return Response.json(r,{status:201})}return Response.json(records)}) as any
+    await recover.initialize();assert.ok(prior.current.value.title.endsWith('本地存档'));assert.equal(prior.current.value.nodes[0].label,seed.nodes[0].label)
+  }finally{globalThis.fetch=originalFetch}
+})

@@ -96,6 +96,8 @@ edges/lanes/phases/groups 可省略，自动补空数组。思维导图通过 pa
 
 渲染器按阶段和连接关系自动推导步骤行。跨角色交接尽量排在同一行，同一角色步骤避免重叠。纵向是角色列、阶段行，横向在渲染配置里切换。拖动跨泳道/阶段会改变实际业务归属，普通拖动只改渲染位置。
 
+长文字自动撑开节点及对应泳道/步骤行；没有指定标准宽度时，会在有限范围内增宽，判断节点保持菱形比例。自动正交连线避开节点并分配通道，标签换行且避免覆盖节点/其他标签。保留完整业务文字，普通 AI 绘图仍不填写位置或排版参数。显式手动尺寸和路径优先，可能需要人工恢复自动布局后重新计算。
+
 ### 其他类型
 
 - 流程图：用 start/end 起止，task 处理，decision 判断。自动排序保留循环；回边不会把整条循环挤到同一行。
@@ -210,6 +212,8 @@ edges/lanes/phases/groups 可省略，自动补空数组。思维导图通过 pa
 | FMD | 网页思维导图兼容导出 |
 
 存储结构是 `{schemaVersion:2,content:{...},rendering:{...},updatedAt:...}`。外层存储记录有 revision/savedAt；内容本身没有时间或版本锁字段。旧版本平铺文档通过导入/存储读取兼容：order → rendering.ranks、edges.dashed → rendering.edges、groups.tone → rendering.groups。兼容入口与新内容工具严格校验分开。
+
+0.5.1 起，createdAt 是工作区及存储记录的独立元数据，MCP 元数据结果也返回该值，列表按其倒序排列。编辑和渲染不改变创建时间；新建、复制及导入生成新时间。旧图优先从 r1 工作区制品的创建/保存时间恢复，缺失时以文件历史时间估算并固定保存，不改变原 revision、savedAt 或业务内容。不要把 createdAt 写进 content 或 rendering。
 
 制品在 `data/artifacts/{diagramId}/r{revision}/`；JSON 内容为 diagram.json，完整工作区为 diagram.project.json。编辑链接仅本机使用。可在 Codex 回复中引用返回的 files.png 绝对路径展示图形，再给出编辑/下载链接。
 

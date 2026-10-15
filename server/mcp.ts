@@ -26,7 +26,7 @@ async function ensureRuntime(){
     throw new StoreError('本地编辑服务未能启动，请运行 npm run dev',503)
   })().catch(e=>{runtime=undefined;throw e});return runtime
 }
-function metadata(r:DiagramRecord){return {diagramId:r.document.id,title:r.document.title,kind:r.document.kind,revision:r.revision,editorUrl:editorUrl(r.document.id)}}
+function metadata(r:DiagramRecord){return {diagramId:r.document.id,title:r.document.title,kind:r.document.kind,revision:r.revision,createdAt:r.createdAt,editorUrl:editorUrl(r.document.id)}}
 async function result(r:DiagramRecord,preview=true){
   await ensureRuntime()
   if(!preview){const data={...metadata(r),content:extractContent(r.document)};return {content:[{type:'text' as const,text:JSON.stringify(data)}],structuredContent:data}}

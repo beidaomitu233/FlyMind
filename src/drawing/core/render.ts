@@ -2,6 +2,7 @@ import { cardStyle, palette, type DiagramDocument, type DiagramScene, type Scene
 import { nodePreset, edgePreset } from './render-config'
 import { cardMetrics } from './dataflow'
 import { wrapText as wrap } from './text'
+import {edgeLabelBox} from './routing'
 import { pathPoints } from './geometry'
 import { orderedNodes,isLocked } from './objects'
 export const xml=(v:unknown)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]!))
@@ -35,7 +36,7 @@ export function renderScene(scene:DiagramScene,d:DiagramDocument,selectedId:stri
   }
   for(const e of scene.edges){const selected=isSelected(e.edge.id),style=d.presentation.edges?.[e.edge.id],arrow=style?.arrow||edgePreset(d).arrow;output+=`<path data-edge-id="${xml(e.edge.id)}" d="${e.path}" fill="none" stroke="transparent" stroke-width="14" style="cursor:pointer"/><path data-edge-id="${xml(e.edge.id)}" d="${e.path}" fill="none" stroke="${selected?'#7166dc':e.color}" stroke-width="${selected?3:style?.width||edgePreset(d).width}" stroke-linejoin="round" stroke-linecap="round" ${(style?.dashed??edgePreset(d).dashed)?'stroke-dasharray="7 5"':''} ${arrow!=='none'?`marker-end="url(#arrow-${e.color.slice(1)})"`:''} ${arrow==='both'?`marker-start="url(#arrow-${e.color.slice(1)})"`:''}/>`}
   for(const node of orderedNodes(d)){const n=scene.nodes.find(n=>n.node.id===node.id);if(n)output+=renderNode(n,d,isSelected(n.node.id))}
-  for(const e of scene.edges)if(e.edge.label){const size=d.kind==='dataflow'?22:13,height=size+10,width=Math.max(22,e.edge.label.length*size+12);output+=`<g data-edge-id="${xml(e.edge.id)}" data-label-id="${xml(e.edge.id)}" style="cursor:move"><rect x="${e.labelX-width/2}" y="${e.labelY-height/2}" width="${width}" height="${height}" rx="4" fill="#fff"/>`+text(e.edge.label,e.labelX,e.labelY,size,e.color,999,d.kind==='dataflow')+'</g>'}
+  for(const e of scene.edges)if(e.edge.label){const size=d.kind==='dataflow'?22:13,metrics=edgeLabelBox(e.edge.label,size),box=e.labelBox||{x:e.labelX-metrics.width/2,y:e.labelY-metrics.height/2,width:metrics.width,height:metrics.height};output+=`<g data-edge-id="${xml(e.edge.id)}" data-label-id="${xml(e.edge.id)}" style="cursor:move"><rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="4" fill="#fff"/>`+text(e.edge.label,e.labelX,e.labelY,size,e.color,14,d.kind==='dataflow')+'</g>'}
   return output+'</svg>'
 }
 function renderNode(n:SceneNode,d:DiagramDocument,selected:boolean):string {
@@ -55,7 +56,7 @@ function renderNode(n:SceneNode,d:DiagramDocument,selected:boolean):string {
       if(node.badge){out+=`<rect x="${x+w-46}" y="${y+10}" width="34" height="20" rx="10" fill="${stroke}"/>`+text(node.badge,x+w-29,y+20,10,'#fff')}
       ;(node.items||[]).forEach((item,i)=>{const ix=x+pad+(i%cols)*(cellW+gap),iy=y+44+Math.floor(i/cols)*28;out+=`<rect x="${ix}" y="${iy}" width="${cellW}" height="22" rx="3" fill="#fff" stroke="${stroke}" stroke-opacity=".22"/>`+text(item,ix+7,iy+11,Math.min(12,cellW/(item.length||1)),textColor,999,false,'start')})
     }
-  }else {const size=fontSize||(d.kind==='mindmap'?16:17);out+=text(node.label,x+w/2,y+h/2,size,textColor,shape==='diamond'?(w/2-8)/size:(w-24)/size,node.kind==='topic'&&!node.parentId)}
+  }else {const size=fontSize||(d.kind==='mindmap'?16:17);out+=text(node.label,x+w/2,y+h/2,size,textColor,(shape==='diamond'?w/2-12:shape==='ellipse'?w*.72-16:w-32)/size,node.kind==='topic'&&!node.parentId)}
   return out+'</g>'
 }
 
@@ -103,7 +104,10 @@ export function renderDrawio(scene:DiagramScene,d:DiagramDocument):string {
     const a=scene.nodes.find(n=>n.node.id===e.edge.source)!,b=scene.nodes.find(n=>n.node.id===e.edge.target)!
     const first=points[0],last=points.at(-1),ports=first&&last?`exitX=${(first.x-a.x)/a.width};exitY=${(first.y-a.y)/a.height};entryX=${(last.x-b.x)/b.width};entryY=${(last.y-b.y)/b.height};`:''
     const arrow=style?.arrow||edgePreset(d).arrow
-    cells.push(`<mxCell id="e-${xml(e.edge.id)}" value="${xml(e.edge.label||'')}" style="${(style?.route||edgePreset(d).route)==='curved'?'curved=1;':points.length?'':'edgeStyle=orthogonalEdgeStyle;'}${ports}rounded=1;html=0;endArrow=${arrow==='none'?'none':'block'};startArrow=${arrow==='both'?'block':'none'};strokeWidth=${style?.width||edgePreset(d).width};strokeColor=${e.color};dashed=${(style?.dashed??edgePreset(d).dashed)?1:0};" edge="1" parent="1" source="n-${xml(e.edge.source)}" target="n-${xml(e.edge.target)}"><mxGeometry relative="1" as="geometry">${points.length>2?`<Array as="points">${points.slice(1,-1).map(p=>`<mxPoint x="${p.x}" y="${p.y}"/>`).join('')}</Array>`:''}</mxGeometry></mxCell>`)
+    let remaining=points.slice(1).reduce((sum,p,i)=>sum+Math.hypot(p.x-points[i].x,p.y-points[i].y),0)/2,midpoint=points[0]||{x:0,y:0}
+    for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],distance=Math.hypot(b.x-a.x,b.y-a.y);if(remaining<=distance){const t=distance?remaining/distance:0;midpoint={x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};break}remaining-=distance}
+    const labelStyle=e.labelBox?`whiteSpace=wrap;labelWidth=${e.labelBox.width};fontSize=13;labelBackgroundColor=#ffffff;`:'',labelOffset=e.labelBox?`<mxPoint x="${e.labelX-midpoint.x}" y="${e.labelY-midpoint.y}" as="offset"/>`:''
+    cells.push(`<mxCell id="e-${xml(e.edge.id)}" value="${xml(e.edge.label||'')}" style="${(style?.route||edgePreset(d).route)==='curved'?'curved=1;':points.length?'':'edgeStyle=orthogonalEdgeStyle;'}${ports}${labelStyle}rounded=1;html=0;endArrow=${arrow==='none'?'none':'block'};startArrow=${arrow==='both'?'block':'none'};strokeWidth=${style?.width||edgePreset(d).width};strokeColor=${e.color};dashed=${(style?.dashed??edgePreset(d).dashed)?1:0};" edge="1" parent="1" source="n-${xml(e.edge.source)}" target="n-${xml(e.edge.target)}"><mxGeometry relative="1" as="geometry">${labelOffset}${points.length>2?`<Array as="points">${points.slice(1,-1).map(p=>`<mxPoint x="${p.x}" y="${p.y}"/>`).join('')}</Array>`:''}</mxGeometry></mxCell>`)
   })
   return `<?xml version="1.0" encoding="UTF-8"?><mxfile host="FlyMind"><diagram name="${xml(d.title)}"><mxGraphModel pageWidth="${scene.width}" pageHeight="${scene.height}"><root>${cells.join('')}</root></mxGraphModel></diagram></mxfile>`
 }

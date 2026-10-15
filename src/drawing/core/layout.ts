@@ -1,3 +1,5 @@
+import {layoutSwimlane} from './swimlane-layout'
+import {orthogonalRouter} from './routing'
 import { mindPositions } from './mind-layout'
 import { palette, type DiagramDocument, type DiagramScene, type SceneNode, type DiagramNode, type DiagramEdge } from './model'
 import { layoutDataflow, routeDataflow } from './dataflow'
@@ -6,33 +8,13 @@ import { nodePreset, nodeDimensions, edgePreset, groupTone } from './render-conf
 import { nearestPort, pathPoints, polyline, portPoint } from './geometry'
 
 export function layoutDocument(d:DiagramDocument):DiagramScene {
-  const p=palette[d.presentation.theme], scene:DiagramScene=d.kind==='dataflow'?layoutDataflow(d,automaticRanks(d)):{width:1200,height:800,nodes:[],edges:[],containers:[]}
+  const p=palette[d.presentation.theme], scene:DiagramScene=d.kind==='dataflow'?layoutDataflow(d,automaticRanks(d)):d.kind==='swimlane'?layoutSwimlane(d):{width:1200,height:800,nodes:[],edges:[],containers:[]}
   const add=(node:DiagramNode,x:number,y:number,width=168,height=68,color=p.brand,fill='#ffffff',textColor='#32495d')=>{
     const override=d.presentation.positions[node.id]||{}
     scene.nodes.push({node,x,y,width,height,color,fill,textColor,...override})
   }
-  if(d.kind==='dataflow'){
-    // Dedicated card layout above; share the scene and edge pipeline below.
-  }else if(d.kind==='swimlane'){
-    const phases=d.phases.length?d.phases:[{id:'',label:'流程'}]
-    const vertical=d.presentation.orientation==='vertical', presets=d.nodes.map(n=>nodeDimensions(d,n)),laneSize=Math.max(240,...presets.map(p=>p.width+72)),laneHeight=Math.max(180,...presets.map(p=>p.height+72))
-    const step=vertical?Math.max(116,...presets.map(p=>p.height+24)):Math.max(224,...presets.map(p=>p.width+56))
-    const phaseRanks=new Map(phases.map(ph=>[ph.id,automaticRanks(d,d.nodes.filter(n=>(n.phaseId||'')===ph.id),true)]))
-    const sizes=phases.map(ph=>Math.max(170,(Math.max(0,...phaseRanks.get(ph.id)!.values())+1)*step+44))
-    const sum=sizes.reduce((a,b)=>a+b,0)
-    scene.width=vertical?80+72+d.lanes.length*laneSize:80+120+sum
-    scene.height=vertical?144+sum+40:144+d.lanes.length*laneHeight+40
-    scene.containers.push({id:'title',label:d.title,kind:'title',x:40,y:24,width:scene.width-80,height:64})
-    d.lanes.forEach((lane,i)=>scene.containers.push({id:lane.id,label:lane.label,kind:'lane',vertical,x:vertical?112+i*laneSize:40,y:vertical?88:144+i*laneHeight,width:vertical?laneSize:scene.width-80,height:vertical?56+sum:laneHeight}))
-    let offset=0
-    phases.forEach((ph,i)=>{
-      scene.containers.push({id:ph.id,label:ph.label,kind:'phase',vertical,x:vertical?40:160+offset,y:vertical?144+offset:88,width:vertical?72:sizes[i],height:vertical?sizes[i]:56})
-      d.nodes.filter(n=>(n.phaseId||'')===ph.id).forEach(n=>{
-        const lane=Math.max(0,d.lanes.findIndex(l=>l.id===n.laneId)), decision=n.kind==='decision',{width:w,height:h}=nodeDimensions(d,n),rank=phaseRanks.get(ph.id)!.get(n.id)??0
-        add(n,vertical?112+lane*laneSize+(laneSize-w)/2:160+offset+28+rank*step,vertical?144+offset+28+rank*step:144+lane*laneHeight+(laneHeight-h)/2,w,h,decision?p.accent:p.brand,decision?p.accentSoft:'#fff')
-      })
-      offset+=sizes[i]
-    })
+  if(d.kind==='dataflow'||d.kind==='swimlane'){
+    // Specialized layouts share node appearance, routing and export below.
   }else if(d.kind==='architecture'){
     const layers=d.groups.filter(g=>g.kind!=='governance'), governance=d.groups.find(g=>g.kind==='governance')
     const columnCount=(g:typeof layers[number])=>Math.min(d.nodes.filter(n=>n.groupId===g.id).length||1,d.presentation.groups?.[g.id]?.columns||(d.nodes.filter(n=>n.groupId===g.id).length>6?3:d.nodes.filter(n=>n.groupId===g.id).length||1))
@@ -73,12 +55,14 @@ export function layoutDocument(d:DiagramDocument):DiagramScene {
   for(const n of scene.nodes){if(n.node.color)n.color=n.node.color;const style={...d.presentation.nodeDefaults?.[n.node.kind],...d.presentation.styles?.[n.node.id]};if(style){n.fill=style.fill||n.fill;n.color=style.stroke||n.color;n.textColor=style.textColor||n.textColor}}
   if(d.kind==='mindmap'){scene.width=Math.max(...scene.nodes.map(n=>n.x+n.width))+64;scene.height=Math.max(...scene.nodes.map(n=>n.y+n.height))+64}
   if(d.kind==='flowchart'){scene.width=Math.max(...scene.nodes.map(n=>n.x+n.width))+80;scene.height=Math.max(...scene.nodes.map(n=>n.y+n.height))+80}
-  const edges:DiagramEdge[]=d.kind==='mindmap'?[...d.nodes.filter(n=>n.parentId).map(n=>({id:`parent_${n.id}`,source:n.parentId!,target:n.id})),...d.edges]:d.edges
+  const edges:DiagramEdge[]=d.kind==='mindmap'?[...d.nodes.filter(n=>n.parentId).map(n=>({id:`parent_${n.id}`,source:n.parentId!,target:n.id})),...d.edges]:[...d.edges]
+  const routing=['swimlane','flowchart'].includes(d.kind)?orthogonalRouter(d,scene):undefined
+  if(routing)edges.sort((a,b)=>Number(a.kind==='feedback')-Number(b.kind==='feedback'))
   let feedbackIndex=0
   for(const edge of edges){const a=scene.nodes.find(n=>n.node.id===edge.source),b=scene.nodes.find(n=>n.node.id===edge.target);if(!a||!b)continue
     const defaults=edgePreset(d),style=d.presentation.edges?.[edge.id],routeType=style?.route||defaults.route,color=defaults.color||(d.kind==='mindmap'?b.color:d.kind==='dataflow'?a.color:p.edge)
     const cardRoute=d.kind==='dataflow'&&routeType==='orthogonal'?routeDataflow(a,b,edge,scene.nodes,edge.kind==='feedback'?feedbackIndex++:0):undefined
-    let route=cardRoute||routeEdge(a,b,routeType==='curved',d.presentation.orientation==='vertical',edge.source+edge.target,scene.nodes)
+    let route=cardRoute||(routing&&routeType==='orthogonal'&&style?.points===undefined?routing.route(a,b,edge,style?.sourcePort,style?.targetPort):undefined)||routeEdge(a,b,routeType==='curved',d.presentation.orientation==='vertical',edge.source+edge.target,scene.nodes)
     if(routeType==='straight'){const start=portPoint(a,style?.sourcePort||nearestPort(a,{x:b.x+b.width/2,y:b.y+b.height/2})),end=portPoint(b,style?.targetPort||nearestPort(b,{x:a.x+a.width/2,y:a.y+a.height/2}));route={path:polyline([start,end]),labelX:(start.x+end.x)/2,labelY:(start.y+end.y)/2-12}}
     const automatic=pathPoints(route.path)
     if(style?.points||style?.sourcePort||style?.targetPort){
@@ -89,7 +73,11 @@ export function layoutDocument(d:DiagramDocument):DiagramScene {
     }
     if(style?.labelPosition)route={...route,labelX:style.labelPosition.x,labelY:style.labelPosition.y}
     if(cardRoute)scene.height=Math.max(scene.height,cardRoute.extentY+32)
-    scene.edges.push({edge,...route,color:style?.color||color,points:pathPoints(route.path)})
+    const rendered={edge,...route,color:style?.color||color,points:pathPoints(route.path)}
+    routing?.finish(rendered,style?.labelPosition)
+    for(const point of rendered.points){scene.width=Math.max(scene.width,point.x+40);scene.height=Math.max(scene.height,point.y+40)}
+    if('labelBox' in rendered){const b=rendered.labelBox as import('./model').Box;scene.width=Math.max(scene.width,b.x+b.width+32);scene.height=Math.max(scene.height,b.y+b.height+32)}
+    scene.edges.push(rendered)
   }
   return scene
 }

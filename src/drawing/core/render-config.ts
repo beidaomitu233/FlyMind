@@ -1,5 +1,5 @@
 import type { Box, CardStyle, DiagramDocument, DiagramNode, EdgeStyle, NodeKind, NodeStyle, ThemeName } from './model'
-import { wrapText } from './text'
+import { wrapText,textUnits } from './text'
 
 export type NodeShape='rectangle'|'rounded'|'ellipse'|'diamond'
 export type LineRoute='orthogonal'|'straight'|'curved'
@@ -37,9 +37,15 @@ export function nodePreset(d:DiagramDocument,kind:NodeKind):NodePreset {
 }
 export function nodeDimensions(d:DiagramDocument,n:DiagramNode){
   const preset=nodePreset(d,n.kind),font=d.presentation.styles?.[n.id]?.fontSize||preset.fontSize,shape=d.presentation.styles?.[n.id]?.shape||preset.shape
-  const available=shape==='diamond'?preset.width/2-8:preset.width-32
+  let width=preset.width
+  if(['swimlane','flowchart'].includes(d.kind)&&d.presentation.nodeDefaults?.[n.kind]?.width===undefined){
+    const longest=Math.max(...n.label.split('\n').map(textUnits)),ideal=shape==='diamond'?Math.min(10,longest)*font*2+32:Math.min(15,longest)*font+40
+    width=Math.max(width,Math.ceil(Math.min(shape==='diamond'?304:320,ideal)/8)*8)
+  }
+  const available=shape==='diamond'?width/2-12:shape==='ellipse'?width*.72-16:width-32
   const lines=wrapText(n.label,available/font).length
-  return {...preset,height:Math.max(preset.height,Math.ceil(lines*font*1.45+(shape==='diamond'?44:28)))}
+  const textHeight=lines*font*1.45,height=shape==='diamond'?textHeight*2+24:shape==='ellipse'?textHeight*1.5+28:textHeight+32
+  return {...preset,width,height:Math.max(preset.height,shape==='diamond'?Math.ceil(width*.6):0,Math.ceil(height))}
 }
 export function edgePreset(d:DiagramDocument){return {route:d.kind==='mindmap'?'curved' as const:'orthogonal' as const,width:d.kind==='dataflow'?2.5:1.7,arrow:d.kind==='mindmap'?'none' as const:'end' as const,dashed:false,...d.presentation.edgeDefaults}}
 export function groupTone(d:DiagramDocument,id:string){return d.presentation.groups?.[id]?.tone||'blue'}
