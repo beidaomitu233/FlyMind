@@ -1,5 +1,7 @@
 # FlyMind draw.io 技术设计
 
+> 2026-10-18 发布增补 R19：npm 制品包含预编译服务和共享 drawing JS、构建后的原工作台、CLI、标准/guide 和第三方许可。bin 提供 mcp（默认）、setup、doctor、studio。CLI 显式选择当前原生模式，数据默认存 LOCALAPPDATA/FlyMind/data，凭据存 runtime，固定资源缓存独立于安装目录；FLYMIND_DATA_DIR、FLYMIND_PRIVATE_RUNTIME_DIR、FLYMIND_RESOURCES_DIR 可覆盖。先 setup 准备固定版本资源，再注册 MCP，避免首次下载阻塞客户端握手。STDIO stdout 仅协议，安装进度/诊断走 stderr。Registry 登记名 io.github.beidaomitu233/flymind，元数据不承载安装包；npm 发布后再登记。Windows 为本批验证平台。原源码入口兼容，既有用户根目录和模式不自动切换。
+
 日期：2026-10-16。本文同时记录目标设计与已验收的原生pilot实现边界；D06已在隔离副本通过迁移/离线恢复，默认入口和用户数据尚未切换。需求见 [PRD](PRD.md)，任务与证据见 [实施计划](IMPLEMENTATION_PLAN.md)。
 
 ## 1 技术基线与复用边界

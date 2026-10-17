@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3'
+import {createRequire} from 'node:module'
 import {createHash,randomUUID} from 'node:crypto'
 import {mkdir,readFile,readdir,lstat,realpath,open,rename,utimes,stat} from 'node:fs/promises'
 import {resolve,join,relative,sep,isAbsolute,dirname} from 'node:path'
@@ -52,14 +53,14 @@ export function readDatabaseState(path:string){const db=new Database(path,{reado
 export async function workspaceState(root:string){return canonicalHash({database:readDatabaseState(join(root,'flymind.sqlite')).stateHash,artifacts:await inventory(join(root,'artifacts'))})}
 export async function supplyFingerprint(projectRoot?:string){
  const assets=resolveRuntimeAssets(projectRoot);await checkRuntimeAssets(assets)
- const paths={drawioSupply:join(assets.projectRoot,'resources/drawio/supply.json'),drawioApp:join(assets.drawioRoot,'js/app.min.js'),fontSupply:join(assets.fontRoot,'supply.json'),font:join(assets.fontRoot,'NotoSansCJKsc-Regular.otf'),fontLicense:join(assets.fontRoot,'OFL.txt'),browser:assets.browserExecutable}
+ const paths={drawioSupply:join(dirname(assets.drawioRoot),'supply.json'),drawioApp:join(assets.drawioRoot,'js/app.min.js'),fontSupply:join(assets.fontRoot,'supply.json'),font:join(assets.fontRoot,'NotoSansCJKsc-Regular.otf'),fontLicense:join(assets.fontRoot,'OFL.txt'),browser:assets.browserExecutable}
  const fingerprints=Object.fromEntries(await Promise.all(Object.entries(paths).map(async([name,path])=>[name,hash(await readFile(path))]))) as Record<string,string>
  const declared=JSON.parse(await readFile(paths.drawioSupply,'utf8')),vendor=await inventory(assets.drawioRoot)
  if(declared.version!=='31.5.3'||declared.archiveSha256!=='6c4ab25145c3479bf0097e4fccd20c602968615986bc999af8a214719fabd3f4'||!Array.isArray(declared.files)||declared.files.length!==vendor.length)throw new StoreError('draw.io供应清单无效',409,undefined,'BACKUP_SUPPLY_MISMATCH')
  const expected=new Map<string,any>(declared.files.map((f:any)=>[f.path,f]));for(const actual of vendor){const file=expected.get(actual.path);if(!file||file.bytes!==actual.bytes||file.sha256!==actual.sha256)throw new StoreError('draw.io供应文件与固定清单不符',409,undefined,'BACKUP_SUPPLY_MISMATCH')}
  const fingerprintTree=(files:BackupFile[])=>canonicalHash(files.map(({path,bytes,sha256})=>({path,bytes,sha256})))
  fingerprints.vendorTree=fingerprintTree(vendor);fingerprints.browserTree=fingerprintTree(await inventory(dirname(assets.browserExecutable)))
- fingerprints.playwrightRegistry=hash(await readFile(join(assets.projectRoot,'node_modules/playwright-core/browsers.json')))
+ fingerprints.playwrightRegistry=hash(await readFile(join(dirname(createRequire(import.meta.url).resolve('playwright-core/package.json')),'browsers.json')))
  return fingerprints
 }
 function jobRow(row:any):StoredNativeExport{return {id:row.id,diagramId:row.diagram_id,dataRootId:row.data_root_id,revision:row.revision,requestId:row.request_id,requestHash:row.request_hash,snapshot:JSON.parse(row.snapshot),snapshotSha256:row.snapshot_hash,options:JSON.parse(row.options),status:row.status,createdAt:row.created_at,updatedAt:row.updated_at,attempts:row.attempts,leaseToken:row.lease_token,manifest:row.manifest?JSON.parse(row.manifest):undefined}}

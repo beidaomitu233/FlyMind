@@ -7,10 +7,12 @@ import {drawioStaticRouter} from '../native-routes'
 import {DRAWIO_VERSION} from '../../src/drawing/engine/constants'
 import {RUNTIME_FONT_FILE,RUNTIME_FONT_SHA256,RUNTIME_BROWSER_REVISION} from '../../src/drawing/engine/runtime-assets'
 import {NativeRenderError,type RuntimeAssetPaths} from './types'
+import {PACKAGE_ROOT} from '../package-paths'
 export type {RuntimeAssetPaths} from './types'
-export function resolveRuntimeAssets(projectRoot=resolve(dirname(fileURLToPath(import.meta.url)),'../..')):RuntimeAssetPaths{
+export function resolveRuntimeAssets(projectRoot=PACKAGE_ROOT):RuntimeAssetPaths{
+ const resources=process.env.FLYMIND_RESOURCES_DIR?resolve(process.env.FLYMIND_RESOURCES_DIR):resolve(projectRoot,'resources')
  const shell=process.platform==='win32'?'chrome-headless-shell-win64/chrome-headless-shell.exe':process.platform==='linux'?'chrome-headless-shell-linux64/chrome-headless-shell':`chrome-headless-shell-mac-${process.arch==='arm64'?'arm64':'x64'}/chrome-headless-shell`
- return {projectRoot,drawioRoot:resolve(projectRoot,'resources/drawio/vendor'),fontRoot:resolve(projectRoot,'resources/fonts'),browserExecutable:resolve(projectRoot,`resources/browsers/chromium_headless_shell-${RUNTIME_BROWSER_REVISION}`,shell)}
+ return {projectRoot,drawioRoot:resolve(resources,'drawio/vendor'),fontRoot:resolve(resources,'fonts'),browserExecutable:resolve(resources,`browsers/chromium_headless_shell-${RUNTIME_BROWSER_REVISION}`,shell)}
 }
 export async function checkRuntimeAssets(assets=resolveRuntimeAssets()){
  for(const [code,path] of [['DRAWIO_MISSING',resolve(assets.drawioRoot,'js/app.min.js')],['FONT_MISSING',resolve(assets.fontRoot,RUNTIME_FONT_FILE)],['FONT_LICENSE_MISSING',resolve(assets.fontRoot,'OFL.txt')],['BROWSER_MISSING',assets.browserExecutable]] as const){try{if(!(await stat(path)).isFile())throw Error()}catch{throw new NativeRenderError(code,`${path}；运行 node scripts/setup-drawio-runtime.mjs`)}}

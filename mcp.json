@@ -4,7 +4,10 @@
     "flymind": {
       "type": "stdio",
       "command": "node",
-      "args": ["${PLUGIN_ROOT}/server/start.mjs"],
+      "args": [
+        "${PLUGIN_ROOT}/bin/flymind.mjs",
+        "mcp"
+      ],
       "cwd": "${PLUGIN_ROOT}"
     }
   }

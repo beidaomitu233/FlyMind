@@ -6,11 +6,12 @@ import {VERSION} from '../version'
 import {DRAWIO_VERSION,DRAWIO_ADAPTER_VERSION,DEFAULT_SWIMLANE_PROFILE} from '../../src/drawing/engine/constants'
 import {RuntimeInstanceError,type EnsureNativeRuntimeOptions,type NativeRuntimeCapabilities} from './types'
 import {nativeDocumentCapabilities} from '../../src/drawing/services/native-capabilities'
+import {PACKAGE_ROOT} from '../package-paths'
 export const API_VERSION=1 as const
 export const runtimeCapabilities=():NativeRuntimeCapabilities=>{const c=nativeDocumentCapabilities();return {apiVersion:1,drawingProjectVersion:3,drawioVersion:DRAWIO_VERSION,adapterVersion:DRAWIO_ADAPTER_VERSION,profile:{...DEFAULT_SWIMLANE_PROFILE},supportedKinds:c.supportedKinds,profiles:c.profiles,configureRendering:c.configureRendering,imports:c.imports,nativePilot:true,nativeDocumentWrites:true,mixedWorkspace:true,nativeExports:true}}
 export {VERSION}
 export function runtimeConfiguration(options:EnsureNativeRuntimeOptions={}){
- const env={...process.env,...options.env},projectRoot=resolve(options.projectRoot??dirname(fileURLToPath(new URL('../../package.json',import.meta.url))))
+ const env={...process.env,...options.env},projectRoot=resolve(options.projectRoot??PACKAGE_ROOT)
  if(env.FLYMIND_NATIVE_PILOT!=='1')throw new RuntimeInstanceError('NATIVE_PILOT_DISABLED','原生Runtime仅在显式pilot模式启用')
  const dataRoot=options.dataRoot??env.FLYMIND_DATA_DIR
  if(!dataRoot?.trim())throw new RuntimeInstanceError('DATA_ROOT_REQUIRED','原生Runtime需要显式隔离数据根')

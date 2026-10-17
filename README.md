@@ -1,12 +1,20 @@
 # FlyMind Studio 1.0.0
 
-本地 AI 绘图与网页编辑工作台。AI 编写纯业务内容，FlyMind 通过 MCP 保存并使用固定 draw.io 引擎生成图片；用户在原工作台界面继续编辑，AI 再读取最新修订修改。不需要模型 API Key。
+本地 AI 绘图与网页编辑工作台。AI 编写纯业务内容，FlyMind 通过 MCP 保存并使用固定 draw.io 引擎生成图片；用户在原工作台界面继续编辑，AI 再读取最新修订修改。FlyMind 本身不要求额外模型 API Key；AI 对话由用户自己的 Codex 或其他客户端提供。
 
-本次发布：**v1.0.0 · 2026-10-18**。draw.io 版保留原产品侧栏、标题、属性、新建与导出交互，新增明暗主题、画布分组、显式自动排版和横纵切换。原生模式仍需显式开启并使用独立数据目录；发布版本号不代表 D07/D08/G2 全部路线已验收。
+本次发布：**v1.0.0 · 2026-10-18**。draw.io 版保留原产品侧栏、标题、属性、新建与导出交互，新增明暗主题、画布分组、显式自动排版和横纵切换。源码兼容入口的原生模式仍需显式开启并使用独立数据目录；CLI 默认使用用户持久目录。发布版本号不代表 D07/D08/G2 全部路线已验收。
 
 [文档中心](docs/README.md) · [实施计划与验收边界](docs/IMPLEMENTATION_PLAN.md) · [内容标准](docs/DRAWING_STANDARD.md) · [Codex 配置](docs/CODEX_SETUP.md) · [变更记录](CHANGELOG.md)
 
-## 新安装：启动当前 draw.io 工作台
+## 安装与使用
+
+**[下载 Windows 安装包](https://github.com/beidaomitu233/FlyMind/releases/download/mcp-v1.0.0/FlyMind-MCP-1.0.0-Windows.zip)** · [GitHub Release](https://github.com/beidaomitu233/FlyMind/releases/tag/mcp-v1.0.0) · **[安装与使用](docs/INSTALL_AND_USE.md)**
+
+下载 ZIP → 解压 → `npm install -g ./flymind-drawing-studio-1.0.0.tgz` → `flymind setup` → `flymind doctor` → 注册 Codex。无需 clone 或构建源码；首次安装依赖与资源准备需要联网。
+
+本轮下载标签为 **mcp-v1.0.0**，应用版本仍为 **1.0.0**，保留原 `v1.0.0` 标签。**npm 在线包和 MCP Registry 暂未发布**，请勿用 npx 请求未上线包。维护者见 [发布流程](docs/PUBLISHING.md)。主项目 [MIT](LICENSE)，第三方资源和依赖保留各自许可；目前支持 Windows。
+
+## 源码安装：启动当前 draw.io 工作台
 
 建议使用 Windows 与 Node.js 22.12+；项目最低要求为 Node.js 20.19+（20 系列）或 22.12+。在克隆后的项目根目录执行：
 
@@ -22,7 +30,7 @@ $env:FLYMIND_PORT = '5179'
 npm start
 ```
 
-打开 **http://127.0.0.1:5179/#/native**。新目录第一次启动为空工作区，可从侧栏加号新建五类图形。以上命令不会复制或迁移已有 `data/`，请勿将原生数据目录指向仓库 `data/` 或其子目录；程序会在初始化前拒绝该路径。
+打开 **http://127.0.0.1:5179/#/native**。新目录第一次启动显示五个旧版只读示例，可通过 AI 或侧栏加号创建新的可编辑图形。以上命令不会复制或迁移已有 `data/`，请勿将原生数据目录指向仓库 `data/` 或其子目录；程序会在初始化前拒绝该路径。
 
 `setup:runtime` 下载并校验固定 draw.io 31.5.3、Chromium headless shell 151（Playwright 1.62.1 对应 revision 1234）及 Noto Sans CJK SC 字体，需首次联网，资源放在本项目 `resources/`。不依赖系统 Chrome 或上级项目资源。供应验证通过后，编辑与后台导出使用本机资源。
 
@@ -45,7 +53,7 @@ npm start
 
 ## 连接 MCP
 
-MCP 使用 STDIO；HTTP 端口是工作台与制品服务，不是 HTTP MCP 地址。请按 [Codex 配置](docs/CODEX_SETUP.md) 显式配置原生环境变量。`npm run setup:codex` 只注册命令入口，**不会替你写入原生模式与数据目录**，不能单靠该脚本切换新版。
+MCP 使用 STDIO；HTTP 端口是工作台与制品服务，不是 HTTP MCP 地址。npm/tgz 用户先按 [安装与使用](docs/INSTALL_AND_USE.md) 准备资源并注册 CLI；以下源码兼容入口需显式配置原生环境变量。源码构建后先执行 `node bin/flymind.mjs setup` 与 `doctor`，再运行 `npm run setup:codex`，会注册 CLI 默认原生用户目录入口；以下 `server/start.mjs` 配置仅用于显式 pilot 的兼容启动。
 
 其他支持本地 STDIO 的客户端可使用以下配置，替换为自己的绝对路径，并与网页使用同一目录/端口：
 
@@ -119,7 +127,7 @@ npm run build
 npm run check:runtime
 ```
 
-`npm run render`、`npm run examples` 仍为保留的旧独立渲染脚本，不是新版后台 draw.io 导出的验收入口。真实原生证据见 [文档中心](docs/README.md)内各验证报告。当前仅发布本地源码版，不是 npm 包、公开远程 MCP 或插件商店上架。
+`npm run render`、`npm run examples` 仍为保留的旧独立渲染脚本，不是新版后台 draw.io 导出的验收入口。真实原生证据见 [文档中心](docs/README.md)内各验证报告。当前 npm 与 Registry 正在准备，尚未完成公开发布；不是公开远程 MCP 服务，也未上架插件商店。
 
 | 现象 | 检查 |
 |---|---|
@@ -129,4 +137,4 @@ npm run check:runtime
 | MCP 找不到工具 | 核对绝对路径与 env，重新加载 MCP 配置；旧进程不会自动使用新源码 |
 | 保存冲突 | 保留草稿，读取远端最新修订再合并；不能自动覆盖或复活已删除 ID |
 
-D01–D06 与 G1、后续若干 UI/布局/外观小批有各自验收记录；**D07/D08/D09/G2 不因本次 v1.0.0 标签自动变为整体验收通过**。详见 [实施计划](docs/IMPLEMENTATION_PLAN.md)与[台账](docs/DEVELOPMENT_TRACKER.md)。仓库自身应用许可证仍未单独声明；draw.io、浏览器、字体及其他依赖各保留自己的许可文件，不据此宣称整个应用为 MIT。
+D01–D06 与 G1、后续若干 UI/布局/外观小批有各自验收记录；**D07/D08/D09/G2 不因本次 v1.0.0 标签自动变为整体验收通过**。详见 [实施计划](docs/IMPLEMENTATION_PLAN.md)与[台账](docs/DEVELOPMENT_TRACKER.md)。主项目采用 [MIT](LICENSE)；draw.io、浏览器、字体和依赖保留各自许可，MIT 不替代第三方条款。

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 const root=fileURLToPath(new URL('../',import.meta.url))
 const local=join(homedir(),'.codex','.sandbox-bin',process.platform==='win32'?'codex.exe':'codex')
 const command=process.env.CODEX_CLI||(existsSync(local)?local:'codex')
-const args=['mcp','add','flymind','--',process.execPath,join(root,'server','start.mjs')]
+const args=['mcp','add','flymind','--',process.execPath,join(root,'bin','flymind.mjs')]
 const r=spawnSync(command,args,{cwd:root,stdio:'inherit',windowsHide:true,shell:false})
 if(r.error){console.error('未找到 Codex CLI，请设置 CODEX_CLI 为其绝对路径，或按 docs/CODEX_SETUP.md 手动配置。');process.exit(1)}
 if(r.status!==0)process.exit(r.status||1)

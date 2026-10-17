@@ -14,6 +14,8 @@ Windows导出控制台弹窗已改为隐藏子进程启动并更新5189；真实
 
 ## 从这里开始
 
+普通用户从[下载、安装与使用](INSTALL_AND_USE.md)开始；GitHub 分发及未来 npm/Registry 上架步骤见[发布维护](PUBLISHING.md)，实际独立安装证据见[安装包验收](validation/npm-distribution.md)。
+
 | 文档 | 回答的问题 | 使用时机 |
 |---|---|---|
 | [产品需求 PRD](PRD.md) | 按 PBS 参考结构编排的 11 章需求，覆盖页面、字段、状态与数据流转 | 需求确认、交互设计、产品验收 |

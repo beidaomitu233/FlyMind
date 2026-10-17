@@ -21,7 +21,8 @@ import type {EnqueueNativeExport,StoredNativeExport,NativeExportManifest} from '
 import type {MigrationCommit} from './migrations/types'
 import {RESTORE_MARKER} from './backups/marker'
 import type {NativeImportSource} from './imports/source'
-export const PROJECT_ROOT=fileURLToPath(new URL('../',import.meta.url))
+export {PACKAGE_ROOT as PROJECT_ROOT} from './package-paths'
+import {PACKAGE_ROOT as PROJECT_ROOT} from './package-paths'
 export const DATA_ROOT=resolve(process.env.FLYMIND_DATA_DIR||join(PROJECT_ROOT,'data'))
 export interface DiagramRecord {document:DiagramDocument;revision:number;savedAt:number;createdAt?:number;workspaceGroupId?:string|null}
 export class StoreError extends Error {constructor(message:string,public status=400,public currentRevision?:number,public code=status===409?'CONFLICT':status===410?'DELETED':status===404?'NOT_FOUND':'VALIDATION_FAILED'){super(message)}}
