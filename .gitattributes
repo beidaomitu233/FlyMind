@@ -1,0 +1,7 @@
+# Fixed runtime supply is verified by byte hashes. Do not apply checkout EOL conversion.
+/resources/drawio/LICENSE -text
+/resources/drawio/supply.json -text
+/resources/fonts/COPYRIGHT.txt -text
+/resources/fonts/OFL.txt -text
+/resources/fonts/supply.json -text
+/resources/fonts/NotoSansCJKsc-Regular.otf binary

@@ -8,6 +8,8 @@
 
 约03:09本地P01/P02通过：独立Temp安装168包/48秒，真实网络下载固定资源及doctor；五类SDK均真实PNG与五制品，分组互斥/同库复连通过；实页改字r3与PNG下载39016B，通过复装包后MCP读r3再改r4/39721B PNG，正常停止自有QA。npm test309+CLI4全部通过、build通过，详见[分发验收](validation/npm-distribution.md)。首轮沙箱rename EPERM和初次探针未计入5个只读示例的失败均留存，没有改业务/放宽校验。用户明确npm账号稍后再办，改GitHub优先；不再继续npm登录。新下载标签mcp-v1.0.0，原v1.0.0不移动，应用版本不改。当前准备推送源码和4个Release制品，最终远端结果待回读。
 
+约03:12 GitHub发布核验通过：main主体062ee36、新标签mcp-v1.0.0、Release已公开，ZIP/tgz/安装文档/校验文件4个assets的size/digest与本地一致。P03指定范围通过，npm/Registry按用户决定延期。发布后CI发现Windows源码检出将固定许可证转CRLF导致setup hash拒绝；退回原A补.gitattributes，不放宽校验、不改已发布安装包。PM同时补交首次暂存遗漏的server.json（该文件已包含于并验过安装包），保留已发布标签不动。远端CI复核随后记录。
+
 更新日期：2026-10-16。主代理负责项目管理和验收，固定复用两个 `gpt-6.1-sol`、`medium` 开发代理。开发自测通过不等于任务验收通过；未授权提交、推送或版本更新。
 
 ## 固定分工

@@ -36,3 +36,7 @@
 - 本批通过不代表旧数据迁移、D07/D08/G2全路线通过；新安装仍显示旧只读示例，CLI不会自动迁移原用户库。
 
 最终远端提交、标签、Release与制品校验由发布后回读核实，以Git和Release记录为准。
+
+2026-10-18 远端回读：Release `mcp-v1.0.0` 已公开（draft=false），四项assets均uploaded。ZIP SHA256 `e0cc6c882685a269805bb66ce9923b0e641bb571b89cb2911a7a210260b0e5bf`，tarball `26378d319301645bf997d073a33ae4c253563f2025f35c80dd56909592559817`，安装文档 `153743fee2731ef0c7d3e4388436b7fc1b9964ee6f4c45a34f58e94c8489f9a9`，摘要文件 `86b162421c584ad7188de98de0fc7d354920cbcc37186200fea135d6dac88049`，均与本地制品一致。源码主体提交062ee36608338324aa7dddf3729b50618bc52896，源代码补交Registry元数据与固定字节检出规则另见main后续提交；不改已发布制品或标签。
+
+推送后的远端Windows CI先在源码setup的LICENSE校验失败，原因是Git autocrlf改变固定资源字节；新增属性保留固定供应字节，保持原哈希校验。此问题未发生在已验收的npm tarball安装流程。最终CI结果另以Actions实际记录为准。
