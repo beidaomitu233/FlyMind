@@ -10,6 +10,8 @@
 
 约03:12 GitHub发布核验通过：main主体062ee36、新标签mcp-v1.0.0、Release已公开，ZIP/tgz/安装文档/校验文件4个assets的size/digest与本地一致。P03指定范围通过，npm/Registry按用户决定延期。发布后CI发现Windows源码检出将固定许可证转CRLF导致setup hash拒绝；退回原A补.gitattributes，不放宽校验、不改已发布安装包。PM同时补交首次暂存遗漏的server.json（该文件已包含于并验过安装包），保留已发布标签不动。远端CI复核随后记录。
 
+03:20源码CI收尾：8553877资源准备/构建已通过，但托管runner的RUNNER~1临时路径别名触发既有路径边界，另有测试.ps1持锁helper未就绪。PM仅改CI临时目录为runner.temp，原B仅把该helper改为固定内联-Command并增加stderr诊断，全部安全断言不变，正常权限13/13通过；PM复审通过后推送新CI。发布包及两个已发布标签不改；匿名下载ZIP的SHA也已通过。属于源码CI可复现性收尾，不扩展应用或重新绘制测试图。
+
 更新日期：2026-10-16。主代理负责项目管理和验收，固定复用两个 `gpt-6.1-sol`、`medium` 开发代理。开发自测通过不等于任务验收通过；未授权提交、推送或版本更新。
 
 ## 固定分工

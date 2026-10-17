@@ -1,6 +1,6 @@
 # FlyMind 公开分发维护流程
 
-状态：本轮按用户决定**仅发布 GitHub Release**，npm 与 MCP Registry 延期。计划新标签 `mcp-v1.0.0`，不移动原 `v1.0.0`；应用/package 版本仍为 `1.0.0`。npm 包名 `flymind-drawing-studio`、Registry 名 `io.github.beidaomitu233/flymind` 保留，官方 Registry validate 已通过，但未执行 npm/Registry publish。
+状态：本轮按用户决定**已发布 GitHub Release**，npm 与 MCP Registry 延期。下载标签 `mcp-v1.0.0`，不移动原 `v1.0.0`；应用/package 版本仍为 `1.0.0`。npm 包名 `flymind-drawing-studio`、Registry 名 `io.github.beidaomitu233/flymind` 保留，官方 Registry validate 已通过，但未执行 npm/Registry publish。四项制品的远端摘要和匿名ZIP下载已核对。
 
 ## 本轮 GitHub 制品
 

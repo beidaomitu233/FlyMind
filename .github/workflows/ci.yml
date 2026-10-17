@@ -8,6 +8,11 @@ jobs:
   verify:
     # The public package currently supports Windows only.
     runs-on: windows-latest
+    # Hosted runner TEMP may use RUNNER~1, while realpath returns runneradmin.
+    # Exercise path-fencing with a canonical owned temporary directory.
+    env:
+      TEMP: ${{ runner.temp }}
+      TMP: ${{ runner.temp }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
