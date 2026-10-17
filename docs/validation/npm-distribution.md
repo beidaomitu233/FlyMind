@@ -42,3 +42,5 @@
 推送后的远端Windows CI先在源码setup的LICENSE校验失败，原因是Git autocrlf改变固定资源字节；新增属性保留固定供应字节，保持原哈希校验。此问题未发生在已验收的npm tarball安装流程。最终CI结果另以Actions实际记录为准。
 
 源码CI第二轮8553877已通过资源准备和构建，测试301/309；其余失败来自托管Windows的TEMP使用RUNNER~1短名而realpath返回runneradmin，以及持锁测试辅助脚本-File启动未就绪。CI改用runner.temp作为TEMP/TMP，不放宽生产路径边界；持锁夹具改固定内联-Command而不更改执行策略或安全断言。原B正常权限定向13/13通过，PM审查差异后推送；新一轮CI作为最终跨机器核验。
+
+最终源码CI通过：[GitHub Actions 39062115483](https://github.com/beidaomitu233/FlyMind/actions/runs/39062115483)，代码提交872b57e9f55f80dfd5e9aaf15bc301d6a6284fb6，Windows / Node22.23.3，完整依赖安装→固定资源setup→build→npm test（309+4）均成功，耗时2m39s。中间一次工作流把runner上下文放在job env导致配置校验失败，已移至test step env后通过；没有改应用安全边界或跳过失败用例。此后仅补验收文档。
