@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "id": "eval-F03",
+  "title": "F03 账号申请",
+  "kind": "flowchart",
+  "nodes": [
+    {
+      "id": "apply",
+      "label": "提交账号申请",
+      "kind": "start"
+    },
+    {
+      "id": "continue",
+      "label": "继续申请？",
+      "kind": "decision"
+    },
+    {
+      "id": "review",
+      "label": "审核申请",
+      "kind": "task"
+    },
+    {
+      "id": "approved",
+      "label": "批准开通？",
+      "kind": "decision"
+    },
+    {
+      "id": "activate",
+      "label": "开通账号",
+      "kind": "task"
+    },
+    {
+      "id": "active-done",
+      "label": "开通完成",
+      "kind": "end"
+    },
+    {
+      "id": "notify",
+      "label": "告知拒绝",
+      "kind": "task"
+    },
+    {
+      "id": "reject-done",
+      "label": "拒绝结束",
+      "kind": "end"
+    },
+    {
+      "id": "withdraw",
+      "label": "撤回申请",
+      "kind": "end"
+    }
+  ],
+  "edges": [
+    {
+      "id": "apply-choice",
+      "source": "apply",
+      "target": "continue"
+    },
+    {
+      "id": "choice-review",
+      "source": "continue",
+      "target": "review",
+      "label": "继续"
+    },
+    {
+      "id": "choice-withdraw",
+      "source": "continue",
+      "target": "withdraw",
+      "label": "撤回"
+    },
+    {
+      "id": "review-approved",
+      "source": "review",
+      "target": "approved"
+    },
+    {
+      "id": "approved-open",
+      "source": "approved",
+      "target": "activate",
+      "label": "批准"
+    },
+    {
+      "id": "approved-reject",
+      "source": "approved",
+      "target": "notify",
+      "label": "不批准"
+    },
+    {
+      "id": "open-done",
+      "source": "activate",
+      "target": "active-done"
+    },
+    {
+      "id": "notify-end",
+      "source": "notify",
+      "target": "reject-done"
+    }
+  ],
+  "lanes": [],
+  "phases": [],
+  "groups": []
+}

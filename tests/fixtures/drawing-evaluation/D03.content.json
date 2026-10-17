@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "id": "eval-D03",
+  "title": "D03 文档检索反馈",
+  "kind": "dataflow",
+  "nodes": [
+    {
+      "id": "documents",
+      "label": "原始文档",
+      "kind": "card"
+    },
+    {
+      "id": "parse",
+      "label": "解析文档",
+      "kind": "card"
+    },
+    {
+      "id": "paragraphs",
+      "label": "结构化段落",
+      "kind": "card"
+    },
+    {
+      "id": "index",
+      "label": "段落索引",
+      "kind": "card"
+    },
+    {
+      "id": "retrieve",
+      "label": "检索索引",
+      "kind": "card"
+    },
+    {
+      "id": "answer",
+      "label": "生成回答",
+      "kind": "card",
+      "description": "包含引用标识"
+    },
+    {
+      "id": "feedback",
+      "label": "用户反馈",
+      "kind": "card"
+    },
+    {
+      "id": "evaluation",
+      "label": "评估库",
+      "kind": "card"
+    },
+    {
+      "id": "audit",
+      "label": "审核反馈样本",
+      "kind": "card"
+    },
+    {
+      "id": "knowledge",
+      "label": "完成知识更新",
+      "kind": "card"
+    },
+    {
+      "id": "rejected",
+      "label": "归档拒绝样本",
+      "kind": "card"
+    }
+  ],
+  "edges": [
+    {
+      "id": "documents-parse",
+      "source": "documents",
+      "target": "parse",
+      "label": "原始文档"
+    },
+    {
+      "id": "parse-paragraphs",
+      "source": "parse",
+      "target": "paragraphs",
+      "label": "结构化段落"
+    },
+    {
+      "id": "paragraphs-index",
+      "source": "paragraphs",
+      "target": "index",
+      "label": "段落与索引键"
+    },
+    {
+      "id": "index-retrieve",
+      "source": "index",
+      "target": "retrieve",
+      "label": "索引结果"
+    },
+    {
+      "id": "retrieve-answer",
+      "source": "retrieve",
+      "target": "answer",
+      "label": "检索结果/引用标识"
+    },
+    {
+      "id": "answer-feedback",
+      "source": "answer",
+      "target": "feedback",
+      "label": "用户反馈",
+      "kind": "feedback"
+    },
+    {
+      "id": "feedback-evaluation",
+      "source": "feedback",
+      "target": "evaluation",
+      "label": "反馈样本"
+    },
+    {
+      "id": "evaluation-audit",
+      "source": "evaluation",
+      "target": "audit",
+      "label": "待审核样本"
+    },
+    {
+      "id": "automatic-write",
+      "source": "audit",
+      "target": "knowledge",
+      "label": "审核通过（自动回写）"
+    },
+    {
+      "id": "audit-reject",
+      "source": "audit",
+      "target": "rejected",
+      "label": "审核拒绝"
+    }
+  ],
+  "lanes": [],
+  "phases": [],
+  "groups": []
+}

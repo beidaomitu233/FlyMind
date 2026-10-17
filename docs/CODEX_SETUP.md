@@ -1,70 +1,82 @@
-# 连接 Codex
+# 连接 Codex：FlyMind 1.0.0 原生模式
 
-FlyMind 是本地 MCP 服务。Codex 负责理解业务并编写纯内容 JSON（content）；自动布局和标准样式由独立渲染层负责；MCP 在本机保存数据并渲染图片；编辑器读写相同文件。不需要 OpenAI API Key。
+FlyMind 是本机 STDIO MCP。AI 编写纯业务 content，Runtime 与 draw.io 工作台共用 SQLite 和真实后台渲染，不需要 OpenAI API Key。当前新版需显式 pilot、独立数据目录，HTTP 5179 不是 MCP 端点。
 
-## 一次性配置
+## 先准备本机资源
 
-在项目根目录运行：
+在项目根目录执行：
 
 ```powershell
 npm ci
+npm run setup:runtime
+npm run check:runtime
 npm run build
-npm run setup:codex
 ```
 
-脚本定位本机 Codex CLI，然后用 `codex mcp add flymind -- <node绝对路径> <server/start.mjs绝对路径>` 注册。注册只添加 flymind，不覆盖其他 MCP 配置。`codex mcp list` 可查看配置。
+固定供应包含 draw.io 31.5.3、Chromium headless shell 151 与中文字体；首次安装需联网。目录与端口说明见 [README](../README.md)。
 
-重新加载 Codex 的 MCP 配置，必要时重新打开会话。当前已经运行的会话未必会动态加载新增工具；没有看到 flymind 工具时不能把“已注册”当成“当前对话可用”。
+## 配置原生 MCP
 
-官方配置说明：[Codex MCP](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)。官方 SDK：[MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk/tree/v1.x)。
-
-## 手动配置
-
-在 Codex 设置添加 STDIO MCP，或向 `~/.codex/config.toml` 添加以下独立配置。把路径替换为自己的安装路径，Windows 建议使用正斜线：
+把绝对路径换成自己的安装位置与持久工作区。在 `~/.codex/config.toml` 的现有 `flymind` 配置中修改，不要重复添加同名表：
 
 ```toml
 [mcp_servers.flymind]
-command = "C:/nvm4w/nodejs/node.exe"
-args = ["D:/AIBuilder/PM/flyMind/server/start.mjs"]
-cwd = "D:/AIBuilder/PM/flyMind"
+command = "C:/Program Files/nodejs/node.exe"
+args = ["D:/Apps/FlyMind/server/start.mjs"]
+cwd = "D:/Apps/FlyMind"
 startup_timeout_sec = 30
 tool_timeout_sec = 60
+
+[mcp_servers.flymind.env]
+FLYMIND_NATIVE_PILOT = "1"
+FLYMIND_DATA_DIR = "D:/FlyMindData/native-v1"
+FLYMIND_PORT = "5179"
 ```
 
-从插件形式安装时，可用项目的 `plugin.json`、`mcp.json` 和 `skills/draw-with-flymind/SKILL.md`。这组文件是本地插件包；不代表已发布到公共插件目录。
+Codex 的 STDIO `command/args/cwd/env` 配置和 CLI `--env` 用法见 [OpenAI 官方 MCP 文档](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)。也可使用 CLI 注册（替换实际路径）：
+
+```powershell
+codex mcp add flymind --env FLYMIND_NATIVE_PILOT=1 --env FLYMIND_DATA_DIR=D:/FlyMindData/native-v1 --env FLYMIND_PORT=5179 -- node D:/Apps/FlyMind/server/start.mjs
+codex mcp list
+```
+
+`npm run setup:codex` 仍可定位 CLI 并注册 Node/入口，但脚本不写上述 env；若只执行该脚本，未显式传入环境变量时会运行旧 MCP 分支。现有本地插件 `plugin.json/mcp.json` 同样不能替代原生 env 配置，不代表已上架公共目录。
+
+重新加载 MCP 配置或新开会话。注册完成不等于当前会话已经发现工具；已运行进程也不会自动切到新版源码。不要为了排查而删除数据或复制另一工作区的实例凭据。
+
+## 运行与查看
+
+原生 MCP 首次实际调用按需启动或连接**同数据根** Runtime。MCP 退出只 detach，后台实例继续服务；Windows 自有渲染浏览器静默启动。网页打开 `http://127.0.0.1:5179/#/native`，或工具返回的 `editorUrl`。
+
+若自行启动网页，另一个 PowerShell 使用完全相同配置：
+
+```powershell
+$env:FLYMIND_NATIVE_PILOT = '1'
+$env:FLYMIND_DATA_DIR = 'D:/FlyMindData/native-v1'
+$env:FLYMIND_PORT = '5179'
+npm start
+```
+
+已有同根后台时不要重复启动；使用已返回的网页地址。若端口属于其他工作区或旧服务，请选择空闲端口并同时修改两端配置，不结束未知进程。`FLYMIND_AUTO_WEB=0` 是旧分支选项，不能让原生 MCP 脱离 Runtime 工作。
+
+`/#/` 仍为旧 Studio，不是本次 draw.io 页面；v3 禁止旧写入口降级保存。原生必须使用默认仓库 `data/` 之外的显式根；不自动迁移已有 v2 或更改用户正在运行的数据。
 
 ## 发起绘图
 
-可以向 Codex 说：
+> 使用 FlyMind，先读取绘图规则，再按以下材料创建泳道图，返回真实图片、文件与编辑链接；保留判断出口和回流。
 
-> 使用 FlyMind，读取绘图说明，按以下材料绘制一张泳道图。返回图片、SVG/JSON 和编辑链接。保留每个判断的出口和回流。
+工具链：`get_drawing_guide → create_diagram → get_diagram → patch_diagram`。创建与修改提供稳定 `requestId`，修改携带最新 `expectedRevision`，同请求重试保持全部参数一致。内容不写坐标。五类已启用的业务类型及配置范围，以每次返回的能力表为准；当前配置公开显式 `relayout:true` 与可选 `orientation`，不承诺旧坐标样式字段全部适用。
 
-后续修改：
+收到 `saved=true` 但导出失败/等待超时，保留图形/修订/任务身份：用 `export_diagram(jobId=...)` 继续等候，失败任务用 `retryJobId` 显式重试，不重新创建图形。大字体 SVG 可能超过 STDIO 8 MiB 安全预算，请使用返回的真实文件路径或认证下载，不修改 SDK 默认预算冒充内联成功。
 
-> 读取图形 ID xxx 的最新版本，只把售前咨询拆成两个步骤，保留我在网页调整过的颜色和位置，修改后重新给我图片。
+## 排查
 
-工具链是 `get_drawing_guide → create_diagram → get_diagram → patch_diagram → export_diagram`。创建和修改工具已经直接返回图片，最后一步可用于单独重新导出。
-
-## 运行服务
-
-开发：`npm run dev` 启动 5178 网页和 5179 共享服务。构建后 `npm start` 在 5179 提供完整应用。
-
-MCP 首次调用会检查共享服务；未启动时自动在后台启动 5179 本机服务，打开返回的 editorUrl 即可编辑。后台启动隐藏窗口。若配置 `FLYMIND_AUTO_WEB=0`，则禁用自动启动，需要手动运行应用。
-
-数据默认在项目的 data/ 目录。`FLYMIND_DATA_DIR` 可指定其他持久化目录；MCP 和网页服务必须使用同一个路径。`FLYMIND_PORT` 默认 5179，`FLYMIND_EDITOR_URL` 可把编辑链接指向已运行的 5178 开发页面。当前只监听 127.0.0.1。
-
-本地数据、图片、日志、密钥和 node_modules 不推送到 GitHub。复制项目时应备份 data/；不要清理它以解决服务问题。
-
-## 常见问题
-
-| 现象 | 处理 |
+| 现象 | 检查 |
 |---|---|
-| Codex 找不到 flymind 工具 | 查看 mcp list；重新加载 MCP 或开启新会话；检查 command/args 的绝对路径 |
-| 服务启动失败 | 先 npm ci、npm run build；检查 Node.js 20.19+；启动 npm start 查看错误 |
-| 图片中文字体缺失 | 安装系统中文字体；SVG 使用 Microsoft YaHei/Segoe UI；PNG 通过 Sharp 读取系统字体 |
-| 网页显示共享服务未连接 | 启动 npm run dev；已有 Vite 进程时可单独 npm start；点击重试同步 |
-| AI 修改遇到版本冲突 | get_diagram 读取最新数据，再合并用户修改并提交新 expectedRevision |
-| 用户网页修改看不到 | 等待“已保存”，再读取最新版本；不能依赖上次对话里的旧 JSON |
-| 图形太拥挤 | 先检查业务关系；点击自动布局，必要时在独立渲染配置调整节点标准或局部位置；不要删掉真实业务关系 |
+| 看见旧画布 | 确认 pilot env、`/#/native`、构建和 Runtime 版本；旧进程不会自动重载 |
+| 原生启动失败 | 检查独立根、空闲端口、固定资源；查看本机 stderr，不能把错误写入 STDIO stdout |
+| 字体/浏览器缺失 | `npm run setup:runtime`、`npm run check:runtime`；不依赖系统字体或任意 Chrome |
+| 版本或工作区冲突 | 读取最新 revision；换库身份不自动跟随，不盲目重建或覆盖 |
+| 网页修改 AI 看不到 | 等待已保存后重新 get_diagram，不能复用旧对话 JSON |
 
-MCP STDIO 的标准输出只用于协议；诊断日志写到标准错误。后续功能应以外围适配器接入，保持 src/drawing/core 独立于 AI 平台、项目管理和认证。
+本地数据、导出、原始导入文件、日志及实例凭据不推送仓库。完整备份与离线维护恢复见 [备份恢复验证](validation/native-backup-restore.md)，裸 SQLite 不是完整备份。发布 1.0.0 不代表后续路线或默认迁移门槛已全部完成。

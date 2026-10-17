@@ -186,7 +186,8 @@
       {
         "id": "e9",
         "source": "customer-needs",
-        "target": "pm-needs"
+        "target": "pm-needs",
+        "kind": "feedback"
       },
       {
         "id": "e10",
@@ -217,7 +218,8 @@
       {
         "id": "e15",
         "source": "revise",
-        "target": "proposal"
+        "target": "proposal",
+        "kind": "feedback"
       },
       {
         "id": "e16",

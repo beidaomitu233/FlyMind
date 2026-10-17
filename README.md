@@ -1,161 +1,132 @@
-# FlyMind Studio
+# FlyMind Studio 1.0.0
 
-给 AI 使用的独立绘图引擎与网页编辑器。Codex 编写 JSON，FlyMind MCP 保存和渲染图形，用户在网页继续编辑，AI 读取最新版本再修改与交付。无需模型 API Key。
+本地 AI 绘图与网页编辑工作台。AI 编写纯业务内容，FlyMind 通过 MCP 保存并使用固定 draw.io 引擎生成图片；用户在原工作台界面继续编辑，AI 再读取最新修订修改。不需要模型 API Key。
 
-[绘图规则](docs/AI_DRAWING_GUIDE.md) · [Codex 配置](docs/CODEX_SETUP.md) · [研究与路线](docs/ROADMAP.md) · [贡献](CONTRIBUTING.md) · [安全](SECURITY.md) · [变更](CHANGELOG.md)
+本次发布：**v1.0.0 · 2026-10-18**。draw.io 版保留原产品侧栏、标题、属性、新建与导出交互，新增明暗主题、画布分组、显式自动排版和横纵切换。原生模式仍需显式开启并使用独立数据目录；发布版本号不代表 D07/D08/G2 全部路线已验收。
 
-## 启动
+[文档中心](docs/README.md) · [实施计划与验收边界](docs/IMPLEMENTATION_PLAN.md) · [内容标准](docs/DRAWING_STANDARD.md) · [Codex 配置](docs/CODEX_SETUP.md) · [变更记录](CHANGELOG.md)
 
-Node.js 20.19+（20 系列）或 22.12+：
+## 新安装：启动当前 draw.io 工作台
+
+建议使用 Windows 与 Node.js 22.12+；项目最低要求为 Node.js 20.19+（20 系列）或 22.12+。在克隆后的项目根目录执行：
 
 ```powershell
 npm ci
+npm run setup:runtime
+npm run check:runtime
 npm run build
-npm run setup:codex
-npm run dev
+
+$env:FLYMIND_NATIVE_PILOT = '1'
+$env:FLYMIND_DATA_DIR = Join-Path $env:LOCALAPPDATA 'FlyMind/workspaces/native-v1'
+$env:FLYMIND_PORT = '5179'
+npm start
 ```
 
-开发页面：<http://127.0.0.1:5178/>。共享服务使用 5179。生产运行 `npm start`，打开 <http://127.0.0.1:5179/>。`start-studio.ps1` 也可启动开发环境。
+打开 **http://127.0.0.1:5179/#/native**。新目录第一次启动为空工作区，可从侧栏加号新建五类图形。以上命令不会复制或迁移已有 `data/`，请勿将原生数据目录指向仓库 `data/` 或其子目录；程序会在初始化前拒绝该路径。
 
-注册后重新加载 Codex MCP 配置，让新会话发现 `flymind` 工具。MCP 首次绘图调用可自动启动本机编辑服务。详细配置见 [连接 Codex](docs/CODEX_SETUP.md)。
+`setup:runtime` 下载并校验固定 draw.io 31.5.3、Chromium headless shell 151（Playwright 1.62.1 对应 revision 1234）及 Noto Sans CJK SC 字体，需首次联网，资源放在本项目 `resources/`。不依赖系统 Chrome 或上级项目资源。供应验证通过后，编辑与后台导出使用本机资源。
 
-### 其他支持本地 STDIO 的 MCP 客户端
+若 5179 已被其他实例占用，不要结束未知进程或误连旧工作区；选择空闲 `FLYMIND_PORT` 并使用对应地址。当前页面与 MCP 必须使用同一个数据根和端口。**仅更新仓库/构建不会重启已运行的旧服务**，请在合适时机正常关闭自己启动的旧实例后再启动新版；不要为升级删除数据。
 
-先克隆仓库并完成上述安装和构建，再将路径替换为实际绝对路径：
+### 新旧入口区别
+
+| 入口 / 模式 | 含义 |
+|---|---|
+| `/#/native` 且 `FLYMIND_NATIVE_PILOT=1` | 本次 draw.io 新版工作台，完整 v3 原生文档与后台导出 |
+| `/#/` | 保留的旧 Studio 页面；不是 draw.io 新版入口，不能用它编辑原生 v3 记录 |
+| 未设置 `FLYMIND_NATIVE_PILOT=1` | 保持旧运行分支；默认数据根仍为仓库 `data/`，不会自动切为新引擎 |
+| `/#/legacy` | 更早应用保留入口，不是当前绘图工作台 |
+
+不要在同一原生工作区混用旧页面或旧 MCP 写入；旧写入口遇 v3 会拒绝，避免丢失 XML。旧 v2 记录在新版列表明确只读/未迁移，不自动转换。
+
+### 开发模式
+
+沿用同样的原生环境变量，保持后端端口 **5179**，运行 `npm run dev`，打开 http://127.0.0.1:5178/#/native。脚本提供 5178 Vite 页面并启动或复用 5179 服务；Vite 代理当前固定指向 5179，复用前请确认该服务也是新版、同数据根原生实例。日常使用优先上面的同源 `npm start` 方式。
+
+## 连接 MCP
+
+MCP 使用 STDIO；HTTP 端口是工作台与制品服务，不是 HTTP MCP 地址。请按 [Codex 配置](docs/CODEX_SETUP.md) 显式配置原生环境变量。`npm run setup:codex` 只注册命令入口，**不会替你写入原生模式与数据目录**，不能单靠该脚本切换新版。
+
+其他支持本地 STDIO 的客户端可使用以下配置，替换为自己的绝对路径，并与网页使用同一目录/端口：
 
 ```json
 {
   "mcpServers": {
     "flymind": {
       "command": "node",
-      "args": ["D:/AIBuilder/PM/flyMind/server/start.mjs"],
-      "env": { "FLYMIND_DATA_DIR": "D:/AIBuilder/PM/flyMind/data" }
+      "args": ["D:/Apps/FlyMind/server/start.mjs"],
+      "env": {
+        "FLYMIND_NATIVE_PILOT": "1",
+        "FLYMIND_DATA_DIR": "D:/FlyMindData/native-v1",
+        "FLYMIND_PORT": "5179"
+      }
     }
   }
 }
 ```
 
-不同客户端的配置文件位置和外层字段不同；这里是通用示例。已用 SDK 的真实 STDIO 客户端验证协议，Codex 配置另见专门文档。MCP 使用 STDIO；5179 是网页/制品 HTTP 服务，**不是 HTTP MCP 端点**。目前没有 npm 发布包、远程 MCP 服务或 Registry 上架。
+原生 MCP 按需连接或启动同根本机 Runtime；MCP 客户端退出只断开连接，不关闭共享服务。工作区身份、实例凭据与版本能力握手防止误连，网页会通过同源会话认证访问数据。不得公开本机凭据或把编辑链接当成跨设备分享链接。
 
-| 环境变量 | 默认值 | 用途 |
-|---|---|---|
-| `FLYMIND_DATA_DIR` | 仓库下 `data` | MCP 与网页必须共用的数据目录 |
-| `FLYMIND_PORT` | `5179` | 本机网页服务端口 |
-| `FLYMIND_EDITOR_URL` | `http://127.0.0.1:5179` | 返回的编辑页面地址；开发时可指定 5178 |
-| `FLYMIND_AUTO_WEB` | 自动启动 | 设为 `0` 禁止 MCP 自动启动网页服务；此时链接需要自行启动服务 |
+| 环境变量 | 当前作用 |
+|---|---|
+| `FLYMIND_NATIVE_PILOT` | 只有值 `1` 开启原生分支，默认关闭 |
+| `FLYMIND_DATA_DIR` | 原生模式必须显式提供，且在仓库默认 `data/` 之外 |
+| `FLYMIND_PORT` | Runtime 端口，默认 `5179` |
+| `FLYMIND_EDITOR_URL` | 仅旧 MCP 分支的链接选项；当前原生 MCP 链接使用握手 Runtime 的地址，开发页可手动打开 5178 |
+| `FLYMIND_PRIVATE_RUNTIME_DIR` | 可选实例锁/凭据目录，默认由系统用户目录管理，与业务数据分开 |
+| `FLYMIND_AUTO_WEB` | 仅旧 MCP 分支的自动启动选项；不能用它关闭原生 MCP 所需的 Runtime |
 
-## AI 绘图
+## AI 绘图与交付
 
-完整规则：[AI 绘图说明](docs/AI_DRAWING_GUIDE.md)。网页底部“AI 绘图说明”可直接查看；MCP 的 `get_drawing_guide` 返回相同文档和指定图形的完整模板。
+五类业务 `kind`：`swimlane` 泳道、`flowchart` 流程、`architecture` 架构、`mindmap` 脑图、`dataflow` 数据流卡片。先调用 `get_drawing_guide` 获取正式内容标准和当前能力表，再创建/修改。数据流卡片不等同严格 DFD，不宣称覆盖全部 UML/BPMN。
 
-| 类型 | JSON kind | 表达能力 |
-|---|---|---|
-| 泳道图 | swimlane | 角色、阶段、判断分支、循环、横向/纵向 |
-| 流程图 | flowchart | 开始/结束、处理、判断、有向关系与回流 |
-| 架构图 | architecture | 分层、模块、模块条目、治理区 |
-| 思维导图 | mindmap | 中心主题、父子主题、分支 |
-| 数据流架构图 | dataflow | 系统卡片、多源汇聚、集成横幅、反馈闭环 |
+流程：`get_drawing_guide → create_diagram → get_diagram → patch_diagram`。原工具名称保持 18 个，包含内容校验、完整更新、配置读取/修改、导出、工作区分组与回收站操作；实际输入以工具发现 schema 为准。
 
-数据流架构图使用卡片表达，不是严格 DFD 标准符号。当前不宣称覆盖全部 UML 或 BPMN。
+- 内容层提供 `schemaVersion:1`、稳定 `id`、`title/kind/nodes/edges/lanes/phases/groups`，不写坐标或渲染字段。
+- 创建、内容更新、增量修改、渲染配置和导出使用稳定 `requestId`。不确定是否提交时沿用相同 ID 与全部参数重试，不重新创建；修改还必须携带最新 `expectedRevision`。
+- AI 新建需质量合格；修改历史人工草稿不能新增或加重错误/警告。默认结构修改不能只加注释交差，明确批注使用 `editIntent=annotation`。网页人工草稿可保留真实业务缺口。
+- `get_diagram` 默认返回纯内容和修订；尺寸只有真实渲染后才提供。创建/修改/预览/导出读取同一不可变快照的 PNG、SVG、draw.io、纯内容 JSON、完整 v3 project JSON 五制品。
+- `files` 为 Runtime 验证的本机绝对路径，`urls` 为认证下载地址，`resources` 为 `flymind://exports/{id}/{revision}/{exportId}/{format}`。完整字体 SVG 可能较大；STDIO 固定 8 MiB 安全预算，超大内联返回明确错误，改用本机文件或认证下载，不能裁剪源图冒充成功。
+- 若返回 `saved=true` 但导出失败/超时，保留 `diagramId/revision/jobId`。`export_diagram` 的 `jobId` 继续等待同一任务，`retryJobId` 显式重试失败快照；不重复创建图形、不把旧 PNG 当新修订结果。
+- 网络失败/401 后原生 MCP 下一次同键请求可重连同工作区；首次不盲目重放写操作。修订冲突、已删除与换工作区身份会明确拒绝。
 
-调用顺序：`get_drawing_guide → create_diagram → get_diagram → patch_diagram`。创建和修改直接返回 PNG 图片、SVG/JSON/draw.io 文件及编辑链接。单独重新导出用 `export_diagram`。修改前读取最新 `revision`，以 `expectedRevision` 提交；过期修改会被拒绝。工具共有 15 个，支持完整替换、原子增量操作和工作区分组管理。
+渲染配置本次公开范围为 `rendering:{relayout:true,orientation?:"vertical"|"horizontal"}`；自动排版仅提交 `relayout:true` 保持当前方向。其他配置字段明确拒绝，不宣称旧版所有坐标/样式配置均已接入。含原生人工组合等不能安全全排的文档可能明确拒绝，保留原图。
 
-可以对 Codex 说：
+## 网页使用
 
-> 使用 FlyMind，按这些材料绘制泳道图，返回图片、SVG/JSON 和编辑链接。保留判断出口和回流。
+- 保留原工作台产品结构：侧栏搜索、排序、分组、回收站，标题/保存状态，按需业务属性，新建与格式导出菜单；画布底层换为 draw.io。
+- 图形列表头文件夹加号创建分组，成功自动展开；拖入或菜单移入，归组后仅在组内出现。画布“分组/取消分组”是独立的原生视觉组合，不改变业务归属。
+- 双击图元改字，原生拖动/缩放/连接后自动保存。显式自动排版与适合画布分开，横纵切换先应用内确认。显式内容/排版提交建立撤销边界，不承诺跨该边界原生撤销。
+- 点击列表立即选中并更新标题/地址；固定画布区域显示轻量加载，候选就绪后切换，过时请求不激活。主题开关为浅色/深色，浏览器记忆偏好；编辑环境背景跟随主题，图元业务配色与导出不变。
+- 格式菜单点击 PNG/SVG/JSON/project/draw.io 后先提交并保存当前编辑，再后台生成和下载。后台无用户页面也可导出，Windows 自有渲染浏览器静默启动。
+- 普通 Delete 若留下悬空业务线会拒绝保存并保留草稿；撤销后用 Ctrl+Delete 删除节点及关联线。脑图专用删除分支入口有明确确认。
 
-> 读取图形 ID xxx 的最新版本，把售前咨询拆成两个步骤，保留我在网页调整的颜色和位置，再给我图片。
+当前业务文件导入支持纯 content JSON 与完整单图 v2/v3 project JSON，新 ID/时间且不继承来源组织、历史和回执。v2 先经过无损迁移，不丢手工覆盖后重编译。单页 draw.io/canvas-only 导入和显式映射仍未公开启用；压缩、多页与损坏业务元数据不静默降级。JSON/FMD/Markdown 旧入口能力不等于新版全部支持。
 
-### 工具契约
+## 数据、迁移与备份
 
-工具发现返回字段级输入 schema、输出 schema、标题和行为注解。注解是客户端提示，不是权限控制。
+原生 v3 在同一 SQLite `diagrams.document` 保存业务内容与完整 draw.io XML，沿用图形 ID、修订、历史、分组、回收站与永久删除标记。编辑草稿使用带工作区身份/会话守卫的 IndexedDB；冲突不覆盖远端，旧 localStorage 不自动回放到原生库。
 
-| 工具 | 输入 | 成功结果 / 效果 |
-|---|---|---|
-| `get_drawing_guide` | 可选 `kind` | `guide` 和可选纯内容 `sample` |
-| `list_diagrams` | 可选 `sortBy`、`workspaceGroupId` | 图形列表；默认最近修改，`created` 按创建时间；分组为 null 筛选未分组 |
-| `get_diagram` | `id`、可选 `preview` | 元数据与 `content`；preview=true 返回制品 |
-| `validate_diagram` | `content` | `valid`、尺寸、节点和连线数量；不保存 |
-| `create_diagram` | `content`、可选 `workspaceGroupId` | 保存新图形、PNG 和制品，可直接放入工作区分组 |
-| `update_diagram` | `id`、`expectedRevision`、`content` | 替换内容，保留渲染配置 |
-| `patch_diagram` | `id`、`expectedRevision`、`operations` | 原子执行 1–500 项语义操作 |
-| `get_rendering_config` | `id` | 独立 `rendering` 与标准配置 `standards` |
-| `configure_rendering` | `id`、`expectedRevision`、`rendering` | 替换完整渲染配置，内容保持不变 |
-| `export_diagram` | `id` | 导出当前版本的图片和制品 |
-| `list_workspace_groups` | 无 | 读取图形列表分组与版本 |
-| `create_workspace_group` | `name` | 创建工作区分组，返回 `group.id` |
-| `rename_workspace_group` | `id`、`expectedRevision`、`name` | 重命名工作区分组 |
-| `delete_workspace_group` | `id`、`expectedRevision` | 删除分组，组内图形移至未分组 |
-| `move_diagram_to_group` | `id`、`workspaceGroupId`、`expectedWorkspaceGroupId` | 改变图形归属；null 表示未分组，保持绘图内容与渲染不变 |
+迁移预览/显式提交及完整备份恢复基础设施已实现并通过指定范围验证，**不是“迁移尚未实施”，也不是启动即自动迁移用户库**。旧源转换遇不能无损表达的内容会明确阻断。[备份恢复说明](docs/validation/native-backup-restore.md)包含在线 SQLite、成功制品、导入来源、供应摘要和校验清单；裸 `.sqlite` 不代表完整可恢复备份。恢复入口目前为关闭 Runtime 后的独占维护 CLI，先校验/计划，目标有新写入会拒绝，恢复旋转工作区身份。维护 UI 与最终默认切换仍属后续范围。
 
-制品结果的 `structuredContent` 包括 `diagramId/title/kind/revision/createdAt/updatedAt/workspaceGroupId/editorUrl`、`files`（本机绝对路径）、`urls`（本机下载链接）、`resources`（MCP 可读取 URI）、`width/height`；PNG 另以原生 image 块返回。资源有 `flymind://guide`、`flymind://diagrams/{id}`、`flymind://artifacts/{id}/{revision}/{format}`，format 为 png/svg/json/project.json/drawio。资源链接可通过 MCP `resources/read` 读取，旧版本对应已生成的制品。
+默认 `data/`、独立工作区、artifacts、备份、原文件、资源缓存、凭据和日志需自行保管，不提交仓库。换机须另行备份完整工作区与供应资源。不要删除数据库或运行中的 WAL/SHM 来排查问题。
 
-执行失败返回 `isError: true` 和 `{error:{code,message,currentRevision?}}`，常见 code 为 `CONFLICT/DELETED/NOT_FOUND/BUSY/VALIDATION_FAILED/INTERNAL_ERROR`。输入 schema 不合法由 SDK 拒绝，具体错误格式由 SDK 决定。CONFLICT 重新读取并合并；BUSY 稍后重新读取；校验失败修正参数。禁止自动覆盖版本冲突。
-
-## 网页编辑
-
-列表可选择“最近修改 / 最近创建”，默认最近修改在前，记住排序选择；每项用小号文字展示创建时间，悬停可看完整创建/修改时间。复制或导入会创建新图。时间保存于文档元数据，内容层与渲染层均不承载时间字段。旧图优先从首版制品恢复时间，缺失时以文件历史时间兼容并固定保存。
-
-左侧文件夹按钮管理图形分组，支持创建、直接改名和删除；图形属性“所属分组”用于移动图形，左侧下拉框按分组筛选。删除分组仅将图形移至未分组。工作区分组独立于架构分层、泳道/阶段和画布组合；MCP 同样支持这些操作，见上表与[绘图说明](docs/AI_DRAWING_GUIDE.md)。
-
-复杂泳道按实际文字和线路需求调整节点、泳道宽度与步骤行高；自动正交路线避开节点，双向/回流线路错开通道，连线文字自动换行和避让。长流程默认以可读比例打开，可用 Shift+1 查看全图。手动位置和线路优先；需要重新整理已有手动布局时使用“自动布局”。
-
-- 框选、Shift 追加框选/多选、批量拖动、复制节点及内部连线、对齐和等距分布。
-- 拖动自动吸附节点边缘与中心并显示辅助线；多选保留相对位置，Alt 暂时绕过吸附。
-- 双击节点直接编辑文字；单节点或多选八方向手柄调整尺寸，Shift 保持比例；属性面板设置位置、尺寸、配色、字号。连接端口位于手柄外侧，避免误操作。
-- Ctrl/Cmd+C/X/V 使用系统剪贴板；粘贴至当前视口中心，右键粘贴至点击处。节点、内部连接和渲染覆盖一并迁移，生成新 ID；支持五类图形之间粘贴。剪贴板权限不足时，右键菜单可使用本机缓存。
-- 组合/取消组合、锁定/解锁、置顶/置底/上移/下移；组合是渲染配置，不改变业务泳道、阶段或架构分层。锁定节点保持当前外观与几何，网页和 MCP 修改前均需解锁。
-- 从节点四侧端口拖出连线；拖动连线端点改接节点；拖动折点或双击线路增加折点；拖动分支文字位置。
-- 调整起点/终点、端口、箭头、虚线、颜色和线宽，恢复自动路径。
-- 增删泳道、阶段和分层，调整顺序；删除有节点的分组时指定迁移目标。
-- 思维导图通过父主题调整关系；删除主题同时删除子分支。
-- 自动布局、撤销/重做、文件复制、搜索与删除；导入 JSON/FMD/Markdown。
-- 导出 PNG、SVG、JSON 内容、完整工作区、draw.io；思维导图另支持 FMD。draw.io 文件可在 draw.io 中继续编辑，当前不支持 XML 回读。
-
-快捷键：V 选择、H 移动画布、C 连线；空格或中键拖动画布；Ctrl+滚轮缩放；Shift+1 适应全部、Shift+2 适应所选；Ctrl+A 全选未锁定节点、Ctrl+C/X/V 复制/剪切/粘贴、Ctrl+D 创建副本、Ctrl+G 组合、Ctrl+Shift+G 取消组合、Ctrl+L 锁定/解锁；方向键微调（Shift 加快）、Delete 删除、Ctrl+Z 撤销、Ctrl+Shift+Z 重做、Ctrl+S 保存。Mac 使用 Cmd 对应 Ctrl；输入框保留原生剪贴板操作。拖动/缩放时 Esc 取消，完成手势后一次保存与撤销。节点文字编辑时 Enter 保存，Shift+Enter 换行，Esc 取消。打开属性面板不重置缩放；缩放控件的适应按钮按当前选择聚焦。
-
-目前是可平移缩放的图纸工作区，位置仍有图纸边界；负坐标与真正的无限画布、视口外拖动平移、复杂连线和容器缩放将继续在 P3 执行，见 [路线](docs/ROADMAP.md)。对象配置及片段规则见 [画布对象](docs/CANVAS_OBJECTS.md)。
-
-## 数据与独立组件
-
-```text
-src/drawing/core/         纯文档模型、校验、布局、渲染、增量修改
-src/drawing/ui/           画布与工作区；画布通过 props/事件通信
-src/drawing/state/        选择、编辑历史和文件管理
-src/drawing/services/     共享服务适配、浏览器导出
-server/store.ts          跨进程文件锁、原子保存、版本保护
-server/runtime.ts        网页共享接口和本机编辑服务
-server/mcp.ts            Codex MCP 工具与资源
-server/artifacts.ts      SVG / PNG / JSON / draw.io 制品
-```
-
-内容层 `content` 只含节点、类型、关系和可选语义颜色，不含 order、坐标或美化数据。独立 `rendering` 管理标准节点大小/形状/配色、连线走线及手动覆盖。普通 MCP 工具仅接收 content；视觉调整单独使用 get_rendering_config / configure_rendering。存储和工作区导出为 `{schemaVersion:2,content,rendering,updatedAt}`；内容 JSON 导出仅包含语义数据。网页属性与源码编辑均区分内容/渲染标签。旧文档自动迁移。布局生成临时场景，渲染不修改节点层。`core/index.ts` 不依赖 Vue store、AI 平台、项目管理、认证或 API Key；后续功能作为外围适配器接入。
-
-网页与 MCP 共用 `data/diagrams/`；后台是图形列表的数据依据。分组和归属在 `data/workspace.json`，删除记录与原图备份在 `data/trash/<id>.json`；先原子保存删除记录再移除活动文件，已删除 ID 的创建/修改被拒绝（HTTP 410 / MCP `DELETED`），避免旧页面、旧备份或重启让图形复活。删除最后一张图后工作区保持空白。删除记录不自动清理，迁移数据时需一并保留。
-
-版本制品放在 `data/artifacts/<id>/r<revision>/`，保留每次交付。浏览器 localStorage 仅作备份和离线操作队列；已知版本且未冲突的修改可重试，断网删除跨刷新重试。旧备份和有冲突的未同步修改不会自动上传为重复图形，而是保存到“待恢复内容”，需要用户主动恢复为新 ID 的图形。网页保存遇到版本冲突时，可载入最新或主动另存副本。已启动的旧 MCP 进程需重新连接以启用新规则。本阶段只提供本机共享，编辑链接不能作为跨设备公开链接。
-
-`data/`、环境变量文件、日志、依赖和测试截图不提交到 GitHub。换机器时需要另行备份 data/。
-
-## 验证与独立渲染
+## 验证、排查与发布边界
 
 ```powershell
 npm test
 npm run build
-npm run render -- examples/swimlane.json output/swimlane.svg
-npm run render -- examples/architecture.json output/architecture.drawio
-npm run examples
+npm run check:runtime
 ```
 
-测试覆盖节点与渲染分离、五类布局、循环分支、输入校验、多人版本冲突、批量编辑及真实 STDIO MCP 的图片与文件交付。
+`npm run render`、`npm run examples` 仍为保留的旧独立渲染脚本，不是新版后台 draw.io 导出的验收入口。真实原生证据见 [文档中心](docs/README.md)内各验证报告。当前仅发布本地源码版，不是 npm 包、公开远程 MCP 或插件商店上架。
 
-源项目 `D:\AIBuilder\flyMind` 保留不动；原应用副本入口在 `/#/legacy`，其 AI 后端仍使用原配置。五类参考示例位于 examples/；泳道图截图之外的“项目交付”是演示补充，不代表原业务记录。
+| 现象 | 检查 |
+|---|---|
+| 打开还是旧页面 | 使用 `/#/native`，设置 pilot 与独立根，确认已构建且连接的是新版 Runtime |
+| 能看页面但不能保存 | 查看 `/studio-api/health` 能力/工作区身份；不要把另一个根或旧进程当当前服务 |
+| 导出缺资源/字体 | 运行 `npm run setup:runtime` 与 `npm run check:runtime`，不是安装任意系统字体替代固定供应 |
+| MCP 找不到工具 | 核对绝对路径与 env，重新加载 MCP 配置；旧进程不会自动使用新源码 |
+| 保存冲突 | 保留草稿，读取远端最新修订再合并；不能自动覆盖或复活已删除 ID |
 
-## 排查与维护
-
-- 工具未更新：重新加载客户端 MCP；已启动的进程不会自动换成新源码。
-- 页面打不开：运行 `npm run build` 和 `npm start`，检查端口与数据目录；健康检查 `http://127.0.0.1:5179/studio-api/health`。
-- 图片中文缺字：检查服务器机器的中文字体；SVG 浏览器预览和服务端 PNG 使用的字体环境可能不同。
-- STDIO stdout 只传 MCP 协议，诊断写 stderr。不要在 server 启动路径添加 console.log。
-
-CI 在 Windows 和 Linux 执行锁文件安装、构建、核心测试和真实 MCP 回归。开发与发布要求见 [贡献说明](CONTRIBUTING.md)。仓库目前未提供项目许可证；原应用授权仍需核实，暂不宣称 MIT 等开源授权。
+D01–D06 与 G1、后续若干 UI/布局/外观小批有各自验收记录；**D07/D08/D09/G2 不因本次 v1.0.0 标签自动变为整体验收通过**。详见 [实施计划](docs/IMPLEMENTATION_PLAN.md)与[台账](docs/DEVELOPMENT_TRACKER.md)。仓库自身应用许可证仍未单独声明；draw.io、浏览器、字体及其他依赖各保留自己的许可文件，不据此宣称整个应用为 MIT。

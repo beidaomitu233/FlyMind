@@ -6,8 +6,11 @@ import { layoutDataflow, routeDataflow } from './dataflow'
 import { automaticRanks } from './auto-layout'
 import { nodePreset, nodeDimensions, edgePreset, groupTone } from './render-config'
 import { nearestPort, pathPoints, polyline, portPoint } from './geometry'
+import {orthogonalPoints} from './edge-editing'
+import {appendFloatingTexts} from './floating-text'
 
-export function layoutDocument(d:DiagramDocument):DiagramScene {
+export function layoutDocument(source:DiagramDocument):DiagramScene {
+  const d={...source,nodes:source.nodes.filter(n=>n.kind!=='note')}
   const p=palette[d.presentation.theme], scene:DiagramScene=d.kind==='dataflow'?layoutDataflow(d,automaticRanks(d)):d.kind==='swimlane'?layoutSwimlane(d):{width:1200,height:800,nodes:[],edges:[],containers:[]}
   const add=(node:DiagramNode,x:number,y:number,width=168,height=68,color=p.brand,fill='#ffffff',textColor='#32495d')=>{
     const override=d.presentation.positions[node.id]||{}
@@ -37,7 +40,7 @@ export function layoutDocument(d:DiagramDocument):DiagramScene {
       const list=d.nodes.filter(n=>n.groupId===governance.id), h=(y-196)/(list.length||1)
       list.forEach((n,i)=>add(n,governanceX+10,182+i*h,116,Math.min(h-16,150),'#a6afd1','#eff1fa','#465473'))
     }
-  }else if(d.kind==='mindmap'){
+  }else if(d.kind==='mindmap'&&d.nodes.length){
     const root=d.nodes.find(n=>!n.parentId)!, colors=['#596fea','#309f9a','#db9761','#9981cf']
     const positions=mindPositions(d)
     const branches=d.nodes.filter(n=>n.parentId===root.id)
@@ -47,7 +50,7 @@ export function layoutDocument(d:DiagramDocument):DiagramScene {
     const ranks=automaticRanks(d), buckets=new Map<number,DiagramNode[]>()
     d.nodes.forEach(n=>{const rank=d.presentation.ranks?.[n.id]??ranks.get(n.id)??0;const list=buckets.get(rank)||[];list.push(n);buckets.set(rank,list)})
     const horizontal=d.presentation.orientation==='horizontal'
-    const cellWidth=Math.max(...d.nodes.map(n=>nodeDimensions(d,n).width))+60,rankStep=Math.max(...d.nodes.map(n=>horizontal?nodeDimensions(d,n).width:nodeDimensions(d,n).height))+80
+    const cellWidth=Math.max(168,...d.nodes.map(n=>nodeDimensions(d,n).width))+60,rankStep=Math.max(68,...d.nodes.map(n=>horizontal?nodeDimensions(d,n).width:nodeDimensions(d,n).height))+80
     const maxWidth=Math.max(...Array.from(buckets.values()).map(x=>x.length))*cellWidth
     for(const [rank,nodes] of buckets){nodes.forEach((n,i)=>{const decision=n.kind==='decision',{width:w,height:h}=nodeDimensions(d,n);add(n,horizontal?80+rank*rankStep:80+(maxWidth-nodes.length*cellWidth)/2+i*cellWidth+(cellWidth-w)/2,horizontal?80+(maxWidth-nodes.length*cellWidth)/2+i*cellWidth+(cellWidth-h)/2:80+rank*rankStep,w,h,decision?p.accent:p.brand,decision?p.accentSoft:n.kind==='start'||n.kind==='end'?p.soft:'#fff')})}
   }
@@ -55,20 +58,22 @@ export function layoutDocument(d:DiagramDocument):DiagramScene {
   for(const n of scene.nodes){if(n.node.color)n.color=n.node.color;const style={...d.presentation.nodeDefaults?.[n.node.kind],...d.presentation.styles?.[n.node.id]};if(style){n.fill=style.fill||n.fill;n.color=style.stroke||n.color;n.textColor=style.textColor||n.textColor}}
   if(d.kind==='mindmap'){scene.width=Math.max(...scene.nodes.map(n=>n.x+n.width))+64;scene.height=Math.max(...scene.nodes.map(n=>n.y+n.height))+64}
   if(d.kind==='flowchart'){scene.width=Math.max(...scene.nodes.map(n=>n.x+n.width))+80;scene.height=Math.max(...scene.nodes.map(n=>n.y+n.height))+80}
+  appendFloatingTexts(source,scene)
   const edges:DiagramEdge[]=d.kind==='mindmap'?[...d.nodes.filter(n=>n.parentId).map(n=>({id:`parent_${n.id}`,source:n.parentId!,target:n.id})),...d.edges]:[...d.edges]
   const routing=['swimlane','flowchart'].includes(d.kind)?orthogonalRouter(d,scene):undefined
   if(routing)edges.sort((a,b)=>Number(a.kind==='feedback')-Number(b.kind==='feedback'))
   let feedbackIndex=0
   for(const edge of edges){const a=scene.nodes.find(n=>n.node.id===edge.source),b=scene.nodes.find(n=>n.node.id===edge.target);if(!a||!b)continue
     const defaults=edgePreset(d),style=d.presentation.edges?.[edge.id],routeType=style?.route||defaults.route,color=defaults.color||(d.kind==='mindmap'?b.color:d.kind==='dataflow'?a.color:p.edge)
-    const cardRoute=d.kind==='dataflow'&&routeType==='orthogonal'?routeDataflow(a,b,edge,scene.nodes,edge.kind==='feedback'?feedbackIndex++:0):undefined
-    let route=cardRoute||(routing&&routeType==='orthogonal'&&style?.points===undefined?routing.route(a,b,edge,style?.sourcePort,style?.targetPort):undefined)||routeEdge(a,b,routeType==='curved',d.presentation.orientation==='vertical',edge.source+edge.target,scene.nodes)
+    const obstacles=scene.nodes.filter(n=>n.node.kind!=='note'||n===a||n===b)
+    const cardRoute=d.kind==='dataflow'&&routeType==='orthogonal'?routeDataflow(a,b,edge,obstacles,edge.kind==='feedback'?feedbackIndex++:0):undefined
+    let route=cardRoute||(routing&&routeType==='orthogonal'&&style?.points===undefined?routing.route(a,b,edge,style?.sourcePort,style?.targetPort):undefined)||routeEdge(a,b,routeType==='curved',d.presentation.orientation==='vertical',edge.source+edge.target,obstacles)
     if(routeType==='straight'){const start=portPoint(a,style?.sourcePort||nearestPort(a,{x:b.x+b.width/2,y:b.y+b.height/2})),end=portPoint(b,style?.targetPort||nearestPort(b,{x:a.x+a.width/2,y:a.y+a.height/2}));route={path:polyline([start,end]),labelX:(start.x+end.x)/2,labelY:(start.y+end.y)/2-12}}
     const automatic=pathPoints(route.path)
     if(style?.points||style?.sourcePort||style?.targetPort){
       const start=portPoint(a,style.sourcePort||nearestPort(a,automatic[0]||{x:b.x,y:b.y})),end=portPoint(b,style.targetPort||nearestPort(b,automatic.at(-1)||{x:a.x,y:a.y}))
       const points=style.points!==undefined?style.points:automatic.slice(1,-1)
-      const all=[start,...points,end];route={...route,path:polyline(all),labelX:all[Math.floor((all.length-1)/2)].x,labelY:all[Math.floor((all.length-1)/2)].y-16}
+      const all=routeType==='orthogonal'?orthogonalPoints([start,...points,end],style.sourcePort,style.targetPort):[start,...points,end];route={...route,path:polyline(all),labelX:all[Math.floor((all.length-1)/2)].x,labelY:all[Math.floor((all.length-1)/2)].y-16}
       for(const p of all){scene.width=Math.max(scene.width,p.x+64);scene.height=Math.max(scene.height,p.y+64)}
     }
     if(style?.labelPosition)route={...route,labelX:style.labelPosition.x,labelY:style.labelPosition.y}
@@ -79,6 +84,7 @@ export function layoutDocument(d:DiagramDocument):DiagramScene {
     if('labelBox' in rendered){const b=rendered.labelBox as import('./model').Box;scene.width=Math.max(scene.width,b.x+b.width+32);scene.height=Math.max(scene.height,b.y+b.height+32)}
     scene.edges.push(rendered)
   }
+  for(const n of scene.nodes){scene.width=Math.max(320,scene.width,n.x+n.width+64);scene.height=Math.max(240,scene.height,n.y+n.height+64)}
   return scene
 }
 

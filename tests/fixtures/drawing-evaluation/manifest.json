@@ -1,0 +1,297 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate-only",
+  "source": "docs/validation/QUALITY_EVALUATION_PLAN.md",
+  "count": 15,
+  "humanScores": null,
+  "nativeExecution": "not-run",
+  "notes": [
+    "仅纯内容及业务operations；未生成PNG、未运行MCP、未填人工分。",
+    "F03/S03/M03的真实原生操作尚未执行；机器自审不冒充手势或视觉验收。",
+    "历史PBS负例N01独立引用冻结drawio-baseline，不计15正例。"
+  ],
+  "cases": [
+    {
+      "id": "F01",
+      "kind": "flowchart",
+      "source": {
+        "path": "docs/validation/QUALITY_EVALUATION_PLAN.md",
+        "row": "F01"
+      },
+      "content": "F01.content.json",
+      "operations": "F01.operations.json",
+      "editIntent": "structure",
+      "keyRelations": [
+        "合规/不合规双出口",
+        "补正→核验反馈闭环",
+        "修改后合规→出纳复核→付款→归档"
+      ]
+    },
+    {
+      "id": "F02",
+      "kind": "flowchart",
+      "source": {
+        "path": "docs/validation/QUALITY_EVALUATION_PLAN.md",
+        "row": "F02"
+      },
+      "content": "F02.content.json",
+      "operations": "F02.operations.json",
+      "editIntent": "structure",
+      "keyRelations": [
+        "订单同时分库存/收款",
+        "两支汇总后共同判断",
+        "新增收款超时→人工；库存与发货正常链保留"
+      ]
+    },
+    {
+      "id": "F03",
+      "kind": "flowchart",
+      "source": {
+        "path": "docs/validation/QUALITY_EVALUATION_PLAN.md",
+        "row": "F03"
+      },
+      "content": "F03.content.json",
+      "operations": "F03.operations.json",
+      "editIntent": "structure",
+      "keyRelations": [
+        "撤回仅在审核前",
+        "批准与拒绝出口完整",
+        "修改后撤回节点/选择/边真正删除，批准拒绝链保留"
+      ],
+      "nativeHumanPrecondition": {
+        "required": true,
+        "action": "实际原生移动/调整 activate 节点",
+        "untouchedByAI": [
+          "activate"
+        ],
+        "executed": false
+      }
+    },
+    {
+      "id": "S01",
+      "kind": "swimlane",
+      "source": {
+        "path": "docs/validation/QUALITY_EVALUATION_PLAN.md",
+        "row": "S01"
+      },
+      "content": "S01.content.json",
+      "operations": "S01.operations.json",
+      "editIntent": "structure",
+      "keyRelations": [
+        "客户/BD/产品/项目四角色",
+        "咨询反馈目标确认；方案退回修改",
+        "客户确认→产品交接→PM范围核对→启动"
+      ]
+    },
+    {
+      "id": "S02",
+      "kind": "swimlane",
+      "source": {
+        "path": "docs/validation/QUALITY_EVALUATION_PLAN.md",
+        "row": "S02"
+      },
+      "content": "S02.content.json",
+      "operations": "S02.operations.json",
+      "editIntent": "structure",
+      "keyRelations": [
+        "两类签收各有接收/退回重派闭环",
+        "文书退回修改再审",
+        "提交同时依赖文书定稿、材料齐全及独立账号准备",
+        "只把官网回执归档归属改为PM"
+      ],
+      "sourceQuestions": [
+        "原材料未指定文书审核责任人，单独列审核人（待确认），不擅归PM或文书；语义评审前需确认。"
+      ]
+    },
+    {
+      "id": "S03",
+      "kind": "swimlane",
+      "source": {
+        "path": "docs/validation/QUALITY_EVALUATION_PLAN.md",
+        "row": "S03"
+      },
+      "content": "S03.content.json",
+      "operations": "S03.operations.json",
+      "editIntent": "structure",
+      "keyRelations": [
+        "库存足够直接出库，不足采购",
+        "交期不符结束；先下单后付款",
+        "验收不通过→供应商处理→重新收货",
+        "付款前发票核验及退采购闭环"
+      ],
+      "nativeHumanPrecondition": {
+        "required": true,
+        "action": "实际原生调整库存核对阶段高度并移动 dispatch 节点",
+        "untouchedByAI": [
+          "dispatch"
+        ],
+        "phaseHeight": "stock",
+        "executed": false
+      }
+    },
+    {
+      "id": "A01",
+      "kind": "architecture",
+      "source": {
+        "path": "docs/validation/QUALITY_EVALUATION_PLAN.md",
+        "row": "A01"
+      },
+      "content": "A01.content.json",
+      "operations": "A01.operations.json",
+      "editIntent": "structure",
+      "keyRelations": [
+        "入口/业务/基础设施三层，鉴权审计独立治理",
+        "仅实际入口→业务及必要基础设施依赖",
+        "拆分后协调→渲染→原生引擎；SQLite/制品仍由协调调用"
+      ]
+    },
+    {
+      "id": "A02",
+      "kind": "architecture",
+      "source": {
+        "path": "docs/validation/QUALITY_EVALUATION_PLAN.md",
+        "row": "A02"
+      },
+      "content": "A02.content.json",
+      "operations": "A02.operations.json",
+      "editIntent": "structure",
+      "keyRelations": [
+        "五层：终端/业务/公共/AI/数据",
+        "运营原有两统计项，修改后只余工作量",
+        "随访新增患者反馈；无分期badge、无同名模块、每模块最多3项",
+        "材料未列依赖，候选不伪造全互连"
+      ]
+    },
+    {
+      "id": "A03",
+      "kind": "architecture",
+      "source": {
+        "path": "docs/validation/QUALITY_EVALUATION_PLAN.md",
+        "row": "A03"
+      },
+      "content": "A03.content.json",
+      "operations": "A03.operations.json",
+      "editIntent": "structure",
+      "keyRelations": [
+        "订单发布→总线→库存/支付消费→日志",
+        "库存迁至新服务层，保留原ID及事件/日志边",
+        "不把总线画为工作区角色"
+      ]
+    },
+    {
+      "id": "M01",
+      "kind": "mindmap",
+      "source": {
+        "path": "docs/validation/QUALITY_EVALUATION_PLAN.md",
+        "row": "M01"
+      },
+      "content": "M01.content.json",
+      "operations": "M01.operations.json",
+      "editIntent": "structure",
+      "keyRelations": [
+        "根下顺序用户/问题/证据/机会",
+        "同级分类不改成流程",
+        "行为数据实际改parentId→量化证据→证据"
+      ]
+    },
+    {
+      "id": "M02",
+      "kind": "mindmap",
+      "source": {
+        "path": "docs/validation/QUALITY_EVALUATION_PLAN.md",
+        "row": "M02"
+      },
+      "content": "M02.content.json",
+      "operations": "M02.operations.json",
+      "editIntent": "structure",
+      "keyRelations": [
+        "三层内单根、无重复兄弟",
+        "回收站在管理、自动布局在生成",
+        "显式先删子主题再删生成分支，不留孤儿"
+      ]
+    },
+    {
+      "id": "M03",
+      "kind": "mindmap",
+      "source": {
+        "path": "docs/validation/QUALITY_EVALUATION_PLAN.md",
+        "row": "M03"
+      },
+      "content": "M03.content.json",
+      "operations": "M03.operations.json",
+      "editIntent": "wording",
+      "keyRelations": [
+        "质量/运维/发布顺序准确",
+        "人工将备份重连到发布后，AI读取最新parentId并保留",
+        "AI只把发布说明改为变更清单，不把回滚画为循环"
+      ],
+      "nativeHumanPrecondition": {
+        "required": true,
+        "action": "实际原生把 backup 重连到 release 并保存",
+        "expectedContentChange": {
+          "nodeId": "backup",
+          "parentId": "release"
+        },
+        "executed": false
+      }
+    },
+    {
+      "id": "D01",
+      "kind": "dataflow",
+      "source": {
+        "path": "docs/validation/QUALITY_EVALUATION_PLAN.md",
+        "row": "D01"
+      },
+      "content": "D01.content.json",
+      "operations": "D01.operations.json",
+      "editIntent": "structure",
+      "keyRelations": [
+        "HIS/LIS/PACS/EMR/培养箱五源汇聚后先核验再分析",
+        "复核签名后回写报告",
+        "回执→证据链反馈方向",
+        "培养箱及其旧边消失，网关时序输入替代且其他四源不变"
+      ]
+    },
+    {
+      "id": "D02",
+      "kind": "dataflow",
+      "source": {
+        "path": "docs/validation/QUALITY_EVALUATION_PLAN.md",
+        "row": "D02"
+      },
+      "content": "D02.content.json",
+      "operations": "D02.operations.json",
+      "editIntent": "structure",
+      "keyRelations": [
+        "脱敏在指标/审计分流之前",
+        "指标异常→告警→处理结果入审计",
+        "新增脱敏失败隔离，不改变正常两路、不反画审计产生交易"
+      ]
+    },
+    {
+      "id": "D03",
+      "kind": "dataflow",
+      "source": {
+        "path": "docs/validation/QUALITY_EVALUATION_PLAN.md",
+        "row": "D03"
+      },
+      "content": "D03.content.json",
+      "operations": "D03.operations.json",
+      "editIntent": "structure",
+      "keyRelations": [
+        "原始文档→解析→段落→索引→检索→回答含引用",
+        "反馈→评估库→审核，不能直接改知识",
+        "通过自动回写边及旧知识更新节点真正删除，拒绝归档仍在",
+        "新通过去向是候选清单/等待人工导入，无自动知识回写"
+      ]
+    }
+  ],
+  "negative": {
+    "id": "N01",
+    "content": "tests/fixtures/drawio-baseline/pbs-main.content.json",
+    "includedInPositiveCount": false,
+    "expectedNodes": 23,
+    "expectedEdges": 26,
+    "expectedScore": 38
+  }
+}

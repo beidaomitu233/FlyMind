@@ -1,5 +1,14 @@
 <template>
-  <template v-if="node">
+  <template v-if="labelEdge">
+    <label class="studio-field">文字颜色<input type="color" aria-label="连线文字颜色" :value="labelStyle.labelColor||labelScene?.color||'#65728d'" @change="labelConfig('labelColor',value($event))"/></label>
+    <label class="studio-field">字号<input type="number" aria-label="连线文字字号" min="10" max="48" :value="labelStyle.labelFontSize||13" @change="labelConfig('labelFontSize',Number(value($event)))"/></label>
+  </template>
+  <template v-else-if="node?.kind==='note'">
+    <label class="studio-field">字号<input type="number" aria-label="文字字号" min="10" max="48" :value="textAppearance(doc,node).fontSize" @change="textConfig('fontSize',Number(value($event)))"/></label>
+    <label class="studio-field">文字颜色<input type="color" aria-label="浮动文字颜色" :value="textAppearance(doc,node).color" @change="textConfig('color',value($event))"/></label>
+    <label class="studio-field">换行宽度<input type="number" aria-label="文字换行宽度" min="24" max="4000" placeholder="自动" :value="doc.presentation.texts?.[node.id]?.width||''" @change="textConfig('width',value($event)?Number(value($event)):undefined)"/></label>
+  </template>
+  <template v-else-if="node">
     <div v-if="studio.selectedNodeIds.length>1" class="studio-action-grid"><button @click="studio.align('left')">左对齐</button><button @click="studio.align('center')">水平居中</button><button @click="studio.align('top')">顶对齐</button><button @click="studio.align('middle')">垂直居中</button><button @click="studio.align('horizontal')">水平等距</button><button @click="studio.align('vertical')">垂直等距</button></div>
     <label class="studio-field">形状<select aria-label="形状" :value="style.shape||preset.shape" @change="nodeStyle('shape',value($event))"><option value="rectangle">矩形</option><option value="rounded">圆角矩形</option><option value="ellipse">椭圆</option><option value="diamond">菱形</option></select></label>
     <div class="studio-number-grid"><label v-for="key in positionFields" :key="key" class="studio-field">{{{x:'X',y:'Y',width:'宽度',height:'高度'}[key]}}<input type="number" :min="key==='width'||key==='height'?32:0" :value="box?.[key]" @change="position(key,Number(value($event)))"/></label></div>
@@ -20,11 +29,14 @@
     <label v-for="endpoint in ['sourcePort','targetPort'] as const" :key="endpoint" class="studio-field">{{endpoint==='sourcePort'?'起点端口':'终点端口'}}<select :value="edgeStyle[endpoint]||''" @change="edgeConfig(endpoint,value($event)||undefined)"><option value="">自动</option><option value="top">上</option><option value="right">右</option><option value="bottom">下</option><option value="left">左</option></select></label>
     <button class="studio-secondary" @click="resetEdge">恢复自动路径</button>
   </template>
+  <template v-else-if="phase">
+    <label class="studio-field">{{doc.presentation.orientation==='vertical'?'阶段高度':'阶段宽度'}}<input type="number" :aria-label="doc.presentation.orientation==='vertical'?'阶段高度':'阶段宽度'" :min="phaseMinimum(doc,studio.scene,phase)" max="50000" :value="Math.round(doc.presentation.orientation==='vertical'?phase.height:phase.width)" @change="studio.resizePhase(phase.id,Number(value($event)))"/></label>
+  </template>
   <template v-else-if="group">
     <label class="studio-field">分层配色<select aria-label="分层配色" :value="doc.presentation.groups?.[group.id]?.tone||'blue'" @change="groupConfig('tone',value($event))"><option value="blue">蓝色</option><option value="green">绿色</option><option value="amber">橙色</option></select></label>
     <label class="studio-field">列数<input type="number" min="1" max="10" :value="doc.presentation.groups?.[group.id]?.columns||''" placeholder="自动" @change="groupConfig('columns',value($event)?Number(value($event)):undefined)"/></label>
   </template>
-  <details :open="!node&&!edge&&!group" class="studio-details">
+  <details :open="!labelEdge&&!node&&!edge&&!group&&!phase" class="studio-details">
     <summary>标准渲染配置</summary>
     <label class="studio-field">主题<div class="studio-themes"><button v-for="(p,name) in palette" :key="name" :style="{background:p.brand}" :class="{selected:doc.presentation.theme===name}" :aria-label="{blue:'蓝色',indigo:'靛蓝',forest:'青绿'}[name]" @click="studio.setTheme(name as ThemeName)"><Icon v-if="doc.presentation.theme===name" name="check" :size="16"/></button></div></label>
     <label v-if="doc.kind==='swimlane'||doc.kind==='flowchart'" class="studio-field">方向<div class="studio-segment"><button :class="{active:doc.presentation.orientation==='vertical'}" @click="studio.setOrientation('vertical')">纵向</button><button :class="{active:doc.presentation.orientation==='horizontal'}" @click="studio.setOrientation('horizontal')">横向</button></div></label>
@@ -42,12 +54,18 @@ import { computed,ref,watch } from 'vue'
 import { useStudio } from '../state/studio'
 import { cardStyle,palette,type NodeKind,type ThemeName } from '../core/model'
 import { nodePreset,edgePreset } from '../core/render-config'
+import {phaseMinimum} from '../core/phase-editing'
+import {textAppearance} from '../core/floating-text'
 import Icon from './Icon.vue'
 const studio=useStudio(),doc=computed(()=>studio.current),node=computed(()=>studio.selection?.type==='node'?doc.value.nodes.find(n=>n.id===studio.selection!.id):undefined),edge=computed(()=>studio.selection?.type==='edge'?doc.value.edges.find(e=>e.id===studio.selection!.id):undefined),group=computed(()=>studio.selection?.type==='group'?doc.value.groups.find(g=>g.id===studio.selection!.id):undefined)
+function textConfig(key:string,value:unknown){if(node.value)studio.commit(d=>{const t=((d.presentation.texts??={})[node.value!.id]??={});Object.assign(t,{[key]:value})})}
+const phase=computed(()=>studio.selection?.type==='phase'?studio.scene.containers.find(c=>c.kind==='phase'&&c.id===studio.selection!.id):undefined)
 const box=computed(()=>studio.scene.nodes.find(n=>n.node.id===node.value?.id)),sceneEdge=computed(()=>studio.scene.edges.find(e=>e.edge.id===edge.value?.id)),style=computed(()=>doc.value.presentation.styles?.[node.value?.id||'']||{}),edgeStyle=computed(()=>doc.value.presentation.edges?.[edge.value?.id||'']||{}),preset=computed(()=>nodePreset(doc.value,node.value?.kind||'task')),card=computed(()=>cardStyle(doc.value,node.value?.id||'')),line=computed(()=>edgePreset(doc.value))
+const labelEdge=computed(()=>studio.selection?.type==='label'?doc.value.edges.find(e=>e.id===studio.selection!.id):undefined),labelStyle=computed(()=>doc.value.presentation.edges?.[labelEdge.value?.id||'']||{}),labelScene=computed(()=>studio.scene.edges.find(e=>e.edge.id===labelEdge.value?.id))
+function labelConfig(key:string,value:unknown){if(labelEdge.value)studio.commit(d=>{const s=(d.presentation.edges??={})[labelEdge.value!.id]??={};Object.assign(s,{[key]:value})})}
 const labels:Record<NodeKind,string>={task:'步骤',decision:'判断',start:'开始',end:'结束',module:'模块',topic:'主题',card:'卡片',note:'注释'}
 const selectedIds=computed(()=>studio.selectedNodeIds.length?studio.selectedNodeIds:node.value?[node.value.id]:[]),positionFields=computed(()=>selectedIds.value.length>1?['width','height'] as const:['x','y','width','height'] as const)
-const nodeKinds=computed<NodeKind[]>(()=>doc.value.kind==='architecture'?['module']:doc.value.kind==='mindmap'?['topic']:doc.value.kind==='dataflow'?['card','note']:['task','decision','start','end']),presetKind=ref<NodeKind>('task'),standard=computed(()=>nodePreset(doc.value,nodeKinds.value.includes(presetKind.value)?presetKind.value:nodeKinds.value[0]))
+const nodeKinds=computed<NodeKind[]>(()=>doc.value.kind==='architecture'?['module']:doc.value.kind==='mindmap'?['topic']:doc.value.kind==='dataflow'?['card']:['task','decision','start','end']),presetKind=ref<NodeKind>('task'),standard=computed(()=>nodePreset(doc.value,nodeKinds.value.includes(presetKind.value)?presetKind.value:nodeKinds.value[0]))
 watch(nodeKinds,k=>{if(!k.includes(presetKind.value))presetKind.value=k[0]},{immediate:true})
 const value=(e:Event)=>(e.target as HTMLInputElement).value,hex=(v?:string)=>v?.length===4?'#'+v.slice(1).split('').map(x=>x+x).join(''):v||'#ffffff'
 function nodeStyle(key:string,value:unknown){if(node.value)studio.commit(d=>{for(const id of selectedIds.value)(d.presentation.styles??={})[id]={...d.presentation.styles?.[id],[key]:value}})}
@@ -57,7 +75,7 @@ function edgeConfig(key:string,value:unknown){if(edge.value)studio.commit(d=>{co
 function groupConfig(key:string,value:unknown){if(group.value)studio.commit(d=>{const id=group.value!.id;(d.presentation.groups??={})[id]={...d.presentation.groups?.[id],[key]:value}})}
 function resetNode(){if(node.value)studio.commit(d=>{for(const id of selectedIds.value){delete d.presentation.positions[id];if(d.presentation.styles)delete d.presentation.styles[id];if(d.presentation.cards)delete d.presentation.cards[id];if(d.presentation.ranks)delete d.presentation.ranks[id]}})}
 function resetEdge(){if(edge.value)studio.commit(d=>{const s=d.presentation.edges?.[edge.value!.id];if(s){delete s.points;delete s.sourcePort;delete s.targetPort;delete s.labelPosition}})}
-function standardConfig(key:string,value:unknown){const kind=nodeKinds.value.includes(presetKind.value)?presetKind.value:nodeKinds.value[0];studio.commit(d=>{(d.presentation.nodeDefaults??={})[kind]={...d.presentation.nodeDefaults?.[kind],[key]:value}})}
+function standardConfig(key:string,value:unknown){const kind=nodeKinds.value.includes(presetKind.value)?presetKind.value:nodeKinds.value[0];studio.commit(d=>{(d.presentation.nodeDefaults??={})[kind]={...d.presentation.nodeDefaults?.[kind],[key]:value};if(key==='width'||key==='height')for(const n of d.nodes.filter(n=>n.kind===kind))delete d.presentation.positions[n.id]?.[key]})}
 function lineConfig(key:string,value:unknown){studio.commit(d=>{d.presentation.edgeDefaults={...d.presentation.edgeDefaults,[key]:value}})}
 function resetStandards(){studio.commit(d=>{delete d.presentation.nodeDefaults;delete d.presentation.edgeDefaults})}
 </script>

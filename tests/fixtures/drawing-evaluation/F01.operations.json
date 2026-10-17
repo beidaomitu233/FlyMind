@@ -1,0 +1,25 @@
+[
+  {
+    "op": "add_node",
+    "node": {
+      "id": "cashier",
+      "label": "出纳复核",
+      "kind": "task"
+    }
+  },
+  {
+    "op": "update_edge",
+    "id": "pass-pay",
+    "changes": {
+      "target": "cashier"
+    }
+  },
+  {
+    "op": "add_edge",
+    "edge": {
+      "id": "cashier-pay",
+      "source": "cashier",
+      "target": "pay"
+    }
+  }
+]

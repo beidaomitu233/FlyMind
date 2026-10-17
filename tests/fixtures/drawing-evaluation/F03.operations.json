@@ -1,0 +1,25 @@
+[
+  {
+    "op": "remove_edge",
+    "id": "choice-review"
+  },
+  {
+    "op": "remove_edge",
+    "id": "choice-withdraw"
+  },
+  {
+    "op": "update_edge",
+    "id": "apply-choice",
+    "changes": {
+      "target": "review"
+    }
+  },
+  {
+    "op": "remove_node",
+    "id": "withdraw"
+  },
+  {
+    "op": "remove_node",
+    "id": "continue"
+  }
+]

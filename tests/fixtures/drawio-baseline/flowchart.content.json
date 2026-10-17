@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "id": "baseline-flowchart",
+  "title": "脱敏flowchart基础样本",
+  "kind": "flowchart",
+  "nodes": [
+    {
+      "id": "n01",
+      "label": "接收用户报障",
+      "kind": "start"
+    },
+    {
+      "id": "n02",
+      "label": "支持人员初判",
+      "kind": "task"
+    },
+    {
+      "id": "n03",
+      "label": "本环节可处理？",
+      "kind": "decision"
+    },
+    {
+      "id": "n04",
+      "label": "告知处理结果",
+      "kind": "task"
+    },
+    {
+      "id": "n05",
+      "label": "转技术团队处理",
+      "kind": "task"
+    },
+    {
+      "id": "n06",
+      "label": "重现故障并修正",
+      "kind": "task"
+    },
+    {
+      "id": "n07",
+      "label": "用户是否认可结果？",
+      "kind": "decision"
+    },
+    {
+      "id": "n08",
+      "label": "结束本次工单",
+      "kind": "end"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e01",
+      "source": "n01",
+      "target": "n02"
+    },
+    {
+      "id": "e02",
+      "source": "n02",
+      "target": "n03"
+    },
+    {
+      "id": "e03",
+      "source": "n03",
+      "target": "n04",
+      "label": "本环节可处理"
+    },
+    {
+      "id": "e04",
+      "source": "n03",
+      "target": "n05",
+      "label": "需技术介入"
+    },
+    {
+      "id": "e05",
+      "source": "n05",
+      "target": "n06"
+    },
+    {
+      "id": "e06",
+      "source": "n06",
+      "target": "n04"
+    },
+    {
+      "id": "e07",
+      "source": "n04",
+      "target": "n07"
+    },
+    {
+      "id": "e08",
+      "source": "n07",
+      "target": "n08",
+      "label": "用户确认解决"
+    },
+    {
+      "id": "e09",
+      "source": "n07",
+      "target": "n05",
+      "label": "问题仍然存在"
+    }
+  ],
+  "lanes": [],
+  "phases": [],
+  "groups": []
+}

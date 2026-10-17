@@ -2,6 +2,13 @@
 <script setup lang="ts">
 withDefaults(defineProps<{name:string;size?:number}>(),{size:18})
 const paths:Record<string,string>={
+  sun:'M12 3V1 M12 23v-2 M3 12H1 M23 12h-2 M4.2 4.2l1.4 1.4 M18.4 18.4l1.4 1.4 M4.2 19.8l1.4-1.4 M18.4 5.6l1.4-1.4 M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0',
+  moon:'M20.5 14A9 9 0 0 1 10 3.5 9 9 0 1 0 20.5 14z',
+  'folder-plus':'M3 6h6l2 2h10v12H3z M12 11v6 M9 14h6',
+  group:'M3 3h18v18H3z M7 7h5v5H7z M12 12h5v5h-5z',
+  'direction-vertical':'M9 3h6v5H9z M9 16h6v5H9z M12 8v8 M10 13l2 3 2-3',
+  'direction-horizontal':'M3 9h5v6H3z M16 9h5v6h-5z M8 12h8 M13 10l3 2-3 2',
+  more:'M5 12h.01 M12 12h.01 M19 12h.01',files:'M4 3h11l5 5v13H4z M15 3v5h5 M8 12h8 M8 16h6',edit:'M15 4l5 5 M4 20l4-1L20 7a2 2 0 0 0-4-4L4 15z',restore:'M3 10a9 9 0 1 1 1 8 M3 4v6h6 M12 7v5l3 2',
   diagram:'M4 4h6v6H4z M14 14h6v6h-6z M14 4h6v6h-6z M7 10v7h7 M10 7h4',
   swimlane:'M3 4h18v16H3z M3 8h18 M9 4v16 M15 4v16 M5 12h2 M11 15h2 M17 11h2',
   architecture:'M3 3h18v5H3z M3 11h8v5H3z M14 11h7v5h-7z M3 19h18 M7 8v3 M17 8v3',

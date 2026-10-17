@@ -1,0 +1,286 @@
+{
+  "schemaVersion": 1,
+  "id": "eval-S02",
+  "title": "S02 院校申请交付",
+  "kind": "swimlane",
+  "nodes": [
+    {
+      "id": "assign",
+      "label": "派发任务",
+      "kind": "start",
+      "laneId": "pm",
+      "phaseId": "assign"
+    },
+    {
+      "id": "writer-accept",
+      "label": "文书签收？",
+      "kind": "decision",
+      "laneId": "writer",
+      "phaseId": "assign"
+    },
+    {
+      "id": "writer-reassign",
+      "label": "重派文书任务",
+      "kind": "task",
+      "laneId": "pm",
+      "phaseId": "assign"
+    },
+    {
+      "id": "web-accept",
+      "label": "网申签收？",
+      "kind": "decision",
+      "laneId": "web",
+      "phaseId": "assign"
+    },
+    {
+      "id": "web-reassign",
+      "label": "重派网申任务",
+      "kind": "task",
+      "laneId": "pm",
+      "phaseId": "assign"
+    },
+    {
+      "id": "write",
+      "label": "撰写文书",
+      "kind": "task",
+      "laneId": "writer",
+      "phaseId": "prepare"
+    },
+    {
+      "id": "review",
+      "label": "审核文书",
+      "kind": "task",
+      "laneId": "reviewer",
+      "phaseId": "prepare"
+    },
+    {
+      "id": "approved",
+      "label": "审核通过？",
+      "kind": "decision",
+      "laneId": "reviewer",
+      "phaseId": "prepare"
+    },
+    {
+      "id": "revise",
+      "label": "修改文书",
+      "kind": "task",
+      "laneId": "writer",
+      "phaseId": "prepare"
+    },
+    {
+      "id": "final",
+      "label": "定稿文书",
+      "kind": "task",
+      "laneId": "writer",
+      "phaseId": "prepare"
+    },
+    {
+      "id": "account",
+      "label": "准备网申账号",
+      "kind": "task",
+      "laneId": "web",
+      "phaseId": "prepare"
+    },
+    {
+      "id": "materials",
+      "label": "核对材料",
+      "kind": "task",
+      "laneId": "web",
+      "phaseId": "prepare"
+    },
+    {
+      "id": "complete",
+      "label": "材料齐全？",
+      "kind": "decision",
+      "laneId": "web",
+      "phaseId": "prepare"
+    },
+    {
+      "id": "wait",
+      "label": "等待补齐材料",
+      "kind": "task",
+      "laneId": "web",
+      "phaseId": "prepare"
+    },
+    {
+      "id": "join",
+      "label": "汇总提交条件",
+      "kind": "task",
+      "laneId": "web",
+      "phaseId": "submit"
+    },
+    {
+      "id": "submit",
+      "label": "提交网申",
+      "kind": "task",
+      "laneId": "web",
+      "phaseId": "submit"
+    },
+    {
+      "id": "receipt",
+      "label": "归档官网回执",
+      "kind": "end",
+      "laneId": "web",
+      "phaseId": "submit"
+    }
+  ],
+  "edges": [
+    {
+      "id": "assign-writer",
+      "source": "assign",
+      "target": "writer-accept"
+    },
+    {
+      "id": "assign-web",
+      "source": "assign",
+      "target": "web-accept"
+    },
+    {
+      "id": "writer-yes",
+      "source": "writer-accept",
+      "target": "write",
+      "label": "接收"
+    },
+    {
+      "id": "writer-no",
+      "source": "writer-accept",
+      "target": "writer-reassign",
+      "label": "退回"
+    },
+    {
+      "id": "writer-retry",
+      "source": "writer-reassign",
+      "target": "writer-accept",
+      "kind": "feedback"
+    },
+    {
+      "id": "web-yes",
+      "source": "web-accept",
+      "target": "account",
+      "label": "接收"
+    },
+    {
+      "id": "web-no",
+      "source": "web-accept",
+      "target": "web-reassign",
+      "label": "退回"
+    },
+    {
+      "id": "web-retry",
+      "source": "web-reassign",
+      "target": "web-accept",
+      "kind": "feedback"
+    },
+    {
+      "id": "write-review",
+      "source": "write",
+      "target": "review"
+    },
+    {
+      "id": "review-check",
+      "source": "review",
+      "target": "approved"
+    },
+    {
+      "id": "review-pass",
+      "source": "approved",
+      "target": "final",
+      "label": "通过"
+    },
+    {
+      "id": "review-reject",
+      "source": "approved",
+      "target": "revise",
+      "label": "退回"
+    },
+    {
+      "id": "revise-review",
+      "source": "revise",
+      "target": "review",
+      "kind": "feedback"
+    },
+    {
+      "id": "account-materials",
+      "source": "account",
+      "target": "materials"
+    },
+    {
+      "id": "materials-check",
+      "source": "materials",
+      "target": "complete"
+    },
+    {
+      "id": "materials-ready",
+      "source": "complete",
+      "target": "join",
+      "label": "齐全"
+    },
+    {
+      "id": "materials-wait",
+      "source": "complete",
+      "target": "wait",
+      "label": "未齐"
+    },
+    {
+      "id": "wait-materials",
+      "source": "wait",
+      "target": "materials",
+      "kind": "feedback"
+    },
+    {
+      "id": "final-join",
+      "source": "final",
+      "target": "join",
+      "label": "文书定稿"
+    },
+    {
+      "id": "account-join",
+      "source": "account",
+      "target": "join",
+      "label": "账号就绪"
+    },
+    {
+      "id": "join-submit",
+      "source": "join",
+      "target": "submit"
+    },
+    {
+      "id": "submit-receipt",
+      "source": "submit",
+      "target": "receipt"
+    }
+  ],
+  "lanes": [
+    {
+      "id": "pm",
+      "label": "项目经理"
+    },
+    {
+      "id": "writer",
+      "label": "文书人员"
+    },
+    {
+      "id": "web",
+      "label": "网申人员"
+    },
+    {
+      "id": "reviewer",
+      "label": "审核人（待确认）"
+    }
+  ],
+  "phases": [
+    {
+      "id": "assign",
+      "label": "派单签收"
+    },
+    {
+      "id": "prepare",
+      "label": "材料准备"
+    },
+    {
+      "id": "submit",
+      "label": "提交交付"
+    }
+  ],
+  "groups": []
+}

@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "id": "eval-F02",
+  "title": "F02 订单并行核验",
+  "kind": "flowchart",
+  "nodes": [
+    {
+      "id": "order",
+      "label": "接收订单",
+      "kind": "start"
+    },
+    {
+      "id": "stock",
+      "label": "核验库存",
+      "kind": "task"
+    },
+    {
+      "id": "payment",
+      "label": "核验收款",
+      "kind": "task"
+    },
+    {
+      "id": "join",
+      "label": "汇总核验结果",
+      "kind": "task"
+    },
+    {
+      "id": "ready",
+      "label": "两项均满足？",
+      "kind": "decision"
+    },
+    {
+      "id": "ship",
+      "label": "安排发货",
+      "kind": "task"
+    },
+    {
+      "id": "done",
+      "label": "发货完成",
+      "kind": "end"
+    },
+    {
+      "id": "manual",
+      "label": "转人工处理",
+      "kind": "end"
+    }
+  ],
+  "edges": [
+    {
+      "id": "order-stock",
+      "source": "order",
+      "target": "stock"
+    },
+    {
+      "id": "order-payment",
+      "source": "order",
+      "target": "payment"
+    },
+    {
+      "id": "stock-join",
+      "source": "stock",
+      "target": "join"
+    },
+    {
+      "id": "payment-join",
+      "source": "payment",
+      "target": "join"
+    },
+    {
+      "id": "join-ready",
+      "source": "join",
+      "target": "ready"
+    },
+    {
+      "id": "ready-ship",
+      "source": "ready",
+      "target": "ship",
+      "label": "均满足"
+    },
+    {
+      "id": "ready-manual",
+      "source": "ready",
+      "target": "manual",
+      "label": "未全部满足"
+    },
+    {
+      "id": "ship-done",
+      "source": "ship",
+      "target": "done"
+    }
+  ],
+  "lanes": [],
+  "phases": [],
+  "groups": []
+}

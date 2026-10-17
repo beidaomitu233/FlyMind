@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "id": "baseline-mindmap",
+  "title": "脱敏mindmap基础样本",
+  "kind": "mindmap",
+  "nodes": [
+    {
+      "id": "n01",
+      "label": "从产品构想到交付",
+      "kind": "topic"
+    },
+    {
+      "id": "n02",
+      "label": "识别待解决问题",
+      "kind": "topic",
+      "parentId": "n01"
+    },
+    {
+      "id": "n03",
+      "label": "访谈使用者",
+      "kind": "topic",
+      "parentId": "n02"
+    },
+    {
+      "id": "n04",
+      "label": "整理当前作业",
+      "kind": "topic",
+      "parentId": "n02"
+    },
+    {
+      "id": "n05",
+      "label": "评估改进空间",
+      "kind": "topic",
+      "parentId": "n02"
+    },
+    {
+      "id": "n06",
+      "label": "形成方案定义",
+      "kind": "topic",
+      "parentId": "n01"
+    },
+    {
+      "id": "n07",
+      "label": "明确目标边界",
+      "kind": "topic",
+      "parentId": "n06"
+    },
+    {
+      "id": "n08",
+      "label": "编排能力模块",
+      "kind": "topic",
+      "parentId": "n06"
+    },
+    {
+      "id": "n09",
+      "label": "约定业务约束",
+      "kind": "topic",
+      "parentId": "n06"
+    },
+    {
+      "id": "n10",
+      "label": "完成产品设计",
+      "kind": "topic",
+      "parentId": "n01"
+    },
+    {
+      "id": "n11",
+      "label": "规划内容层级",
+      "kind": "topic",
+      "parentId": "n10"
+    },
+    {
+      "id": "n12",
+      "label": "制作操作样稿",
+      "kind": "topic",
+      "parentId": "n10"
+    },
+    {
+      "id": "n13",
+      "label": "组织需求审议",
+      "kind": "topic",
+      "parentId": "n10"
+    },
+    {
+      "id": "n14",
+      "label": "验证后交付",
+      "kind": "topic",
+      "parentId": "n01"
+    },
+    {
+      "id": "n15",
+      "label": "协调开发实施",
+      "kind": "topic",
+      "parentId": "n14"
+    },
+    {
+      "id": "n16",
+      "label": "检查验收结果",
+      "kind": "topic",
+      "parentId": "n14"
+    },
+    {
+      "id": "n17",
+      "label": "发布后复盘",
+      "kind": "topic",
+      "parentId": "n14"
+    }
+  ],
+  "edges": [],
+  "lanes": [],
+  "phases": [],
+  "groups": []
+}

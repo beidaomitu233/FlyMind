@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "id": "eval-A02",
+  "title": "A02 专科系统分层",
+  "kind": "architecture",
+  "nodes": [
+    {
+      "id": "doctor",
+      "label": "医生端",
+      "kind": "module",
+      "groupId": "entry"
+    },
+    {
+      "id": "lab",
+      "label": "实验室端",
+      "kind": "module",
+      "groupId": "entry"
+    },
+    {
+      "id": "patient",
+      "label": "患者端",
+      "kind": "module",
+      "groupId": "entry"
+    },
+    {
+      "id": "operations",
+      "label": "运营端",
+      "kind": "module",
+      "groupId": "entry",
+      "items": [
+        "工作量统计",
+        "科研统计"
+      ]
+    },
+    {
+      "id": "imaging",
+      "label": "影像分析",
+      "kind": "module",
+      "groupId": "business"
+    },
+    {
+      "id": "semen",
+      "label": "精液分析",
+      "kind": "module",
+      "groupId": "business"
+    },
+    {
+      "id": "decision",
+      "label": "辅助决策",
+      "kind": "module",
+      "groupId": "business"
+    },
+    {
+      "id": "stimulation",
+      "label": "促排方案",
+      "kind": "module",
+      "groupId": "business"
+    },
+    {
+      "id": "embryo",
+      "label": "胚胎评估",
+      "kind": "module",
+      "groupId": "business"
+    },
+    {
+      "id": "warning",
+      "label": "预警",
+      "kind": "module",
+      "groupId": "business"
+    },
+    {
+      "id": "followup",
+      "label": "随访",
+      "kind": "module",
+      "groupId": "business"
+    },
+    {
+      "id": "qc",
+      "label": "质控",
+      "kind": "module",
+      "groupId": "business"
+    },
+    {
+      "id": "permission",
+      "label": "权限",
+      "kind": "module",
+      "groupId": "common"
+    },
+    {
+      "id": "report",
+      "label": "报告",
+      "kind": "module",
+      "groupId": "common"
+    },
+    {
+      "id": "schedule",
+      "label": "调度",
+      "kind": "module",
+      "groupId": "common"
+    },
+    {
+      "id": "algorithm",
+      "label": "算法",
+      "kind": "module",
+      "groupId": "ai"
+    },
+    {
+      "id": "knowledge",
+      "label": "知识库",
+      "kind": "module",
+      "groupId": "ai"
+    },
+    {
+      "id": "his",
+      "label": "HIS",
+      "kind": "module",
+      "groupId": "data"
+    },
+    {
+      "id": "lis",
+      "label": "LIS",
+      "kind": "module",
+      "groupId": "data"
+    },
+    {
+      "id": "pacs",
+      "label": "PACS",
+      "kind": "module",
+      "groupId": "data"
+    },
+    {
+      "id": "emr",
+      "label": "EMR",
+      "kind": "module",
+      "groupId": "data"
+    }
+  ],
+  "edges": [],
+  "lanes": [],
+  "phases": [],
+  "groups": [
+    {
+      "id": "entry",
+      "label": "终端层",
+      "kind": "layer"
+    },
+    {
+      "id": "business",
+      "label": "业务层",
+      "kind": "layer"
+    },
+    {
+      "id": "common",
+      "label": "公共能力层",
+      "kind": "layer"
+    },
+    {
+      "id": "ai",
+      "label": "AI能力层",
+      "kind": "layer"
+    },
+    {
+      "id": "data",
+      "label": "数据层",
+      "kind": "layer"
+    }
+  ]
+}

@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "id": "eval-D01",
+  "title": "D01 临床数据交付",
+  "kind": "dataflow",
+  "nodes": [
+    {
+      "id": "his",
+      "label": "HIS",
+      "kind": "card",
+      "description": "患者、医嘱"
+    },
+    {
+      "id": "lis",
+      "label": "LIS",
+      "kind": "card",
+      "description": "检验"
+    },
+    {
+      "id": "pacs",
+      "label": "PACS",
+      "kind": "card",
+      "description": "影像"
+    },
+    {
+      "id": "emr",
+      "label": "EMR",
+      "kind": "card",
+      "description": "病史"
+    },
+    {
+      "id": "incubator",
+      "label": "培养箱",
+      "kind": "card",
+      "description": "时序数据"
+    },
+    {
+      "id": "integration",
+      "label": "集成核验",
+      "kind": "card",
+      "description": "授权、字段映射、身份与时间核验"
+    },
+    {
+      "id": "analysis",
+      "label": "专业分析",
+      "kind": "card"
+    },
+    {
+      "id": "signature",
+      "label": "专业复核签名",
+      "kind": "card"
+    },
+    {
+      "id": "report",
+      "label": "回写报告",
+      "kind": "card"
+    },
+    {
+      "id": "receipt",
+      "label": "接收回执",
+      "kind": "card"
+    },
+    {
+      "id": "evidence",
+      "label": "归档证据链",
+      "kind": "card",
+      "description": "可追溯回执"
+    }
+  ],
+  "edges": [
+    {
+      "id": "his-in",
+      "source": "his",
+      "target": "integration",
+      "label": "患者/医嘱"
+    },
+    {
+      "id": "lis-in",
+      "source": "lis",
+      "target": "integration",
+      "label": "检验"
+    },
+    {
+      "id": "pacs-in",
+      "source": "pacs",
+      "target": "integration",
+      "label": "影像"
+    },
+    {
+      "id": "emr-in",
+      "source": "emr",
+      "target": "integration",
+      "label": "病史"
+    },
+    {
+      "id": "incubator-in",
+      "source": "incubator",
+      "target": "integration",
+      "label": "时序数据"
+    },
+    {
+      "id": "verified-analysis",
+      "source": "integration",
+      "target": "analysis",
+      "label": "已核验数据"
+    },
+    {
+      "id": "analysis-sign",
+      "source": "analysis",
+      "target": "signature",
+      "label": "分析结果"
+    },
+    {
+      "id": "signed-report",
+      "source": "signature",
+      "target": "report",
+      "label": "已签名报告"
+    },
+    {
+      "id": "report-receipt",
+      "source": "report",
+      "target": "receipt",
+      "label": "回写回执"
+    },
+    {
+      "id": "receipt-evidence",
+      "source": "receipt",
+      "target": "evidence",
+      "label": "回执证据",
+      "kind": "feedback"
+    }
+  ],
+  "lanes": [],
+  "phases": [],
+  "groups": []
+}

@@ -11,6 +11,8 @@ export interface RenderingConfig {
   edgeDefaults?:{route?:LineRoute;color?:string;width?:number;arrow?:'end'|'both'|'none';dashed?:boolean}
   positions:Record<string,Partial<Box>>
   ranks?:Record<string,number>
+  phases?:Record<string,{size:number}>
+  texts?:Record<string,{width?:number;fontSize?:number;color?:string}>
   groups?:Record<string,{tone?:'blue'|'green'|'amber';columns?:number}>
   cards?:Record<string,CardStyle>
   styles?:Record<string,NodeStyle>
@@ -25,7 +27,7 @@ export const standardNodePresets:Record<NodeKind,NodePreset>={
   module:{width:300,height:124,fontSize:15,shape:'rectangle'},
   topic:{width:200,height:52,fontSize:16,shape:'rounded'},
   card:{width:284,height:160,fontSize:28,shape:'rounded'},
-  note:{width:400,height:90,fontSize:28,shape:'rectangle'}
+  note:{width:80,height:32,fontSize:17,shape:'rectangle'}
 }
 export function defaultRendering(kind:string):RenderingConfig {
   return {theme:kind==='architecture'||kind==='dataflow'?'blue':'indigo',orientation:'vertical',positions:{}}

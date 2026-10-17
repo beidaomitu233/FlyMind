@@ -1,0 +1,28 @@
+[
+  {
+    "op": "remove_edge",
+    "id": "automatic-write"
+  },
+  {
+    "op": "remove_node",
+    "id": "knowledge"
+  },
+  {
+    "op": "add_node",
+    "node": {
+      "id": "candidates",
+      "label": "交付候选清单",
+      "kind": "card",
+      "description": "等待人工导入"
+    }
+  },
+  {
+    "op": "add_edge",
+    "edge": {
+      "id": "audit-candidates",
+      "source": "audit",
+      "target": "candidates",
+      "label": "审核通过"
+    }
+  }
+]

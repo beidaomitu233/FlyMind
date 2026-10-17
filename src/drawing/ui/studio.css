@@ -54,7 +54,7 @@
 .studio-root .studio-text-btn{height:32px;white-space:nowrap;padding:0 9px;color:#667286;font-size:11px}
 .studio-root .studio-text-btn:hover{background:#f3f2fa;color:var(--studio-brand)}
 .studio-toolbar-end{margin-left:auto}
-.drawing-canvas{position:relative;flex:1;min-height:0;overflow:hidden;background-color:#f8f9fc;background-image:radial-gradient(#d4d9e3 .7px,transparent .7px);background-size:20px 20px;touch-action:none;cursor:default}
+.drawing-canvas{position:relative;flex:1;min-height:0;overflow:clip;background-color:#f8f9fc;background-image:radial-gradient(#d4d9e3 .7px,transparent .7px);background-size:20px 20px;touch-action:none;cursor:default}
 .drawing-canvas.hand-tool{cursor:grab}.drawing-canvas.panning{cursor:grabbing}.drawing-canvas.connect-tool{cursor:crosshair}
 .drawing-world{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
 .drawing-svg>svg{display:block;overflow:visible;background:white;box-shadow:0 8px 35px #44516c08;border-radius:4px}
@@ -62,6 +62,7 @@
 .drawing-handles .resize-handle{pointer-events:all;cursor:nwse-resize}
 .drawing-handles .port-handle{pointer-events:all;cursor:crosshair}
 .drawing-handles .edge-handle{pointer-events:all;cursor:move}
+.drawing-handles [data-phase-resize]{pointer-events:all}
 .canvas-menu{position:fixed;z-index:150;width:216px;padding:6px;background:#fff;border:1px solid #e6e7f0;border-radius:10px;box-shadow:0 10px 40px #27334a24;font-size:12px;max-height:calc(100vh - 16px);overflow:auto}
 .canvas-menu button{display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px 10px;border:0;border-radius:5px;background:none;text-align:left;color:#34425b;cursor:pointer}
 .canvas-menu button:hover,.canvas-menu summary:hover{background:#f1effc;color:#6c60cf}.canvas-menu kbd{font:10px 'Segoe UI',sans-serif;color:#9a9faf}.canvas-menu hr{border:0;border-top:1px solid #ececf2;margin:5px 4px}.canvas-menu .danger{color:#bf5252}.canvas-menu summary{padding:8px 10px;cursor:pointer;border-radius:5px}.canvas-menu details button{padding-left:20px}

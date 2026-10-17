@@ -1,0 +1,20 @@
+[
+  {
+    "op": "add_container",
+    "collection": "groups",
+    "item": {
+      "id": "service",
+      "label": "服务层",
+      "kind": "layer"
+    },
+    "index": 2
+  },
+  {
+    "op": "update_node",
+    "id": "inventory",
+    "changes": {
+      "groupId": "service",
+      "label": "库存服务"
+    }
+  }
+]

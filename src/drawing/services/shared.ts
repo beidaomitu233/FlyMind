@@ -1,7 +1,7 @@
 import { ref, type Ref, type ComputedRef } from 'vue'
 import { projectDocument } from '../core/layers'
 import { copy, newId, validateDocument, type DiagramDocument } from '../core/model'
-import type { RecordData, WorkspaceGroup, WorkspaceSnapshot } from './workspace-types'
+import type { RecordData, WorkspaceGroup, WorkspaceSnapshot,TrashItem } from './workspace-types'
 const KEY='flymind-drawing-studio-v1'
 const hydrate=(r:RecordData)=>validateDocument({...r.document,createdAt:r.createdAt??r.document.createdAt})
 function read<T>(key:string,fallback:T):T{try{return JSON.parse(localStorage.getItem(KEY+key)||'null')??fallback}catch{return fallback}}
@@ -10,6 +10,7 @@ const signature=(d:DiagramDocument)=>JSON.stringify(stable({...d,updatedAt:0,cre
 export function sharedWorkspace(ctx:{documents:Ref<DiagramDocument[]>;activeId:Ref<string>;current:ComputedRef<DiagramDocument>;storageError:Ref<string>;notify:(s:string)=>void;reset:()=>void}){
   const shared=ref(false),loading=ref(false),pending=ref(0),conflictId=ref(''),revisions=ref<Record<string,number>>(read('-revisions',{}))
   const workspaceGroups=ref<WorkspaceGroup[]>([]),assignments=ref<Record<string,string|null>>({})
+  const trash=ref<TrashItem[]>([])
   const recoveries=ref<DiagramDocument[]>([]);for(const d of read<any[]>('-recoveries',[])){try{recoveries.value.push(validateDocument(d))}catch{ctx.storageError.value='部分待恢复存档格式无效，原始本地备份仍保留'}}
   const unsaved=new Set<string>(read('-unsaved',[])),newIds=new Set<string>(read('-new',[]))
   const deletions=read<Record<string,number>>('-deletions',{})
@@ -25,7 +26,7 @@ export function sharedWorkspace(ctx:{documents:Ref<DiagramDocument[]>;activeId:R
   function enqueue(fn:()=>Promise<void>){generation++;pending.value++;tail=tail.then(fn).catch(e=>{ctx.storageError.value=(e as Error).message}).finally(()=>pending.value--);return tail}
   function apply(snapshot:WorkspaceSnapshot){
     const records=snapshot.diagrams.filter(r=>!Object.hasOwn(deletions,r.document.id))
-    workspaceGroups.value=snapshot.groups;assignments.value=Object.fromEntries(records.map(r=>[r.document.id,r.workspaceGroupId||null]))
+    workspaceGroups.value=snapshot.groups;trash.value=snapshot.trash||[];assignments.value=Object.fromEntries(records.map(r=>[r.document.id,r.workspaceGroupId||null]))
     ctx.documents.value=records.map(hydrate);revisions.value=Object.fromEntries(records.map(r=>[r.document.id,r.revision]))
     if(!records.some(r=>r.document.id===ctx.activeId.value))ctx.activeId.value=records[0]?.document.id||''
   }
@@ -61,11 +62,13 @@ export function sharedWorkspace(ctx:{documents:Ref<DiagramDocument[]>;activeId:R
   async function retrySync(){if(!shared.value){await initialize();return}enqueue(flushDeletions);for(const id of unsaved){const d=ctx.documents.value.find(d=>d.id===id);if(d)save(d)}await tail;await refreshRemote()}
   async function refreshRemote(){if(!shared.value||pending.value||conflictId.value||unsaved.size||document.activeElement?.closest('input,textarea,select,[contenteditable]'))return;const started=generation;try{const snapshot:WorkspaceSnapshot=await api('/workspace');if(started!==generation||pending.value||unsaved.size)return
     const changed=snapshot.diagrams.some(r=>revisions.value[r.document.id]!==r.revision)||snapshot.diagrams.length!==ctx.documents.value.length
-    workspaceGroups.value=snapshot.groups;assignments.value=Object.fromEntries(snapshot.diagrams.map(r=>[r.document.id,r.workspaceGroupId||null]))
+    workspaceGroups.value=snapshot.groups;trash.value=snapshot.trash||[];assignments.value=Object.fromEntries(snapshot.diagrams.map(r=>[r.document.id,r.workspaceGroupId||null]))
     if(!changed)return;const activeChanged=snapshot.diagrams.find(r=>r.document.id===ctx.activeId.value)?.revision!==revisions.value[ctx.activeId.value];apply(snapshot);if(activeChanged)ctx.reset();backup();ctx.storageError.value=''
   }catch(e){ctx.storageError.value='共享同步失败；本地内容仍保留。'+(e as Error).message}}
   async function resolveConflict(asCopy:boolean){await tail;const id=conflictId.value;if(!id)return;try{const local=copy(ctx.documents.value.find(d=>d.id===id)!);try{const latest:RecordData=await api(`/diagrams/${id}`);ctx.documents.value=ctx.documents.value.map(d=>d.id===id?hydrate(latest):d);revisions.value[id]=latest.revision}catch(e){if(![404,410].includes((e as any).status))throw e;ctx.documents.value=ctx.documents.value.filter(d=>d.id!==id)}clearDirty(id);conflictId.value='';ctx.storageError.value='';ctx.reset();if(asCopy){local.id=newId('diagram');local.createdAt=local.updatedAt=Date.now();local.title+=' · 本地副本';ctx.documents.value.push(local);ctx.activeId.value=local.id;markNew(local.id);save(local)}else if(!ctx.documents.value.some(d=>d.id===ctx.activeId.value))ctx.activeId.value=ctx.documents.value[0]?.id||'';backup()}catch(e){ctx.storageError.value=(e as Error).message}}
-  function remove(id:string){generation++;if(conflictId.value===id)conflictId.value='';deletions[id]=revisions.value[id]||0;clearDirty(id);metadata();enqueue(flushDeletions)}
+  function remove(id:string){generation++;if(conflictId.value===id)conflictId.value='';deletions[id]=revisions.value[id]||0;clearDirty(id);metadata();enqueue(async()=>{await flushDeletions();trash.value=await api('/trash')})}
+  async function restoreDeleted(item:TrashItem){let restored=false;await enqueue(async()=>{const r:RecordData=await api(`/trash/${item.id}/restore`,'POST',{expectedRevision:item.revision,deletedAt:item.deletedAt});delete deletions[item.id];clearDirty(item.id);ctx.documents.value=[...ctx.documents.value.filter(d=>d.id!==item.id),hydrate(r)];revisions.value[item.id]=r.revision;assignments.value[item.id]=r.workspaceGroupId||null;trash.value=await api('/trash');ctx.activeId.value=item.id;ctx.reset();backup();ctx.storageError.value='';ctx.notify('图形已恢复');restored=true});return restored}
+  async function purgeDeleted(item:TrashItem){await enqueue(async()=>{await api(`/trash/${item.id}?revision=${item.revision}&deletedAt=${item.deletedAt}`,'DELETE');trash.value=await api('/trash');ctx.storageError.value='';ctx.notify('已永久删除')})}
   async function restoreRecovery(index:number){const original=recoveries.value[index];if(!original)return;const d=copy(original);d.id=newId('diagram');d.title+=' · 恢复副本';d.createdAt=d.updatedAt=Date.now();ctx.documents.value.push(d);ctx.activeId.value=d.id;markNew(d.id);backup();if(shared.value){save(d);await tail;if(unsaved.has(d.id))return}recoveries.value.splice(index,1);localStorage.setItem(KEY+'-recoveries',JSON.stringify(recoveries.value.map(projectDocument)));ctx.reset()}
   async function ensureDocument(id:string){await tail;if(Object.hasOwn(deletions,id))return false;if(ctx.documents.value.some(d=>d.id===id))return true;try{const record:RecordData=await api('/diagrams/'+encodeURIComponent(id));if(!ctx.documents.value.some(d=>d.id===id)){ctx.documents.value.push(hydrate(record));revisions.value[id]=record.revision;assignments.value[id]=record.workspaceGroupId||null;backup()}return true}catch(e){ctx.notify((e as Error).message);return false}}
   async function groupAction(fn:()=>Promise<unknown>){await enqueue(async()=>{await fn();const snapshot:WorkspaceSnapshot=await api('/workspace');workspaceGroups.value=snapshot.groups;assignments.value=Object.fromEntries(snapshot.diagrams.map(r=>[r.document.id,r.workspaceGroupId||null]));ctx.storageError.value=''})}
@@ -73,5 +76,5 @@ export function sharedWorkspace(ctx:{documents:Ref<DiagramDocument[]>;activeId:R
   function renameWorkspaceGroup(id:string,name:string){const group=workspaceGroups.value.find(g=>g.id===id);return groupAction(()=>api('/groups/'+id,'PUT',{name,expectedRevision:group?.revision}))}
   function deleteWorkspaceGroup(id:string){const group=workspaceGroups.value.find(g=>g.id===id);return groupAction(()=>api(`/groups/${id}?revision=${group?.revision}`,'DELETE'))}
   async function moveToWorkspaceGroup(id:string,workspaceGroupId:string|null){await tail;return groupAction(()=>api(`/diagrams/${id}/group`,'PUT',{workspaceGroupId,expectedWorkspaceGroupId:assignments.value[id]||null}))}
-  return {shared,loading,pending,conflictId,revisions,workspaceGroups,assignments,recoveries,initialize,refreshRemote,ensureDocument,resolveConflict,retrySync,markDirty,markNew,save,remove,restoreRecovery,createWorkspaceGroup,renameWorkspaceGroup,deleteWorkspaceGroup,moveToWorkspaceGroup}
+  return {shared,loading,pending,conflictId,revisions,workspaceGroups,assignments,trash,recoveries,initialize,refreshRemote,ensureDocument,resolveConflict,retrySync,markDirty,markNew,save,remove,restoreRecovery,restoreDeleted,purgeDeleted,createWorkspaceGroup,renameWorkspaceGroup,deleteWorkspaceGroup,moveToWorkspaceGroup}
 }

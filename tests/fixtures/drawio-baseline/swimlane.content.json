@@ -1,0 +1,285 @@
+{
+  "schemaVersion": 1,
+  "id": "baseline-swimlane",
+  "title": "脱敏swimlane基础样本",
+  "kind": "swimlane",
+  "nodes": [
+    {
+      "id": "n01",
+      "label": "发起业务诉求",
+      "kind": "task",
+      "laneId": "r01",
+      "phaseId": "p01"
+    },
+    {
+      "id": "n02",
+      "label": "筛选需求线索",
+      "kind": "task",
+      "laneId": "r02",
+      "phaseId": "p01"
+    },
+    {
+      "id": "n03",
+      "label": "补充背景和初始诉求",
+      "kind": "task",
+      "laneId": "r03",
+      "phaseId": "p01"
+    },
+    {
+      "id": "n04",
+      "label": "目标已澄清？",
+      "kind": "decision",
+      "laneId": "r03",
+      "phaseId": "p02"
+    },
+    {
+      "id": "n05",
+      "label": "开展前期咨询",
+      "kind": "task",
+      "laneId": "r03",
+      "phaseId": "p02"
+    },
+    {
+      "id": "n06",
+      "label": "符合供应方服务？",
+      "kind": "decision",
+      "laneId": "r03",
+      "phaseId": "p02"
+    },
+    {
+      "id": "n07",
+      "label": "回传交流结果",
+      "kind": "task",
+      "laneId": "r02",
+      "phaseId": "p02"
+    },
+    {
+      "id": "n08",
+      "label": "说明无法继续合作",
+      "kind": "end",
+      "laneId": "r01",
+      "phaseId": "p02"
+    },
+    {
+      "id": "n09",
+      "label": "客户补充需求",
+      "kind": "task",
+      "laneId": "r01",
+      "phaseId": "p03"
+    },
+    {
+      "id": "n10",
+      "label": "产品侧沟通需求",
+      "kind": "task",
+      "laneId": "r03",
+      "phaseId": "p03"
+    },
+    {
+      "id": "n11",
+      "label": "形成软硬件组合方案",
+      "kind": "task",
+      "laneId": "r03",
+      "phaseId": "p03"
+    },
+    {
+      "id": "n12",
+      "label": "讨论解决方案",
+      "kind": "task",
+      "laneId": "r03",
+      "phaseId": "p04"
+    },
+    {
+      "id": "n13",
+      "label": "客户认可需求范围？",
+      "kind": "decision",
+      "laneId": "r01",
+      "phaseId": "p04"
+    },
+    {
+      "id": "n14",
+      "label": "修订解决方案",
+      "kind": "task",
+      "laneId": "r03",
+      "phaseId": "p04"
+    },
+    {
+      "id": "n15",
+      "label": "确认实施边界",
+      "kind": "task",
+      "laneId": "r01",
+      "phaseId": "p05"
+    },
+    {
+      "id": "n16",
+      "label": "移交实施团队",
+      "kind": "task",
+      "laneId": "r03",
+      "phaseId": "p05"
+    },
+    {
+      "id": "n17",
+      "label": "安排启动及交付",
+      "kind": "task",
+      "laneId": "r04",
+      "phaseId": "p05"
+    },
+    {
+      "id": "n18",
+      "label": "完成项目实施",
+      "kind": "end",
+      "laneId": "r04",
+      "phaseId": "p05"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e01",
+      "source": "n01",
+      "target": "n02"
+    },
+    {
+      "id": "e02",
+      "source": "n02",
+      "target": "n03"
+    },
+    {
+      "id": "e03",
+      "source": "n03",
+      "target": "n04"
+    },
+    {
+      "id": "e04",
+      "source": "n04",
+      "target": "n05",
+      "label": "条件不成立"
+    },
+    {
+      "id": "e05",
+      "source": "n04",
+      "target": "n06",
+      "label": "条件成立"
+    },
+    {
+      "id": "e06",
+      "source": "n05",
+      "target": "n06"
+    },
+    {
+      "id": "e07",
+      "source": "n06",
+      "target": "n07",
+      "label": "条件不成立"
+    },
+    {
+      "id": "e08",
+      "source": "n07",
+      "target": "n08"
+    },
+    {
+      "id": "e09",
+      "source": "n06",
+      "target": "n10",
+      "label": "条件成立"
+    },
+    {
+      "id": "e10",
+      "source": "n09",
+      "target": "n10",
+      "kind": "feedback"
+    },
+    {
+      "id": "e11",
+      "source": "n10",
+      "target": "n09"
+    },
+    {
+      "id": "e12",
+      "source": "n10",
+      "target": "n11"
+    },
+    {
+      "id": "e13",
+      "source": "n11",
+      "target": "n12"
+    },
+    {
+      "id": "e14",
+      "source": "n12",
+      "target": "n13"
+    },
+    {
+      "id": "e15",
+      "source": "n13",
+      "target": "n14",
+      "label": "条件不成立"
+    },
+    {
+      "id": "e16",
+      "source": "n14",
+      "target": "n12",
+      "kind": "feedback"
+    },
+    {
+      "id": "e17",
+      "source": "n13",
+      "target": "n15",
+      "label": "条件成立"
+    },
+    {
+      "id": "e18",
+      "source": "n15",
+      "target": "n16"
+    },
+    {
+      "id": "e19",
+      "source": "n16",
+      "target": "n17"
+    },
+    {
+      "id": "e20",
+      "source": "n17",
+      "target": "n18"
+    }
+  ],
+  "lanes": [
+    {
+      "id": "r01",
+      "label": "需求方"
+    },
+    {
+      "id": "r02",
+      "label": "商务对接"
+    },
+    {
+      "id": "r03",
+      "label": "产品及前期顾问"
+    },
+    {
+      "id": "r04",
+      "label": "实施负责人"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p01",
+      "label": "线索接入"
+    },
+    {
+      "id": "p02",
+      "label": "服务咨询"
+    },
+    {
+      "id": "p03",
+      "label": "诉求分析"
+    },
+    {
+      "id": "p04",
+      "label": "范围澄清"
+    },
+    {
+      "id": "p05",
+      "label": "实施交付"
+    }
+  ],
+  "groups": []
+}

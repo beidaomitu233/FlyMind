@@ -1,0 +1,372 @@
+{
+  "schemaVersion": 1,
+  "id": "baseline-pbs-main",
+  "title": "示例申请服务主线（存量结构）",
+  "kind": "swimlane",
+  "nodes": [
+    {
+      "id": "n01",
+      "label": "订单入池：同步或手工登记",
+      "kind": "start",
+      "laneId": "r01",
+      "phaseId": "p01"
+    },
+    {
+      "id": "n02",
+      "label": "指定项目统筹负责人",
+      "kind": "task",
+      "laneId": "r01",
+      "phaseId": "p01",
+      "description": "管理员必选项目统筹负责人；允许预配其他成员。"
+    },
+    {
+      "id": "n03",
+      "label": "指定或确认项目负责人",
+      "kind": "task",
+      "laneId": "r02",
+      "phaseId": "p01",
+      "description": "统筹仍需指定或确认项目负责人，不能被前一环节的预配替代。"
+    },
+    {
+      "id": "n04",
+      "label": "项目负责人决定是否接单",
+      "kind": "decision",
+      "laneId": "r03",
+      "phaseId": "p01"
+    },
+    {
+      "id": "p02",
+      "label": "整理学生信息、目标与时限",
+      "kind": "task",
+      "laneId": "r03",
+      "phaseId": "p02"
+    },
+    {
+      "id": "n06",
+      "label": "按院校目标规划已付款任务",
+      "kind": "task",
+      "laneId": "r03",
+      "phaseId": "p02",
+      "description": "优先复用已配成员，按已购买且已付款的服务安排任务；退回调整保留已交付成果。"
+    },
+    {
+      "id": "n07",
+      "label": "成员领取并执行文书、申请和追踪",
+      "kind": "task",
+      "laneId": "r04",
+      "phaseId": "p03",
+      "description": "各目标独立推进；文书可按份交付，其他任务继续；成员可在执行中退回。"
+    },
+    {
+      "id": "n08",
+      "label": "统筹检查时限和目标进展",
+      "kind": "task",
+      "laneId": "r02",
+      "phaseId": "p03",
+      "description": "统筹可调整人员并持续检查进展与异常。"
+    },
+    {
+      "id": "n09",
+      "label": "处理任务退回并调整安排",
+      "kind": "task",
+      "laneId": "r03",
+      "phaseId": "p03"
+    },
+    {
+      "id": "n10",
+      "label": "负责人核验单个目标完成",
+      "kind": "task",
+      "laneId": "r03",
+      "phaseId": "p03",
+      "description": "单个目标核验后，当前订单的所有目标与成果齐备才进入结项汇总。"
+    },
+    {
+      "id": "n11",
+      "label": "向交易平台交付文书",
+      "kind": "task",
+      "laneId": "r03",
+      "phaseId": "p03",
+      "description": "平台订单的文书支持分次交付，不等待全部目标。"
+    },
+    {
+      "id": "n12",
+      "label": "统筹核验结项材料",
+      "kind": "decision",
+      "laneId": "r02",
+      "phaseId": "p04",
+      "description": "核验目标均已完成、成果与报告齐全。"
+    },
+    {
+      "id": "p04",
+      "label": "统筹确认报告并结项归档",
+      "kind": "task",
+      "laneId": "r02",
+      "phaseId": "p04",
+      "description": "单笔订单分别结项，手工登记订单直接结束；平台订单的报告由项目负责人交付。"
+    },
+    {
+      "id": "n14",
+      "label": "将结项报告交付交易平台",
+      "kind": "task",
+      "laneId": "r02",
+      "phaseId": "p05"
+    },
+    {
+      "id": "n15",
+      "label": "服务完成",
+      "kind": "end",
+      "laneId": "r02",
+      "phaseId": "p05"
+    },
+    {
+      "id": "n16",
+      "label": "管理员可选预配成员",
+      "kind": "task",
+      "laneId": "r01",
+      "phaseId": "p01",
+      "description": "管理员可预配其他成员；统筹仍负有确认项目负责人责任。"
+    },
+    {
+      "id": "n17",
+      "label": "统筹可选预配成员",
+      "kind": "task",
+      "laneId": "r02",
+      "phaseId": "p01"
+    },
+    {
+      "id": "n18",
+      "label": "统筹直接调整交付成员",
+      "kind": "task",
+      "laneId": "r02",
+      "phaseId": "p03",
+      "description": "统筹调整后由执行成员重新领取任务。"
+    },
+    {
+      "id": "n19",
+      "label": "向交易平台交付申请任务",
+      "kind": "task",
+      "description": "来源记录沿用了文书分次交付说明，与申请任务标题不一致；此矛盾保留待确认。",
+      "laneId": "r03",
+      "phaseId": "p03"
+    },
+    {
+      "id": "n20",
+      "label": "核验未通过说明",
+      "kind": "note",
+      "laneId": "r03",
+      "phaseId": "p04"
+    },
+    {
+      "id": "n21",
+      "label": "接单退回说明",
+      "kind": "note",
+      "laneId": "r01",
+      "phaseId": "p01"
+    },
+    {
+      "id": "n22",
+      "label": "手工登记订单说明",
+      "kind": "note",
+      "laneId": "r03",
+      "phaseId": "p05"
+    },
+    {
+      "id": "n23",
+      "label": "平台同步订单说明",
+      "kind": "task",
+      "laneId": "r02",
+      "phaseId": "p05"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e01",
+      "source": "n01",
+      "target": "n02"
+    },
+    {
+      "id": "e02",
+      "source": "n02",
+      "target": "n03",
+      "label": "必选指派"
+    },
+    {
+      "id": "e03",
+      "source": "n02",
+      "target": "n16",
+      "label": "可选安排"
+    },
+    {
+      "id": "e04",
+      "source": "n16",
+      "target": "n03",
+      "label": "复用预配成员"
+    },
+    {
+      "id": "e05",
+      "source": "n03",
+      "target": "n04"
+    },
+    {
+      "id": "e06",
+      "source": "n03",
+      "target": "n17",
+      "label": "可选安排"
+    },
+    {
+      "id": "e07",
+      "source": "n17",
+      "target": "n04",
+      "label": "复用预配成员"
+    },
+    {
+      "id": "e08",
+      "source": "n04",
+      "target": "n03",
+      "label": "不接单，返回上级",
+      "kind": "feedback"
+    },
+    {
+      "id": "e09",
+      "source": "n04",
+      "target": "p02",
+      "label": "同意接单"
+    },
+    {
+      "id": "e10",
+      "source": "p02",
+      "target": "n06"
+    },
+    {
+      "id": "e11",
+      "source": "n06",
+      "target": "n07"
+    },
+    {
+      "id": "e12",
+      "source": "n07",
+      "target": "n09",
+      "label": "未领取或执行中退回",
+      "kind": "feedback"
+    },
+    {
+      "id": "e13",
+      "source": "n09",
+      "target": "n07",
+      "label": "调整后重新领取",
+      "kind": "feedback"
+    },
+    {
+      "id": "e14",
+      "source": "n08",
+      "target": "n18",
+      "label": "需要人员调整"
+    },
+    {
+      "id": "e15",
+      "source": "n18",
+      "target": "n07",
+      "label": "调整后重新领取",
+      "kind": "feedback"
+    },
+    {
+      "id": "e16",
+      "source": "n07",
+      "target": "n11",
+      "label": "平台订单：单份文书已完成"
+    },
+    {
+      "id": "e17",
+      "source": "n07",
+      "target": "n10",
+      "label": "当前目标流程已完成"
+    },
+    {
+      "id": "e18",
+      "source": "n12",
+      "target": "p04",
+      "label": "核验通过"
+    },
+    {
+      "id": "e19",
+      "source": "n07",
+      "target": "n19"
+    },
+    {
+      "id": "e20",
+      "source": "n10",
+      "target": "n12"
+    },
+    {
+      "id": "e21",
+      "source": "n12",
+      "target": "n10"
+    },
+    {
+      "id": "e22",
+      "source": "n03",
+      "target": "n02"
+    },
+    {
+      "id": "e23",
+      "source": "n03",
+      "target": "n08"
+    },
+    {
+      "id": "e24",
+      "source": "p04",
+      "target": "n14"
+    },
+    {
+      "id": "e25",
+      "source": "n14",
+      "target": "n15"
+    },
+    {
+      "id": "e26",
+      "source": "p04",
+      "target": "n15"
+    }
+  ],
+  "lanes": [
+    {
+      "id": "r01",
+      "label": "组织管理员"
+    },
+    {
+      "id": "r02",
+      "label": "项目统筹"
+    },
+    {
+      "id": "r03",
+      "label": "项目负责人"
+    },
+    {
+      "id": "r04",
+      "label": "执行团队"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p01",
+      "label": "订单登记和人员分派"
+    },
+    {
+      "id": "p02",
+      "label": "申请准备"
+    },
+    {
+      "id": "p03",
+      "label": "目标执行和进度检查"
+    },
+    {
+      "id": "p04",
+      "label": "结项审核及归档"
+    },
+    {
+      "id": "p05",
+      "label": "报告交付与完成"
+    }
+  ],
+  "groups": []
+}

@@ -1,0 +1,212 @@
+{
+  "schemaVersion": 1,
+  "id": "eval-S01",
+  "title": "S01 项目需求交接",
+  "kind": "swimlane",
+  "nodes": [
+    {
+      "id": "demand",
+      "label": "提出项目需求",
+      "kind": "start",
+      "laneId": "customer",
+      "phaseId": "screen"
+    },
+    {
+      "id": "screen",
+      "label": "初筛需求",
+      "kind": "task",
+      "laneId": "bd",
+      "phaseId": "screen"
+    },
+    {
+      "id": "goal",
+      "label": "确认项目目标",
+      "kind": "task",
+      "laneId": "product",
+      "phaseId": "screen"
+    },
+    {
+      "id": "clear",
+      "label": "目标明确？",
+      "kind": "decision",
+      "laneId": "product",
+      "phaseId": "screen"
+    },
+    {
+      "id": "consult",
+      "label": "咨询客户",
+      "kind": "task",
+      "laneId": "product",
+      "phaseId": "screen"
+    },
+    {
+      "id": "fit",
+      "label": "适配性通过？",
+      "kind": "decision",
+      "laneId": "product",
+      "phaseId": "screen"
+    },
+    {
+      "id": "reject",
+      "label": "反馈不适配",
+      "kind": "task",
+      "laneId": "bd",
+      "phaseId": "screen"
+    },
+    {
+      "id": "rejected",
+      "label": "需求结束",
+      "kind": "end",
+      "laneId": "customer",
+      "phaseId": "screen"
+    },
+    {
+      "id": "plan",
+      "label": "编制方案",
+      "kind": "task",
+      "laneId": "product",
+      "phaseId": "plan"
+    },
+    {
+      "id": "confirm",
+      "label": "确认方案？",
+      "kind": "decision",
+      "laneId": "customer",
+      "phaseId": "plan"
+    },
+    {
+      "id": "revise",
+      "label": "修改方案",
+      "kind": "task",
+      "laneId": "product",
+      "phaseId": "plan"
+    },
+    {
+      "id": "handover",
+      "label": "交接方案",
+      "kind": "task",
+      "laneId": "product",
+      "phaseId": "start"
+    },
+    {
+      "id": "launch",
+      "label": "项目启动",
+      "kind": "end",
+      "laneId": "pm",
+      "phaseId": "start"
+    }
+  ],
+  "edges": [
+    {
+      "id": "demand-screen",
+      "source": "demand",
+      "target": "screen"
+    },
+    {
+      "id": "screen-goal",
+      "source": "screen",
+      "target": "goal"
+    },
+    {
+      "id": "goal-clear",
+      "source": "goal",
+      "target": "clear"
+    },
+    {
+      "id": "clear-fit",
+      "source": "clear",
+      "target": "fit",
+      "label": "明确"
+    },
+    {
+      "id": "clear-consult",
+      "source": "clear",
+      "target": "consult",
+      "label": "不明确"
+    },
+    {
+      "id": "consult-goal",
+      "source": "consult",
+      "target": "goal",
+      "kind": "feedback"
+    },
+    {
+      "id": "fit-plan",
+      "source": "fit",
+      "target": "plan",
+      "label": "通过"
+    },
+    {
+      "id": "fit-reject",
+      "source": "fit",
+      "target": "reject",
+      "label": "不通过"
+    },
+    {
+      "id": "reject-end",
+      "source": "reject",
+      "target": "rejected"
+    },
+    {
+      "id": "plan-confirm",
+      "source": "plan",
+      "target": "confirm"
+    },
+    {
+      "id": "confirm-handover",
+      "source": "confirm",
+      "target": "handover",
+      "label": "确认"
+    },
+    {
+      "id": "confirm-revise",
+      "source": "confirm",
+      "target": "revise",
+      "label": "退回"
+    },
+    {
+      "id": "revise-plan",
+      "source": "revise",
+      "target": "plan",
+      "kind": "feedback"
+    },
+    {
+      "id": "handover-launch",
+      "source": "handover",
+      "target": "launch"
+    }
+  ],
+  "lanes": [
+    {
+      "id": "customer",
+      "label": "客户"
+    },
+    {
+      "id": "bd",
+      "label": "BD"
+    },
+    {
+      "id": "product",
+      "label": "产品经理"
+    },
+    {
+      "id": "pm",
+      "label": "项目经理"
+    }
+  ],
+  "phases": [
+    {
+      "id": "screen",
+      "label": "需求筛选"
+    },
+    {
+      "id": "plan",
+      "label": "方案确认"
+    },
+    {
+      "id": "start",
+      "label": "交接启动"
+    }
+  ],
+  "groups": []
+}

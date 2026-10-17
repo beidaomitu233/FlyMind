@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "id": "eval-A01",
+  "title": "A01 绘图产品架构",
+  "kind": "architecture",
+  "nodes": [
+    {
+      "id": "web",
+      "label": "Web入口",
+      "kind": "module",
+      "groupId": "entry"
+    },
+    {
+      "id": "mcp",
+      "label": "MCP入口",
+      "kind": "module",
+      "groupId": "entry"
+    },
+    {
+      "id": "validate",
+      "label": "内容校验",
+      "kind": "module",
+      "groupId": "business"
+    },
+    {
+      "id": "manage",
+      "label": "图形管理",
+      "kind": "module",
+      "groupId": "business"
+    },
+    {
+      "id": "export",
+      "label": "导出任务",
+      "kind": "module",
+      "groupId": "business"
+    },
+    {
+      "id": "sqlite",
+      "label": "SQLite",
+      "kind": "module",
+      "groupId": "infra"
+    },
+    {
+      "id": "artifacts",
+      "label": "制品存储",
+      "kind": "module",
+      "groupId": "infra"
+    },
+    {
+      "id": "native",
+      "label": "原生绘图引擎",
+      "kind": "module",
+      "groupId": "infra"
+    },
+    {
+      "id": "governance",
+      "label": "鉴权与审计",
+      "kind": "module",
+      "groupId": "governance",
+      "items": [
+        "鉴权",
+        "审计"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "web-valid",
+      "source": "web",
+      "target": "validate"
+    },
+    {
+      "id": "web-manage",
+      "source": "web",
+      "target": "manage"
+    },
+    {
+      "id": "web-export",
+      "source": "web",
+      "target": "export"
+    },
+    {
+      "id": "mcp-valid",
+      "source": "mcp",
+      "target": "validate"
+    },
+    {
+      "id": "mcp-manage",
+      "source": "mcp",
+      "target": "manage"
+    },
+    {
+      "id": "mcp-export",
+      "source": "mcp",
+      "target": "export"
+    },
+    {
+      "id": "manage-db",
+      "source": "manage",
+      "target": "sqlite"
+    },
+    {
+      "id": "export-db",
+      "source": "export",
+      "target": "sqlite"
+    },
+    {
+      "id": "export-files",
+      "source": "export",
+      "target": "artifacts"
+    },
+    {
+      "id": "export-native",
+      "source": "export",
+      "target": "native"
+    }
+  ],
+  "lanes": [],
+  "phases": [],
+  "groups": [
+    {
+      "id": "entry",
+      "label": "入口层",
+      "kind": "layer"
+    },
+    {
+      "id": "business",
+      "label": "业务层",
+      "kind": "layer"
+    },
+    {
+      "id": "infra",
+      "label": "基础设施层",
+      "kind": "layer"
+    },
+    {
+      "id": "governance",
+      "label": "跨层治理",
+      "kind": "governance"
+    }
+  ]
+}

@@ -7,24 +7,19 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import sharp from 'sharp'
 import { DiagramStore, PROJECT_ROOT } from '../server/store'
-import { extractContent } from '../src/drawing/core/layers'
+import { extractContent,projectDocument } from '../src/drawing/core/layers'
 import { sampleFor } from '../src/drawing/core/samples'
 import {copy} from '../src/drawing/core/model'
 
-test('创建时间不可被编辑覆盖；旧图从首个版本恢复并持久化，列表最新创建在前',async()=>{
+test('SQLite 创建时间不可被编辑覆盖，列表最新创建在前',async()=>{
   const root=await mkdtemp(join(tmpdir(),'flymind-dates-'))
-  try{
-    const store=new DiagramStore(root);await store.init();const old=sampleFor('flowchart');old.id='old';old.createdAt=1
+  try{const store=new DiagramStore(root);await store.init();const old=sampleFor('flowchart');old.id='old';old.createdAt=1
     const first=await store.create(old);assert.ok(first.createdAt!>1)
     await new Promise(r=>setTimeout(r,8));const next=copy(old);next.id='new';const newest=await store.create(next)
     const changed=copy(first.document);changed.createdAt=Date.now()+100000;changed.title='旧图编辑'
     await store.update('old',1,changed);assert.equal((await store.get('old')).createdAt,first.createdAt)
-    assert.ok((await store.list()).findIndex(r=>r.document.id==='new')<(await store.list()).findIndex(r=>r.document.id==='old'))
-    assert.ok(newest.createdAt!>first.createdAt!)
-    const legacy=JSON.parse(await readFile(store.path('old'),'utf8'));delete legacy.createdAt;delete legacy.document.createdAt
-    await writeFile(store.path('old'),JSON.stringify(legacy));const dir=join(root,'artifacts','old','r1');await mkdir(dir,{recursive:true});await writeFile(join(dir,'diagram.project.json'),JSON.stringify({...legacy.document,updatedAt:1000}))
-    await store.init();const migrated=JSON.parse(await readFile(store.path('old'),'utf8'))
-    assert.equal(migrated.createdAt,1000);assert.equal(migrated.document.createdAt,1000);assert.equal(migrated.revision,legacy.revision);assert.equal(migrated.savedAt,legacy.savedAt);assert.deepEqual(migrated.document.content,legacy.document.content)
+    assert.ok((await store.list()).findIndex(r=>r.document.id==='new')<(await store.list()).findIndex(r=>r.document.id==='old'));assert.ok(newest.createdAt!>first.createdAt!)
+    assert.equal((await readFile(store.databasePath)).subarray(0,15).toString(),'SQLite format 3')
   }finally{await rm(root,{recursive:true,force:true})}
 })
 
@@ -34,16 +29,16 @@ test('共享文件存储：并发修改仅成功一次，非法增量修改不�
     const store=new DiagramStore(root);await store.init()
     const d=sampleFor('swimlane');d.id='test-version'
     await store.create(d)
-    const saved=JSON.parse(await readFile(store.path(d.id),'utf8'));assert.equal(saved.document.schemaVersion,2);assert.ok(saved.document.content);assert.ok(saved.document.rendering);assert.ok(!Object.hasOwn(saved.document.content,'presentation'))
+    const saved=projectDocument((await store.get(d.id)).document);assert.equal(saved.schemaVersion,2);assert.ok(saved.content);assert.ok(saved.rendering);assert.ok(!Object.hasOwn(saved.content,'presentation'))
     const results=await Promise.allSettled([
       store.patch(d.id,1,[{op:'set_title',title:'版本 A'}]),
       new DiagramStore(root).patch(d.id,1,[{op:'set_title',title:'版本 B'}])
     ])
     assert.equal(results.filter(r=>r.status==='fulfilled').length,1)
     assert.equal((await store.get(d.id)).revision,2)
-    const before=await readFile(store.path(d.id),'utf8')
+    const before=JSON.stringify(await store.get(d.id))
     await assert.rejects(store.patch(d.id,2,[{op:'set_title',title:'不应保存'},{op:'remove_container',collection:'lanes',id:'customer'}]),/moveTo/)
-    assert.equal(await readFile(store.path(d.id),'utf8'),before)
+    assert.equal(JSON.stringify(await store.get(d.id)),before)
     await assert.rejects(store.get('../outside'),/图形 ID/)
     const locked=copy((await store.get(d.id)).document);locked.presentation.objects={groups:{pair:['request','screen']},locked:['request'],order:locked.nodes.map(n=>n.id)}
     await store.update(d.id,2,locked);const frozen=await store.get(d.id);assert.ok(frozen.document.presentation.positions.request.width)
@@ -71,22 +66,35 @@ test('真实 STDIO MCP：发现工具、读取规则、生成五类图片、读�
   try {
     await client.connect(transport)
     const tools=(await client.listTools()).tools
-    assert.equal(tools.length,15)
+    assert.equal(tools.length,18)
     for(const tool of tools){assert.ok(tool.title);assert.ok(tool.outputSchema);assert.equal(tool.annotations?.openWorldHint,false);assert.equal(typeof tool.annotations?.readOnlyHint,'boolean');assert.equal(typeof tool.annotations?.idempotentHint,'boolean')}
     const create=tools.find(t=>t.name==='create_diagram')!
     const schema=(create.inputSchema.properties as any).content
     assert.equal(schema.additionalProperties,false);assert.ok(schema.properties.nodes.items.properties.label);assert.ok(!schema.properties.nodes.items.properties.x)
+    assert.match(schema.properties.edges.items.properties.kind.description,/feedback/)
+    assert.match(schema.properties.nodes.items.properties.description.description,/不用于步骤排序/)
     const patch=(tools.find(t=>t.name==='patch_diagram')!.inputSchema.properties as any).operations
     assert.equal(patch.items.oneOf?.length||patch.items.anyOf?.length,11)
     const guide=await call('get_drawing_guide',{kind:'swimlane'})
+    assert.equal((guide.structuredContent as any).standardVersion,'1.0');assert.ok((guide.structuredContent as any).guide.includes('绘图内容标准 1.0'))
+    const standard=await client.readResource({uri:'flymind://drawing-standard'});assert.ok((standard.contents[0] as any).text.includes('修改原图的标准'))
+    const qualityDraft=sampleFor('flowchart');qualityDraft.id='quality-draft';qualityDraft.nodes[0].label='大段说明'.repeat(30)
+    const validation=(await call('validate_diagram',{content:extractContent(qualityDraft)})).structuredContent as any;assert.equal(validation.valid,false);assert.ok(validation.quality.issues.some((i:any)=>i.code==='long_label'))
+    const rejected=await client.callTool({name:'create_diagram',arguments:{content:extractContent(qualityDraft)}});assert.equal(rejected.isError,true);assert.equal(JSON.parse((rejected.content as any[])[0].text).error.code,'QUALITY_FAILED');await assert.rejects(new DiagramStore(root).get('quality-draft'))
+    qualityDraft.nodes[0].label='开始';await call('create_diagram',{content:extractContent(qualityDraft)})
+    const annotation=await client.callTool({name:'patch_diagram',arguments:{id:qualityDraft.id,expectedRevision:1,operations:[{op:'add_node',node:{id:'just-explanation',label:'需要调整审批流程',kind:'note'}}]}});assert.equal(annotation.isError,true);assert.match((annotation.content as any[])[0].text,/annotation_only_change/);assert.equal((await new DiagramStore(root).get(qualityDraft.id)).revision,1)
+    await call('patch_diagram',{id:qualityDraft.id,expectedRevision:1,editIntent:'annotation',operations:[{op:'add_node',node:{id:'requested-note',label:'用户要求的批注',kind:'note'}}]})
     const group=(await call('create_workspace_group',{name:'MCP 项目'})).structuredContent as any
     assert.equal(group.group.name,'MCP 项目')
     assert.ok((guide.content as any[]).some(c=>c.type==='text'&&c.text.includes('expectedRevision')))
+    assert.ok((guide.structuredContent as any).guide.includes('MCP 输入规则：先后、分支和回流'))
+    assert.ok((guide.structuredContent as any).sample.edges.some((e:any)=>e.kind==='feedback'))
     for(const kind of ['swimlane','flowchart','architecture','mindmap','dataflow'] as const){
       const document=sampleFor(kind);document.id='integration-'+kind
       const result=await call('create_diagram',{content:extractContent(document),workspaceGroupId:group.group.id}),data=result.structuredContent as any
       assert.equal(data.workspaceGroupId,group.group.id);assert.equal(typeof data.updatedAt,'number')
       assert.equal(data.revision,1)
+      assert.ok(data.exportedAt>=data.updatedAt);assert.equal(data.quality.passed,true)
       assert.equal(typeof data.createdAt,'number')
       const png=(result.content as any[]).find(c=>c.type==='image')
       assert.ok(png&&png.mimeType==='image/png')
@@ -125,6 +133,7 @@ test('真实 STDIO MCP：发现工具、读取规则、生成五类图片、读�
     assert.equal(after.content.nodes.find((n:any)=>n.id==='request').label,'AI 再次修改')
     assert.equal(after.content.title,data.title)
     const config=(await call('get_rendering_config',{id:data.diagramId})).structuredContent as any
+    const exported=await call('export_diagram',{id:data.diagramId}),secondExport=await call('export_diagram',{id:data.diagramId});assert.notEqual((exported.structuredContent as any).files.png,(secondExport.structuredContent as any).files.png);assert.equal((secondExport.structuredContent as any).updatedAt,(exported.structuredContent as any).updatedAt)
     const configured=await call('configure_rendering',{id:data.diagramId,expectedRevision:config.revision,rendering:{...config.rendering,nodeDefaults:{task:{width:250,height:100,shape:'rounded'}},edgeDefaults:{route:'straight'}}})
     assert.equal((configured.structuredContent as any).revision,3)
     const contentAfter=(await call('get_diagram',{id:data.diagramId})).structuredContent as any;assert.deepEqual(contentAfter.content,after.content);assert.ok(!Object.hasOwn(contentAfter,'document'))
@@ -145,6 +154,11 @@ test('真实 STDIO MCP：发现工具、读取规则、生成五类图片、读�
     await call('configure_rendering',{id:data.diagramId,expectedRevision:5,rendering:lockedConfig.rendering})
     const unlocked=await call('patch_diagram',{id:data.diagramId,expectedRevision:6,operations:[{op:'update_node',id:'request',changes:{label:'解锁后 AI 修改'}}]})
     assert.equal((unlocked.structuredContent as any).revision,7)
+    const isolated=new DiagramStore(root);await isolated.delete(data.diagramId,7)
+    const trash=((await call('list_deleted_diagrams',{})).structuredContent as any).diagrams.find((d:any)=>d.id===data.diagramId)
+    const restored=await call('restore_diagram',{id:trash.id,expectedRevision:trash.revision,deletedAt:trash.deletedAt});assert.equal((restored.structuredContent as any).revision,8);assert.ok((restored.content as any[]).some(c=>c.type==='image'))
+    await isolated.delete(data.diagramId,8);const deleted=((await call('list_deleted_diagrams',{})).structuredContent as any).diagrams.find((d:any)=>d.id===data.diagramId)
+    await call('permanently_delete_diagram',{id:deleted.id,expectedRevision:deleted.revision,deletedAt:deleted.deletedAt});assert.ok(!((await call('list_deleted_diagrams',{})).structuredContent as any).diagrams.some((d:any)=>d.id===data.diagramId))
     assert.ok((await client.readResource({uri:'flymind://guide'})).contents.length)
   } finally {await client.close();await rm(root,{recursive:true,force:true})}
 })

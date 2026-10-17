@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "id": "eval-M02",
+  "title": "M02 工作台需求",
+  "kind": "mindmap",
+  "nodes": [
+    {
+      "id": "root",
+      "label": "工作台需求",
+      "kind": "topic"
+    },
+    {
+      "id": "generation",
+      "label": "图形生成",
+      "kind": "topic",
+      "parentId": "root"
+    },
+    {
+      "id": "rules",
+      "label": "内容规则",
+      "kind": "topic",
+      "parentId": "generation"
+    },
+    {
+      "id": "layout",
+      "label": "自动布局",
+      "kind": "topic",
+      "parentId": "generation"
+    },
+    {
+      "id": "editing",
+      "label": "编辑交付",
+      "kind": "topic",
+      "parentId": "root"
+    },
+    {
+      "id": "native",
+      "label": "原生编辑",
+      "kind": "topic",
+      "parentId": "editing"
+    },
+    {
+      "id": "export",
+      "label": "导出",
+      "kind": "topic",
+      "parentId": "editing"
+    },
+    {
+      "id": "management",
+      "label": "工作区管理",
+      "kind": "topic",
+      "parentId": "root"
+    },
+    {
+      "id": "groups",
+      "label": "分组",
+      "kind": "topic",
+      "parentId": "management"
+    },
+    {
+      "id": "trash",
+      "label": "回收站",
+      "kind": "topic",
+      "parentId": "management"
+    },
+    {
+      "id": "history",
+      "label": "历史",
+      "kind": "topic",
+      "parentId": "management"
+    }
+  ],
+  "edges": [],
+  "lanes": [],
+  "phases": [],
+  "groups": []
+}

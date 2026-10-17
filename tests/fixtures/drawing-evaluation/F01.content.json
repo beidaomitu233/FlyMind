@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "id": "eval-F01",
+  "title": "F01 报销审批",
+  "kind": "flowchart",
+  "nodes": [
+    {
+      "id": "submit",
+      "label": "提交报销",
+      "kind": "start"
+    },
+    {
+      "id": "verify",
+      "label": "核验票据",
+      "kind": "task"
+    },
+    {
+      "id": "compliant",
+      "label": "票据合规？",
+      "kind": "decision"
+    },
+    {
+      "id": "correct",
+      "label": "补正票据",
+      "kind": "task"
+    },
+    {
+      "id": "pay",
+      "label": "支付报销",
+      "kind": "task"
+    },
+    {
+      "id": "archive",
+      "label": "付款归档",
+      "kind": "end"
+    }
+  ],
+  "edges": [
+    {
+      "id": "submit-verify",
+      "source": "submit",
+      "target": "verify"
+    },
+    {
+      "id": "verify-check",
+      "source": "verify",
+      "target": "compliant"
+    },
+    {
+      "id": "pass-pay",
+      "source": "compliant",
+      "target": "pay",
+      "label": "合规"
+    },
+    {
+      "id": "reject-correct",
+      "source": "compliant",
+      "target": "correct",
+      "label": "不合规"
+    },
+    {
+      "id": "correct-verify",
+      "source": "correct",
+      "target": "verify",
+      "kind": "feedback"
+    },
+    {
+      "id": "pay-archive",
+      "source": "pay",
+      "target": "archive"
+    }
+  ],
+  "lanes": [],
+  "phases": [],
+  "groups": []
+}

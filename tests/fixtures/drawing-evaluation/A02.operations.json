@@ -1,0 +1,20 @@
+[
+  {
+    "op": "update_node",
+    "id": "followup",
+    "changes": {
+      "items": [
+        "患者反馈"
+      ]
+    }
+  },
+  {
+    "op": "update_node",
+    "id": "operations",
+    "changes": {
+      "items": [
+        "工作量统计"
+      ]
+    }
+  }
+]

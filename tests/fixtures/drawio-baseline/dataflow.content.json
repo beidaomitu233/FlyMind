@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "id": "baseline-dataflow",
+  "title": "脱敏dataflow基础样本",
+  "kind": "dataflow",
+  "nodes": [
+    {
+      "id": "n01",
+      "label": "业务医嘱系统",
+      "description": "提供就诊身份和医嘱信息",
+      "kind": "card"
+    },
+    {
+      "id": "n02",
+      "label": "检验数据系统",
+      "description": "提供检验样本及检测信息",
+      "kind": "card"
+    },
+    {
+      "id": "n03",
+      "label": "影像资料系统",
+      "description": "提供图像和测量信息",
+      "kind": "card"
+    },
+    {
+      "id": "n04",
+      "label": "电子病历系统",
+      "description": "提供既往及当前诊疗记录",
+      "kind": "card"
+    },
+    {
+      "id": "n05",
+      "label": "培养设备",
+      "description": "提供培养时序和位置编号",
+      "kind": "card"
+    },
+    {
+      "id": "n06",
+      "label": "院内接口接入层",
+      "description": "执行授权、映射、身份、单位和时点校验，并保留源版本",
+      "kind": "card"
+    },
+    {
+      "id": "n07",
+      "label": "数据分析处理链",
+      "description": "通过质量检查后送入业务分析；呈现证据及不确定范围",
+      "kind": "card"
+    },
+    {
+      "id": "n08",
+      "label": "专业复核并回传报告",
+      "description": "复核修订后签署；用请求去重、版本及回执完成补偿",
+      "kind": "card"
+    },
+    {
+      "id": "n09",
+      "label": "保留输入、建议、修订、签署和回执链",
+      "description": "身份或样本关联异常时停止回传，由专业人员确认",
+      "kind": "note"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e01",
+      "source": "n01",
+      "target": "n06"
+    },
+    {
+      "id": "e02",
+      "source": "n02",
+      "target": "n06"
+    },
+    {
+      "id": "e03",
+      "source": "n03",
+      "target": "n06"
+    },
+    {
+      "id": "e04",
+      "source": "n04",
+      "target": "n06"
+    },
+    {
+      "id": "e05",
+      "source": "n05",
+      "target": "n06"
+    },
+    {
+      "id": "e06",
+      "source": "n06",
+      "target": "n07"
+    },
+    {
+      "id": "e07",
+      "source": "n07",
+      "target": "n08"
+    },
+    {
+      "id": "e08",
+      "source": "n08",
+      "target": "n07",
+      "label": "形成可复核依据",
+      "kind": "feedback"
+    }
+  ],
+  "lanes": [],
+  "phases": [],
+  "groups": []
+}

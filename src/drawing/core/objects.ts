@@ -2,6 +2,7 @@ import { newId,type DiagramDocument,type DiagramScene,type Box } from './model'
 import { nodePreset } from './render-config'
 import { layoutDocument } from './layout'
 import { selectionBounds,type ResizeHandle } from './canvas-geometry'
+import {textAppearance} from './floating-text'
 
 export function expandGroups(d:DiagramDocument,ids:string[]){
   const set=new Set(ids)
@@ -23,7 +24,7 @@ export function assertLockedObjects(before:DiagramDocument,after:DiagramDocument
     if(visual&&after.nodes.some(n=>n.id===id)&&!isLocked(after,id))continue
     if(before.kind!==after.kind)throw new Error('图形中存在锁定节点，请先解锁')
     const changed=!sameValue(before.nodes.find(n=>n.id===id),after.nodes.find(n=>n.id===id))
-    const appearance=visual&&(['positions','styles','cards','ranks'] as const).some(k=>!sameValue(before.presentation[k]?.[id],after.presentation[k]?.[id]))
+    const appearance=visual&&(['positions','styles','cards','ranks','texts'] as const).some(k=>!sameValue(before.presentation[k]?.[id],after.presentation[k]?.[id]))
     if(changed||appearance)throw new Error(`节点 ${id} 已锁定，请先解锁`)
   }
 }
@@ -42,6 +43,7 @@ function freezeAppearance(d:DiagramDocument,scene:DiagramScene,ids:string[]){
   for(const id of ids){
     const box=scene.nodes.find(n=>n.node.id===id);if(!box)continue
     d.presentation.positions[id]={x:box.x,y:box.y,width:box.width,height:box.height}
+    if(box.node.kind==='note'){(d.presentation.texts??={})[id]={...textAppearance(d,box.node),width:box.width};continue}
     const preset=nodePreset(d,box.node.kind)
     ;(d.presentation.styles??={})[id]={shape:preset.shape,fontSize:preset.fontSize,...d.presentation.styles?.[id],fill:fullHex(box.fill),stroke:fullHex(box.color),textColor:fullHex(box.textColor)}
   }
@@ -58,7 +60,7 @@ export function lockObjects(d:DiagramDocument,scene:DiagramScene,ids:string[],lo
 }
 export function orderedNodes(d:DiagramDocument){
   const order=d.presentation.objects?.order||[],index=new Map(order.map((id,i)=>[id,i]))
-  return [...d.nodes].sort((a,b)=>(index.get(a.id)??-1)-(index.get(b.id)??-1))
+  return [...d.nodes].sort((a,b)=>Number(a.kind==='note')-Number(b.kind==='note')||(index.get(a.id)??-1)-(index.get(b.id)??-1))
 }
 export function reorderObjects(d:DiagramDocument,ids:string[],direction:'front'|'back'|'forward'|'backward'){
   const selected=new Set(editableSelection(d,ids)),order=orderedNodes(d).map(n=>n.id)

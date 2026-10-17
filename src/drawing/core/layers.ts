@@ -2,6 +2,8 @@ import { copy, newId, validateDocument, type DiagramContent, type DiagramDocumen
 import { defaultRendering, type RenderingConfig } from './render-config'
 import { applyOperations, type DiagramOperation } from './operations'
 import { assertLockedObjects } from './objects'
+import {resizeSwimlanePhase} from './phase-editing'
+import {layoutDocument} from './layout'
 
 const contentKeys=['schemaVersion','id','title','kind','nodes','edges','lanes','phases','groups']
 const nodeKeys=['id','label','kind','color','description','items','badge','laneId','phaseId','groupId','parentId']
@@ -10,6 +12,7 @@ const groupKeys=['id','label','kind','color']
 function checkKeys(value:unknown,allowed:string[],name:string,rendering=false){
   if(!value||typeof value!=='object'||Array.isArray(value))throw new Error(`${name}应为对象`)
   for(const key of Object.keys(value))if(!allowed.includes(key))throw new Error(rendering?`${name}的 ${key} 不属于渲染层；业务内容请使用内容编辑入口`:`${name}的 ${key} 不属于内容层；坐标、布局行、尺寸、形状、字体、图标和线型请交给渲染层`)
+  if(!rendering&&name!=='修改字段'&&Object.values(value).some(v=>v===null))throw new Error(`${name}不接受 null 内容；仅 update 的可选字段可用 null 清除`)
 }
 export function extractContent(d:DiagramDocument):DiagramContent {
   return copy(Object.fromEntries(contentKeys.map(k=>[k,(d as any)[k]]))) as DiagramContent
@@ -41,14 +44,20 @@ export function applyContentOperations(d:DiagramDocument,operations:unknown):Dia
   validateContent(extractContent(result));assertLockedObjects(d,result,false);return result
 }
 export function replaceRendering(d:DiagramDocument,input:unknown):DiagramDocument {
-  checkKeys(input,['theme','orientation','nodeDefaults','edgeDefaults','positions','ranks','groups','cards','styles','edges','objects'],'渲染配置',true)
+  checkKeys(input,['theme','orientation','nodeDefaults','edgeDefaults','positions','ranks','phases','texts','groups','cards','styles','edges','objects'],'渲染配置',true)
   const config=copy(input) as RenderingConfig
   if(config.theme&&!['blue','indigo','forest'].includes(config.theme))throw new Error('主题无效')
   if(config.orientation&&!['vertical','horizontal'].includes(config.orientation))throw new Error('方向无效')
-  for(const [name,fields] of Object.entries({nodeDefaults:['width','height','fontSize','shape','fill','stroke','textColor'],edgeDefaults:['route','color','width','arrow','dashed'],positions:['x','y','width','height'],groups:['tone','columns'],cards:['icon','tone','variant'],styles:['fill','stroke','textColor','fontSize','shape'],edges:['color','width','sourcePort','targetPort','points','labelPosition','arrow','dashed','route']})){
+  for(const [name,fields] of Object.entries({nodeDefaults:['width','height','fontSize','shape','fill','stroke','textColor'],edgeDefaults:['route','color','width','arrow','dashed'],positions:['x','y','width','height'],phases:['size'],texts:['width','fontSize','color'],groups:['tone','columns'],cards:['icon','tone','variant'],styles:['fill','stroke','textColor','fontSize','shape'],edges:['color','width','sourcePort','targetPort','points','labelPosition','labelColor','labelFontSize','arrow','dashed','route']})){
     const value=(config as any)[name];if(value===undefined)continue
     if(name==='edgeDefaults')checkKeys(value,fields,name,true)
     else {if(!value||typeof value!=='object'||Array.isArray(value))throw new Error(`${name} 应为对象`);for(const entry of Object.values(value))checkKeys(entry,fields,name,true)}
   }
-  return composeDocument(extractContent(d),{...defaultRendering(d.kind),...config})
+  const next=composeDocument(extractContent(d),{...defaultRendering(d.kind),...config})
+  if(d.kind==='swimlane'&&config.phases&&Object.entries(config.phases).some(([id,s])=>s.size!==d.presentation.phases?.[id]?.size)&&next.presentation.orientation===d.presentation.orientation&&JSON.stringify(config.positions)===JSON.stringify(d.presentation.positions)){
+    next.presentation.phases=copy(d.presentation.phases||{})
+    for(const [id,s] of Object.entries(config.phases))if(s.size!==d.presentation.phases?.[id]?.size)resizeSwimlanePhase(next,layoutDocument(next),id,s.size)
+    for(const id of Object.keys(d.presentation.phases||{}))if(!config.phases[id])delete next.presentation.phases?.[id]
+  }
+  return next
 }

@@ -1,6 +1,20 @@
 # FlyMind：AI 绘图说明
 
+## 原生 pilot（D05）
+
+仅在 `FLYMIND_NATIVE_PILOT=1` 与显式隔离数据根下启用；G2 前默认仍走旧入口。本节优先于下文旧引擎参数。当前只支持 `swimlane`，其他四类模板待 D07；`configure_rendering` 返回 `NATIVE_RENDERING_EDIT_UNSUPPORTED`，`get_rendering_config` 返回原生 profile/preferences，不接受旧坐标配置。
+
+原工具名保持。content 必须有 `schemaVersion:1`、稳定 `id` 和全部业务数组（`groups:[]`）。create/patch/update 必须有稳定 `requestId`；同一请求重试保持 payload 不变。AI 新建须质量合格，历史人工草稿的修改不得新增或加重 error 或 warning，只有明确批注才用 annotation；来源缺口不得猜边修复。网页人工保存仍允许结构合法草稿。
+
+原生 preview/create/patch/update/export 交付同一不可变修订的 PNG、SVG、drawio、json、project.json；`files` 为 Runtime 登记且摘要验证后的本机绝对路径，`resources` 含 exportId。默认等待最多 25 秒，返回 `saved:true` 且导出失败/等待超时时，沿 `jobId/exportRetry` 或 `export_diagram({id,requestId,retryJobId})` 处理已保存图形，禁止重新创建。只有 failed job 可显式 retry；queued/running 先读取状态，不重复排队。旧修订重放的标题/时间/图片锚原快照，`currentRevision/isCurrentRevision` 另列；workspaceGroupId 始终表示当前列表归属。validate 不返回未经渲染的假尺寸。mixed v2 只读且无原生预览/编辑链接。
+
+queued/running 也可通过 `export_diagram({id,requestId,jobId})` 继续等待原任务，不重复入队；`jobId` 与 `retryJobId` 互斥，沿用原快照和 options。STDIO 固定 8MiB 序列化安全预算，`resourceLimits` 标明保守可读性；过大 SVG 返回 `MCP_RESOURCE_TOO_LARGE`，仍可继续调用工具，完整文件通过 `files.svg` 或认证 HTTP 下载。PNG 预览过大时 `previewStatus=too_large`，`exportStatus=succeeded` 与真实制品路径保留。仅预算内制品附带有 size 的 resource_link；不裁图、不替换字体以凑预算。
+
 AI 提供内容，FlyMind 自动布局并渲染。普通绘图只提交 `content`，无需 API Key、坐标或美化配置。
+
+绘图和修改必须遵循 [绘图内容标准 1.0](DRAWING_STANDARD.md)。`get_drawing_guide` 自动合并返回该标准；也可读取 `flymind://drawing-standard`。`validate_diagram` 返回 `valid` 和 `quality:{standardVersion,passed,score,issues}`，新建或修改不合格内容时返回 `QUALITY_FAILED`，数据库不写入。文字简洁、判断出口、业务连通性、模块/主题抽象各有规则；机器检查之外仍须核对真实业务。
+
+修改时直接改原业务步骤、判断条件、连接或原文案，不得用说明代替流程变更。工具顶层可带 `editIntent:"structure"|"wording"|"annotation"`，默认 structure；只有用户明确要批注时使用 annotation。纯补注释或非卡片说明文字的修改会被默认拒绝，改标题也不能绕过。历史问题允许逐步修复，不能新增或加重；网页可保存手工草稿。
 
 ## 1. 两层职责
 
@@ -12,6 +26,10 @@ AI 提供内容，FlyMind 自动布局并渲染。普通绘图只提交 `content
 内容 JSON 不包含 `presentation`、`rendering`、`updatedAt`，节点不包含 `order`。内容工具会拒绝这些字段。普通 AI 绘图也不需要写 `ranks` 或手动位置。渲染层根据关系排序、分支排布、避开同泳道节点和反馈循环、换行、撑开卡片，采用标准配色与形状。
 
 仅当用户明确要求改变视觉表现时，读取 `get_rendering_config` 后单独调用 `configure_rendering`。业务步骤是否存在、连接到谁，不能为了美观被改变。
+
+网页手动编辑固定已有节点几何，保存和后台同步保持画布视角；新增节点寻找附近空位。需要整体重新排布时才使用“自动布局”。正交连线可拖动线段中点整体平移，端点保持与节点相连；不把自由移动的点直接拼成斜线。文字与线条分开选择、拖动和删除，双击文字编辑，双击线路可添加文字；文字样式独立使用 `rendering.edges[id].labelColor / labelFontSize / labelPosition`。独立说明可用 `kind:"note"` 节点表达，无需连接边；其位置由渲染层管理。draw.io 导出也将分支文字作为独立文字元素。
+
+共享存储已改用 `data/flymind.sqlite`，事务保存图形、分组、删除状态与修订历史。首次启动先备份旧 JSON，再一次性迁移，之后不回读旧文件。旧 MCP 进程必须重新连接才能使用 SQLite。网页“备份工作区”可下载一致的 SQLite 备份，原图制品另在 `data/artifacts`。
 
 ## 2. 支持的图形
 
@@ -25,7 +43,25 @@ AI 提供内容，FlyMind 自动布局并渲染。普通绘图只提交 `content
 4. 先 `get_diagram`，再 `move_diagram_to_group({"id":"图形 ID","workspaceGroupId":"目标分组 ID 或 null","expectedWorkspaceGroupId":"刚读取的所属分组 ID 或 null"})`；实际 null 不加引号。移动不改变内容、渲染和图形 revision。
 5. 分组改名或删除先读取最新分组 revision，调用 `rename_workspace_group` 或 `delete_workspace_group` 并携带 `expectedRevision`。删除分组保留图形，全部转为未分组。
 
-已删除图形 ID 有持久删除记录，`DELETED` 表示禁止用旧备份重建；仅用户要求恢复时，使用新 ID 显式创建副本。发生 `CONFLICT` 必须重新读取并合并。网页的“待恢复内容”不会自动上传。
+网页侧栏是可折叠分组树：组内图形只在组内出现，主列表只显示未分组图形。拖入分组归组、拖至主列表移出分组。搜索跨分组；文件改名/复制/删除在右键或悬停更多菜单，排序、新建分组、备份和规则入口收在 FlyMind 菜单。创建时间精简显示，悬停可看完整创建/修改时间。
+
+已删除图形 ID 有持久删除记录，`DELETED` 表示禁止用旧备份重建。普通删除进入回收站，用户要求恢复时先调用 `list_deleted_diagrams`，再用返回的 `revision` 和 `deletedAt` 调用 `restore_diagram`。恢复保留原 ID、创建时间、内容、渲染和原分组（分组已删除则未分组），图形 revision 加一；旧页面无法覆盖恢复后的版本。发生 `CONFLICT` 必须重新读取并合并。网页的“待恢复内容”是未同步备份，只有主动操作才创建新 ID，和回收站分开。
+
+### 回收站
+
+| 工具 | 输入 | 结果 |
+|---|---|---|
+| `list_deleted_diagrams` | 无 | 已删除图形的 id、title、kind、revision、deletedAt、createdAt、workspaceGroupId |
+| `restore_diagram` | id、expectedRevision、deletedAt | 恢复原图，返回新 revision、PNG 和编辑链接 |
+| `permanently_delete_diagram` | id、expectedRevision、deletedAt | 永久删除内容、修订历史和生成制品；保留 ID 删除标记，禁止旧进程重新创建 |
+
+恢复和永久删除都必须使用刚读取的回收站记录。只有用户明确要求永久删除指定图形时，才能调用永久删除；整理、去重和普通删除不代表该授权。永久删除无法从回收站恢复；此前主动导出的备份不受影响。网页通过图形“更多 → 移入回收站”删除，在左下回收站恢复或确认永久删除。
+
+### 独立文字
+
+所有图形都支持 `{"id":"note-1","kind":"note","label":"说明内容"}`，可选 description、color。它是画布上的浮动文字，不是流程步骤；不需要 laneId、phaseId、groupId、parentId 或连接边，不参与依赖排序、容器尺寸和连线避让，也不改变其他节点位置。普通绘图无需补写字段或坐标。
+
+渲染器默认使用 17px 文字、透明背景、无边框，按文本计算尺寸，旧流程节点的 width/height 不再作为文字占位。未放置的说明默认排在主图下方，网页添加时放在当前视口，可自由拖动；绘制顺序在节点和连线之上。网页支持双击编辑、复制、撤销及左右手柄调整换行宽度。样式独立保存在 `rendering.texts[id]`，支持 fontSize（10–48）、color（#RRGGBB）、width（24–4000，可省略自动宽度）；位置仍属于 `rendering.positions[id]`。AI 仅在用户要求视觉调整时读取并配置渲染层。思维导图的说明不计入根主题，也不能充当业务主题的父节点。
 
 ### 绘图类型
 
@@ -60,7 +96,7 @@ AI 提供内容，FlyMind 自动布局并渲染。普通绘图只提交 `content
     {"id":"e1","source":"start","target":"review"},
     {"id":"e2","source":"review","target":"ship","label":"是"},
     {"id":"e3","source":"review","target":"wait","label":"否"},
-    {"id":"e4","source":"wait","target":"review"},
+    {"id":"e4","source":"wait","target":"review","kind":"feedback"},
     {"id":"e5","source":"ship","target":"done"}
   ],
   "lanes": [], "phases": [], "groups": []
@@ -102,15 +138,30 @@ edges/lanes/phases/groups 可省略，自动补空数组。思维导图通过 pa
     {"id":"e1","source":"request","target":"analyze"},
     {"id":"e2","source":"analyze","target":"agree"},
     {"id":"e3","source":"agree","target":"revise","label":"否"},
-    {"id":"e4","source":"revise","target":"agree"},
+    {"id":"e4","source":"revise","target":"agree","kind":"feedback"},
     {"id":"e5","source":"agree","target":"done","label":"是"}
   ]
 }
 ```
 
-渲染器按阶段和连接关系自动推导步骤行。跨角色交接尽量排在同一行，同一角色步骤避免重叠。纵向是角色列、阶段行，横向在渲染配置里切换。拖动跨泳道/阶段会改变实际业务归属，普通拖动只改渲染位置。
+渲染器按阶段和连接关系自动推导步骤行：有先后关系的步骤逐级推进，跨角色交接也进入下一步；独立分支可同排，汇合步骤位于相关前置步骤之后，同一角色的节点避免重叠。纵向是角色列、阶段行，横向在渲染配置里切换。拖动跨泳道/阶段会改变实际业务归属，普通拖动只改渲染位置。
+
+#### MCP 输入规则：先后、分支和回流
+
+- 不需要为排版新增节点描述或必填字段。`description` 只写业务备注，不作为排序依据；节点数组顺序也不表示步骤先后。
+- 普通边（省略 `kind` 或 `kind:"flow"`）表示 `source` 在 `target` 之前。必须写全实际前置关系，不能只按角色罗列节点。角色变化不代表并行。
+- 独立分支从共同前置节点分别连出；需要汇合的步骤分别接收各分支的边。它们的同排、间距和避让由渲染器决定，不写 `order/ranks`、坐标或“第几行”。判断出口仍需写具体业务条件。
+- 退回、驳回、返工、重试和返回监控等回流边显式标 `kind:"feedback"`，保留真实方向与条件。回流参与绘制，不推进主流程的步骤行；不能为压缩排版把普通前置边标为反馈。
+- `phases` 数组按真实业务阶段先后排列，节点用 `phaseId` 关联。后阶段返回前阶段也应标为反馈。旧数据未标记的循环会尝试自动拆出回边，但业务含义有歧义，后续 AI 修改时需核对。
+- 如果材料没有说明先后、是否独立推进、是否等待全部分支或哪条边是返工，应向用户确认该业务关系；不要用描述文字暗示排版或自行补出业务依赖。
+
+例如 `分配 → 文书签收`、`分配 → 网申签收` 是两条独立分支，可并排；`材料 → 核对 → 撰写 → 审核 → 定稿` 是连续步骤，即使跨角色也逐级排列；`审核 → 撰写` 的驳回边标记为 `feedback`。
 
 长文字自动撑开节点及对应泳道/步骤行；没有指定标准宽度时，会在有限范围内增宽，判断节点保持菱形比例。自动正交连线避开节点并分配通道，标签换行且避免覆盖节点/其他标签。保留完整业务文字，普通 AI 绘图仍不填写位置或排版参数。显式手动尺寸和路径优先，可能需要人工恢复自动布局后重新计算。
+
+手动编辑后的阶段栏按节点实际几何范围计算，与右侧内容保持一致；固定位置不再重复占用自动排版空间。拖动跨阶段时使用当前阶段边界判定归属，不写估算布局行；仅缩放不会改变角色或阶段。泳道图压缩旧行号缺号产生的空行，独立说明文字不作为主流程步骤撑长阶段。表头左上角自动补齐为同色块，不新增内容节点或说明标签。
+
+左侧阶段名称默认每行一个字，文字正向展示，字号 24；横向图的顶部阶段名称仍按栏宽换行。选中左侧阶段栏后，可拖动底部分隔线，或在渲染属性中输入“阶段高度”（横向图为阶段宽度）。改变尺寸时保留本阶段节点，后续阶段、节点、手动路径和文字随边界一起平移；最小尺寸需容纳节点与标题，后续有锁定节点时先解锁。支持保存、撤销和重做。“自动布局”同时恢复阶段自动尺寸。
 
 ### 其他类型
 
@@ -136,6 +187,7 @@ edges/lanes/phases/groups 可省略，自动补空数组。思维导图通过 pa
 | groups[groupId] | tone=blue/green/amber，columns（1–10）；缺省自动决定列数 |
 | cards[nodeId] | icon=database/network/check/none，tone=blue/teal，variant=card/band |
 | ranks[nodeId] | 导入旧布局或人工明确安排的行号（0–200）；普通 AI 绘图不用写 |
+| phases[phaseId].size | 阶段主轴尺寸（56–50000），纵向为高度、横向为宽度；独立渲染字段。用户明确要求时，通过 configure_rendering 调整，保留读取的其他配置；人工坐标保持原值提交时，由工具同步后续节点和线路，无需 AI 计算坐标 |
 | objects | 画布对象配置：groups 为组合 ID → 节点 ID 数组（至少两个、不嵌套），locked 为锁定节点 ID，order 为从底到顶的节点 ID；不属于内容层 |
 
 架构模块和数据卡片宽度随容器伸缩，标准宽高作为排布尺寸基准；长正文自动撑高。单节点 positions 可覆盖最终宽高。颜色优先级：单节点渲染覆盖 > 节点标准渲染配置 > 可选内容颜色 > 自动主题。位置优先级：手动 positions > 自动布局。端口为 top/right/bottom/left；points 为中间路径点（最多 40 个，不含端点）；手动路径优先于标准走线。自动布局清除未锁定节点的手动位置/布局行及连线端口/路径/标签位置，保留标准样式与颜色；锁定节点保持当前几何及外观。
@@ -194,6 +246,8 @@ edges/lanes/phases/groups 可省略，自动补空数组。思维导图通过 pa
 
 一次 1–500 个操作；原子校验，任一步错误均不保存。禁止 position/style/card、set_theme、set_node_presentation 等渲染参数或操作。
 
+仅 `update_*` 操作的 `changes` 可用 JSON `null` 显式清除可选业务字段：节点的 laneId、phaseId、groupId、parentId、color、description、items、badge，边的 label、kind，以及 groups 分层的 color、kind。节点 label/kind、边 source/target、容器 label 为必填字段，不能清除。清除后存档 content 省略该字段；完整 content 和 add 操作仍不接受 null。不要输出 null 内容或坐标。清除归属还须满足图形规则，例如删除最后阶段可在同批操作中先为所有成员设置 `{"op":"update_node","id":"成员ID","changes":{"phaseId":null}}`，再执行 `{"op":"remove_container","collection":"phases","id":"最后阶段ID"}`；有其他阶段时，业务节点仍须归属有效阶段。
+
 ```json
 {
   "id":"order-process-001","expectedRevision":2,
@@ -229,8 +283,10 @@ edges/lanes/phases/groups 可省略，自动补空数组。思维导图通过 pa
 
 createdAt 是工作区及存储记录的独立元数据，MCP 同时返回 createdAt / updatedAt。0.6.0 起列表默认最近修改在前，也可选择最近创建。编辑和渲染不改变创建时间；新建、复制及导入生成新时间。旧图优先从 r1 工作区制品的创建/保存时间恢复，缺失时以文件历史时间估算并固定保存，不改变原 revision、savedAt 或业务内容。不要把时间写进 content 或 rendering。
 
-制品在 `data/artifacts/{diagramId}/r{revision}/`；JSON 内容为 diagram.json，完整工作区为 diagram.project.json。编辑链接仅本机使用。可在 Codex 回复中引用返回的 files.png 绝对路径展示图形，再给出编辑/下载链接。
+每次导出创建 `data/artifacts/{diagramId}/r{revision}/exports/{exportId}/` 独立副本，文件名为“图形标题_YYYYMMDD-HHmmss-SSS.格式”。交付元数据返回 `exportedAt`，文件修改时间使用本次导出时间；文件系统能按新导出时间查找，旧导出保留。JSON 内容仍是纯业务内容，工作区 JSON 保留原 `createdAt/updatedAt`；导出不改系统内的创建时间、修改时间、revision 或排序。旧版 r{revision}/diagram.* 继续作为兼容制品保存。
 
-MCP 制品结果同时提供 resources URI；可通过 resources/read 读取 `flymind://artifacts/{diagramId}/{revision}/{format}`（png/svg/json/project.json/drawio）。PNG 使用 base64 blob，其余返回文本；只读取已生成版本制品。成功结果有 structuredContent 和 outputSchema；执行错误以 isError 和 JSON 文本 `{error:{code,message,currentRevision?}}` 返回。CONFLICT 重新读取和合并，禁止强制覆盖。字段 schema 校验失败由 SDK 返回错误，不保证同一业务错误格式。
+编辑链接仅本机使用。可在 Codex 回复中引用返回的 files.png 绝对路径展示图形，再给出编辑/下载链接。
+
+MCP 制品结果同时提供 resources URI；可通过 resources/read 读取 `flymind://exports/{diagramId}/{revision}/{exportId}/{format}`（png/svg/json/project.json/drawio）；旧 `flymind://artifacts/{diagramId}/{revision}/{format}` 兼容保留。PNG 使用 base64 blob，其余返回文本；只读取已生成制品。成功结果有 structuredContent 和 outputSchema；执行错误以 isError 和 JSON 文本 `{error:{code,message,currentRevision?,quality?}}` 返回。QUALITY_FAILED 按具体节点/边修正内容，CONFLICT 重新读取和合并，禁止强制覆盖。字段 schema 校验失败由 SDK 返回错误，不保证同一业务错误格式。
 
 无 MCP 的独立渲染：`npm run render -- examples/swimlane.json output/swimlane.svg`；也可输入完整工作区文件以保留手动样式。这条命令不写入共享工作区。连接 Codex 见 `docs/CODEX_SETUP.md`。

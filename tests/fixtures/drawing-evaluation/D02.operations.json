@@ -1,0 +1,20 @@
+[
+  {
+    "op": "add_node",
+    "node": {
+      "id": "quarantine",
+      "label": "隔离归档",
+      "kind": "card",
+      "description": "脱敏失败数据"
+    }
+  },
+  {
+    "op": "add_edge",
+    "edge": {
+      "id": "mask-failed",
+      "source": "mask",
+      "target": "quarantine",
+      "label": "脱敏失败"
+    }
+  }
+]

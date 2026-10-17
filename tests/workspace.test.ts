@@ -1,6 +1,6 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdtemp,rm,readFile,writeFile} from 'node:fs/promises'
+import {mkdtemp,rm,readFile,writeFile,mkdir} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {ref,computed} from 'vue'
@@ -24,7 +24,7 @@ async function fixture(fn:(store:DiagramStore,storage:Map<string,string>,network
   const root=await mkdtemp(join(tmpdir(),'flymind-workspace-')),originalFetch=globalThis.fetch,storage=environment(),network={offline:false,posts:0},store=new DiagramStore(root)
   await store.init()
   globalThis.fetch=(async(url:string,options:any)=>{if(network.offline)throw new Error('offline');const path=url.replace('/studio-api',''),body=options.body?JSON.parse(options.body):{}
-    try{if(path==='/workspace')return Response.json(await store.snapshot());if(path==='/diagrams'&&options.method==='POST'){network.posts++;return Response.json(await store.create(body.document),{status:201})}
+    try{if(path==='/workspace')return Response.json(await store.snapshot());if(path==='/trash')return Response.json(await store.listTrash());if(path.startsWith('/trash/')&&path.endsWith('/restore'))return Response.json(await store.restore(path.split('/')[2],body.expectedRevision,body.deletedAt));if(path==='/diagrams'&&options.method==='POST'){network.posts++;return Response.json(await store.create(body.document),{status:201})}
       const id=path.split('/')[2]?.split('?')[0];if(options.method==='DELETE'){await store.delete(id,Number(path.split('revision=')[1]));return new Response(null,{status:204})}
       if(options.method==='PUT')return Response.json(await store.update(id,body.expectedRevision,body.document))
       return Response.json(await store.get(id))
@@ -34,11 +34,11 @@ async function fixture(fn:(store:DiagramStore,storage:Map<string,string>,network
 }
 test('删除留档优先于活动文件：过期创建/修改及服务重启都不能复活，重复删除幂等',async()=>{
   await fixture(async store=>{
-    const d=sampleFor('flowchart');d.id='delete-regression';const first=await store.create(d),bytes=await readFile(store.path(d.id),'utf8')
+    const d=sampleFor('flowchart');d.id='delete-regression';const first=await store.create(d),bytes=JSON.stringify(first)
     await store.delete(d.id,1);await store.delete(d.id,1)
-    assert.equal((JSON.parse(await readFile(store.trashPath(d.id),'utf8'))).record.revision,1)
+    assert.ok((await store.snapshot()).deletedIds.includes(d.id))
     // Simulate a crash after tombstone commit but before unlink, or an old client writing its file.
-    await writeFile(store.path(d.id),bytes);const reboot=new DiagramStore(store.root);await reboot.init()
+    await mkdir(join(store.root,'diagrams'),{recursive:true});await writeFile(store.path(d.id),bytes);const reboot=new DiagramStore(store.root);await reboot.init()
     await assert.rejects(reboot.get(d.id),(e:any)=>e.status===410)
     await assert.rejects(reboot.create(first.document),(e:any)=>e.status===410)
     await assert.rejects(reboot.update(d.id,1,d),(e:any)=>e.status===410)
@@ -86,5 +86,14 @@ test('发起轮询后发生编辑，迟到的快照不能覆盖本地内容',asy
     let release!:(r:Response)=>void;globalThis.fetch=(()=>new Promise<Response>(r=>release=r)) as any
     const polling=client.refreshRemote();ctx.current.value.title='轮询期间修改';client.markDirty(ctx.current.value.id);release(Response.json(snapshot));await polling
     assert.equal(ctx.current.value.title,'轮询期间修改');globalThis.fetch=original
+  })
+})
+test('恢复回收站仅合入指定图形，不覆盖另一个未同步的人工编辑',async()=>{
+  await fixture(async store=>{
+    const d=sampleFor('flowchart');d.id='restore-only';await store.create(d);await store.delete(d.id,1)
+    const ctx=context([]),client=sharedWorkspace(ctx);await client.initialize();const item=client.trash.value.find(t=>t.id===d.id)!;assert.ok(item)
+    const other=ctx.current.value;other.title='尚未同步的修改';client.markDirty(other.id)
+    assert.equal(await client.restoreDeleted(item),true);assert.equal(ctx.documents.value.find(d=>d.id===other.id)!.title,'尚未同步的修改');assert.equal(ctx.activeId.value,d.id);assert.equal(client.revisions.value[d.id],2);assert.ok(!client.trash.value.some(t=>t.id===d.id))
+    await client.retrySync();assert.equal((await store.get(other.id)).document.title,'尚未同步的修改')
   })
 })

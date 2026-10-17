@@ -1,0 +1,28 @@
+[
+  {
+    "op": "remove_edge",
+    "id": "incubator-in"
+  },
+  {
+    "op": "remove_node",
+    "id": "incubator"
+  },
+  {
+    "op": "add_node",
+    "node": {
+      "id": "gateway",
+      "label": "设备网关",
+      "kind": "card",
+      "description": "时序数据"
+    }
+  },
+  {
+    "op": "add_edge",
+    "edge": {
+      "id": "gateway-in",
+      "source": "gateway",
+      "target": "integration",
+      "label": "时序数据"
+    }
+  }
+]

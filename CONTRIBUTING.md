@@ -18,6 +18,8 @@
 
 ## 版本发布
 
+只有用户明确要求发布时，才更新版本号、创建版本标签或推送 GitHub。普通修复保持本地修改；发布步骤不能视为自动发布授权。
+
 1. 完成测试、构建、浏览器与 MCP 回归。
 2. 同步 package.json、package-lock.json、plugin.json、MCP server/HTTP health 的版本。
 3. 更新 CHANGELOG；确认 git diff 无 data/、凭据和临时产物。

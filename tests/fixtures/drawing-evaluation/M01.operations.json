@@ -1,0 +1,18 @@
+[
+  {
+    "op": "add_node",
+    "node": {
+      "id": "quantitative",
+      "label": "量化证据",
+      "kind": "topic",
+      "parentId": "evidence"
+    }
+  },
+  {
+    "op": "update_node",
+    "id": "behavior",
+    "changes": {
+      "parentId": "quantitative"
+    }
+  }
+]

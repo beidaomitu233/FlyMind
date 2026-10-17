@@ -1,0 +1,27 @@
+[
+  {
+    "op": "add_node",
+    "node": {
+      "id": "scope",
+      "label": "核对项目范围",
+      "kind": "task",
+      "laneId": "pm",
+      "phaseId": "start"
+    }
+  },
+  {
+    "op": "update_edge",
+    "id": "handover-launch",
+    "changes": {
+      "target": "scope"
+    }
+  },
+  {
+    "op": "add_edge",
+    "edge": {
+      "id": "scope-launch",
+      "source": "scope",
+      "target": "launch"
+    }
+  }
+]

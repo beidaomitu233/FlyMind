@@ -11,7 +11,7 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 7 * 24  # 7 days
 
 # DeepSeek AI
-AI_API_KEY = os.getenv("AI_API_KEY", "sk-de7c0e1146cb4466b05adf1804fce9cd")
+AI_API_KEY = os.getenv("AI_API_KEY", "")
 AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.deepseek.com")
 AI_MODEL = os.getenv("AI_MODEL", "deepseek-chat")
 

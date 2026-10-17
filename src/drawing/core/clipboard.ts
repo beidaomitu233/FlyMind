@@ -3,6 +3,7 @@ import { composeDocument,extractContent,replaceRendering } from './layers'
 import { expandGroups,fullHex,orderedNodes } from './objects'
 import { selectionBounds } from './canvas-geometry'
 import { nodePreset,edgePreset,type RenderingConfig } from './render-config'
+import {textAppearance} from './floating-text'
 
 export interface SelectionFragment {
   format:'flymind.selection';version:1;sourceId:string;kind:DiagramDocument['kind']
@@ -19,8 +20,9 @@ export function createFragment(d:DiagramDocument,scene:DiagramScene,ids:string[]
   const content=extractContent(d);content.nodes=content.nodes.filter(n=>selected.has(n.id))
   for(const n of content.nodes)if(n.parentId&&!selected.has(n.parentId))delete n.parentId
   content.edges=content.edges.filter(e=>selected.has(e.source)&&selected.has(e.target))
-  const rendering:RenderingConfig={theme:d.presentation.theme,orientation:d.presentation.orientation,positions:{},styles:{},cards:{},edges:{},objects:{groups:{},order:[]}}
+  const rendering:RenderingConfig={theme:d.presentation.theme,orientation:d.presentation.orientation,positions:{},styles:{},cards:{},texts:{},edges:{},objects:{groups:{},order:[]}}
   for(const n of content.nodes){const b=scene.nodes.find(b=>b.node.id===n.id)!;rendering.positions[n.id]={x:b.x,y:b.y,width:b.width,height:b.height};const preset=nodePreset(d,n.kind);rendering.styles![n.id]={shape:preset.shape,fontSize:preset.fontSize,...d.presentation.styles?.[n.id],fill:fullHex(b.fill),stroke:fullHex(b.color),textColor:fullHex(b.textColor)};if(d.presentation.cards?.[n.id])rendering.cards![n.id]=copy(d.presentation.cards[n.id])}
+  for(const n of content.nodes)if(n.kind==='note'){rendering.texts![n.id]=textAppearance(d,n);delete rendering.styles![n.id]}
   if(d.kind==='dataflow')for(const n of content.nodes)rendering.cards![n.id]=cardStyle(d,n.id)
   for(const e of scene.edges)if(selected.has(e.edge.source)&&selected.has(e.edge.target))rendering.edges![e.edge.id]={...edgePreset(d),...copy(d.presentation.edges?.[e.edge.id]||{}),color:fullHex(e.color)}
   for(const [id,members] of Object.entries(d.presentation.objects?.groups||{})){const subset=members.filter(n=>selected.has(n));if(subset.length>1)rendering.objects!.groups![id]=subset}
@@ -40,7 +42,7 @@ export function parseFragment(text:string):SelectionFragment {
   return copy(f)
 }
 export function pasteFragment(d:DiagramDocument,fragment:SelectionFragment,point:Point,selectedId?:string):string[]{
-  const f=parseFragment(JSON.stringify(fragment)),map=new Map(f.content.nodes.map(n=>[n.id,newId()])),anchor=d.nodes.find(n=>n.id===selectedId),bounds=selectionBounds(f.content.nodes.map(n=>f.rendering.positions[n.id] as any))!
+  const f=parseFragment(JSON.stringify(fragment)),map=new Map(f.content.nodes.map(n=>[n.id,newId()])),anchor=d.nodes.find(n=>n.id===selectedId&&n.kind!=='note'),bounds=selectionBounds(f.content.nodes.map(n=>f.rendering.positions[n.id] as any))!
   const dx=Math.max(16-bounds.x,point.x-bounds.x-bounds.width/2),dy=Math.max(16-bounds.y,point.y-bounds.y-bounds.height/2)
   const mapContainers=(key:'lanes'|'phases'|'groups')=>{
     const mapping=new Map<string,string>()
@@ -50,12 +52,13 @@ export function pasteFragment(d:DiagramDocument,fragment:SelectionFragment,point
   for(const original of f.content.nodes){const n=copy(original);n.id=map.get(original.id)!;delete n.laneId;delete n.phaseId;delete n.groupId;delete n.parentId
     if(d.kind==='swimlane'){n.laneId=lanes.get(original.laneId||'')||anchor?.laneId||d.lanes[0]?.id;n.phaseId=phases.get(original.phaseId||'')||anchor?.phaseId||d.phases[0]?.id}
     if(d.kind==='architecture')n.groupId=groups.get(original.groupId||'')||anchor?.groupId||d.groups[0]?.id
-    if(d.kind==='architecture')n.kind='module';else if(d.kind==='mindmap')n.kind='topic';else if(d.kind==='dataflow')n.kind=n.kind==='note'?'note':'card';else if(['module','topic','card','note'].includes(n.kind))n.kind='task'
-    if(d.kind==='mindmap')n.parentId=map.get(original.parentId||'')||anchor?.id||d.nodes.find(x=>!x.parentId)!.id
+    if(n.kind!=='note'){if(d.kind==='architecture')n.kind='module';else if(d.kind==='mindmap')n.kind='topic';else if(d.kind==='dataflow')n.kind='card';else if(['module','topic','card'].includes(n.kind))n.kind='task'}
+    if(d.kind==='mindmap'&&n.kind!=='note')n.parentId=map.get(original.parentId||'')||anchor?.id||d.nodes.find(x=>x.kind!=='note'&&!x.parentId)!.id
     d.nodes.push(n)
     const b=f.rendering.positions[original.id] as any;d.presentation.positions[n.id]={x:b.x+dx,y:b.y+dy,width:b.width,height:b.height}
     if(f.rendering.styles?.[original.id])(d.presentation.styles??={})[n.id]=copy(f.rendering.styles[original.id])
     if(f.rendering.cards?.[original.id])(d.presentation.cards??={})[n.id]=copy(f.rendering.cards[original.id])
+    if(f.rendering.texts?.[original.id])(d.presentation.texts??={})[n.id]=copy(f.rendering.texts[original.id])
   }
   const relationships=[...f.content.edges]
   // Parent relationships become visible edges when pasting a mindmap into a

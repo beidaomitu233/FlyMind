@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "id": "eval-A03",
+  "title": "A03 订单事件架构",
+  "kind": "architecture",
+  "nodes": [
+    {
+      "id": "entry",
+      "label": "接入服务",
+      "kind": "module",
+      "groupId": "access"
+    },
+    {
+      "id": "order",
+      "label": "订单",
+      "kind": "module",
+      "groupId": "domain"
+    },
+    {
+      "id": "inventory",
+      "label": "库存",
+      "kind": "module",
+      "groupId": "domain"
+    },
+    {
+      "id": "payment",
+      "label": "支付",
+      "kind": "module",
+      "groupId": "domain"
+    },
+    {
+      "id": "bus",
+      "label": "事件总线",
+      "kind": "module",
+      "groupId": "support"
+    },
+    {
+      "id": "log",
+      "label": "日志",
+      "kind": "module",
+      "groupId": "support"
+    }
+  ],
+  "edges": [
+    {
+      "id": "entry-order",
+      "source": "entry",
+      "target": "order"
+    },
+    {
+      "id": "order-bus",
+      "source": "order",
+      "target": "bus",
+      "label": "发布事件"
+    },
+    {
+      "id": "bus-inventory",
+      "source": "bus",
+      "target": "inventory",
+      "label": "消费事件"
+    },
+    {
+      "id": "bus-payment",
+      "source": "bus",
+      "target": "payment",
+      "label": "消费事件"
+    },
+    {
+      "id": "inventory-log",
+      "source": "inventory",
+      "target": "log",
+      "label": "处理结果"
+    },
+    {
+      "id": "payment-log",
+      "source": "payment",
+      "target": "log",
+      "label": "处理结果"
+    }
+  ],
+  "lanes": [],
+  "phases": [],
+  "groups": [
+    {
+      "id": "access",
+      "label": "接入层",
+      "kind": "layer"
+    },
+    {
+      "id": "domain",
+      "label": "领域层",
+      "kind": "layer"
+    },
+    {
+      "id": "support",
+      "label": "支撑层",
+      "kind": "layer"
+    }
+  ]
+}

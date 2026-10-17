@@ -30,12 +30,13 @@ function simplify(points:Point[]){
 // A rectilinear visibility grid is shared conceptually by all edges. Searches
 // are lazy; previous paths and label boxes reserve their own routing space.
 export function orthogonalRouter(d:DiagramDocument,scene:DiagramScene){
+  const flowNodes=scene.nodes.filter(n=>n.node.kind!=='note')
   const segments:Segment[]=[],labels:Box[]=[],counts=new Map<string,number>(),vertical=d.presentation.orientation==='vertical'
-  const headers:Box[]=scene.containers.flatMap(c=>c.kind==='title'||c.kind==='phase'?[c]:c.kind==='lane'?[{...c,width:c.vertical?c.width:120,height:c.vertical?56:c.height}]:[])
-  const nodeBlocks=scene.nodes.map(n=>({x:n.x-10,y:n.y-10,width:n.width+20,height:n.height+20})),baseX:number[]=[],baseY:number[]=[]
-  for(const n of scene.nodes){baseX.push(n.x-24,n.x-40,n.x+n.width+24,n.x+n.width+40,n.x+n.width/2);baseY.push(n.y-24,n.y-40,n.y+n.height+24,n.y+n.height+40,n.y+n.height/2)}
+  const headers:Box[]=scene.containers.flatMap(c=>c.kind==='title'||c.kind==='phase'||c.kind==='corner'?[c]:c.kind==='lane'?[{...c,width:c.vertical?c.width:120,height:c.vertical?56:c.height}]:[])
+  const nodeBlocks=flowNodes.map(n=>({x:n.x-10,y:n.y-10,width:n.width+20,height:n.height+20})),baseX:number[]=[],baseY:number[]=[]
+  for(const n of flowNodes){baseX.push(n.x-24,n.x-40,n.x+n.width+24,n.x+n.width+40,n.x+n.width/2);baseY.push(n.y-24,n.y-40,n.y+n.height+24,n.y+n.height+40,n.y+n.height/2)}
   for(const c of scene.containers.filter(c=>c.kind==='lane')){for(const inset of [16,32,48]){if(c.vertical)baseX.push(c.x+inset,c.x+c.width-inset);else baseY.push(c.y+inset,c.y+c.height-inset)}}
-  const bounds={left:Math.max(8,Math.min(...scene.nodes.map(n=>n.x))-64),right:Math.max(...scene.nodes.map(n=>n.x+n.width))+72,top:Math.max(d.kind==='swimlane'?160:8,Math.min(...scene.nodes.map(n=>n.y))-64),bottom:Math.max(...scene.nodes.map(n=>n.y+n.height))+72}
+  const bounds={left:Math.max(8,Math.min(...flowNodes.map(n=>n.x))-64),right:Math.max(...flowNodes.map(n=>n.x+n.width))+72,top:Math.max(d.kind==='swimlane'?160:8,Math.min(...flowNodes.map(n=>n.y))-64),bottom:Math.max(...flowNodes.map(n=>n.y+n.height))+72}
   baseX.push(bounds.left,bounds.right);baseY.push(bounds.top,bounds.bottom)
   function anchors(n:SceneNode,preferred:Port,fixed?:Port):Anchor[]{
     const shape=d.presentation.styles?.[n.node.id]?.shape||nodePreset(d,n.node.kind).shape
@@ -87,19 +88,19 @@ export function orthogonalRouter(d:DiagramDocument,scene:DiagramScene){
   function finish(edge:SceneEdge,manualLabel?:Point){
     const points=edge.points||[]
     if(edge.edge.label){
-      const metrics=edgeLabelBox(edge.edge.label,d.kind==='dataflow'?22:13),candidates:Point[]=[]
+      const metrics=edgeLabelBox(edge.edge.label,d.presentation.edges?.[edge.edge.id]?.labelFontSize||(d.kind==='dataflow'?22:13)),candidates:Point[]=[]
       for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],h=a.y===b.y;for(const t of [.5,.3,.7,.15,.85]){const p={x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};if(h){candidates.push({x:p.x,y:p.y-metrics.height/2-8},{x:p.x,y:p.y+metrics.height/2+8})}else candidates.push({x:p.x+metrics.width/2+8,y:p.y},{x:p.x-metrics.width/2-8,y:p.y})}}
       if(!candidates.length)candidates.push({x:edge.labelX,y:edge.labelY})
       let best:Box|undefined,bestCost=Infinity
       const midpoint=points[Math.floor(points.length/2)]||{x:edge.labelX,y:edge.labelY}
       for(const [i,p] of candidates.entries()){const box={x:p.x-metrics.width/2,y:p.y-metrics.height/2,width:metrics.width,height:metrics.height}
-        if(box.x<8||box.y<8||scene.nodes.some(n=>intersectsBox(box,n,8))||headers.some(n=>intersectsBox(box,n,4))||labels.some(n=>intersectsBox(box,n,8)))continue
+        if(box.x<8||box.y<8||flowNodes.some(n=>intersectsBox(box,n,8))||headers.some(n=>intersectsBox(box,n,4))||labels.some(n=>intersectsBox(box,n,8)))continue
         const lines=segments.filter(s=>segmentHitsBox(s.a,s.b,box,4)).length,cost=lines*1000+length(p,midpoint)*.02+i*.2
         if(cost<bestCost){best=box;bestCost=cost}
       }
       if(manualLabel)best={x:manualLabel.x-metrics.width/2,y:manualLabel.y-metrics.height/2,width:metrics.width,height:metrics.height}
       if(!best){ // Search nearby free space when a very long label needs a larger gap.
-        outer:for(let radius=24;radius<=480;radius+=24)for(const p of candidates.slice(0,24))for(const sign of [-1,1]){const box={x:p.x-metrics.width/2+radius*sign,y:p.y-metrics.height/2,width:metrics.width,height:metrics.height};if(box.x>=8&&box.y>=8&&![...scene.nodes,...headers,...labels].some(n=>intersectsBox(box,n,8))){best=box;break outer}}
+        outer:for(let radius=24;radius<=480;radius+=24)for(const p of candidates.slice(0,24))for(const sign of [-1,1]){const box={x:p.x-metrics.width/2+radius*sign,y:p.y-metrics.height/2,width:metrics.width,height:metrics.height};if(box.x>=8&&box.y>=8&&![...flowNodes,...headers,...labels].some(n=>intersectsBox(box,n,8))){best=box;break outer}}
       }
       best??={x:edge.labelX-metrics.width/2,y:edge.labelY-metrics.height/2,width:metrics.width,height:metrics.height}
       edge.labelX=best.x+best.width/2;edge.labelY=best.y+best.height/2;edge.labelBox=best;labels.push(best)

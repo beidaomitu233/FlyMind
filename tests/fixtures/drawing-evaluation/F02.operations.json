@@ -1,0 +1,35 @@
+[
+  {
+    "op": "add_node",
+    "node": {
+      "id": "timeout",
+      "label": "收款已超时？",
+      "kind": "decision"
+    }
+  },
+  {
+    "op": "update_edge",
+    "id": "payment-join",
+    "changes": {
+      "target": "timeout"
+    }
+  },
+  {
+    "op": "add_edge",
+    "edge": {
+      "id": "normal-join",
+      "source": "timeout",
+      "target": "join",
+      "label": "未超时"
+    }
+  },
+  {
+    "op": "add_edge",
+    "edge": {
+      "id": "timeout-manual",
+      "source": "timeout",
+      "target": "manual",
+      "label": "已超时"
+    }
+  }
+]

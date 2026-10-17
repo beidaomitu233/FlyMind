@@ -1,0 +1,34 @@
+[
+  {
+    "op": "update_node",
+    "id": "export",
+    "changes": {
+      "label": "任务协调"
+    }
+  },
+  {
+    "op": "add_node",
+    "node": {
+      "id": "render",
+      "label": "原生渲染",
+      "kind": "module",
+      "groupId": "business"
+    }
+  },
+  {
+    "op": "update_edge",
+    "id": "export-native",
+    "changes": {
+      "source": "render"
+    }
+  },
+  {
+    "op": "add_edge",
+    "edge": {
+      "id": "coordinate-render",
+      "source": "export",
+      "target": "render",
+      "label": "渲染请求"
+    }
+  }
+]

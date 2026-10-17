@@ -5,6 +5,11 @@ const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     {
+      path: '/native',
+      name: 'native-studio',
+      component: () => import('@/drawing/ui/NativeStudio.vue')
+    },
+    {
       path: '/',
       name: 'drawing-studio',
       component: () => import('@/drawing/ui/Studio.vue')

@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "id": "eval-D02",
+  "title": "D02 交易事件处理",
+  "kind": "dataflow",
+  "nodes": [
+    {
+      "id": "events",
+      "label": "交易事件",
+      "kind": "card"
+    },
+    {
+      "id": "gateway",
+      "label": "接入网关",
+      "kind": "card"
+    },
+    {
+      "id": "mask",
+      "label": "数据脱敏",
+      "kind": "card"
+    },
+    {
+      "id": "metrics",
+      "label": "实时指标",
+      "kind": "card"
+    },
+    {
+      "id": "alert",
+      "label": "异常告警",
+      "kind": "card"
+    },
+    {
+      "id": "handle",
+      "label": "处理告警",
+      "kind": "card"
+    },
+    {
+      "id": "audit",
+      "label": "审计归档",
+      "kind": "card"
+    }
+  ],
+  "edges": [
+    {
+      "id": "events-in",
+      "source": "events",
+      "target": "gateway",
+      "label": "交易事件"
+    },
+    {
+      "id": "gateway-mask",
+      "source": "gateway",
+      "target": "mask",
+      "label": "待脱敏数据"
+    },
+    {
+      "id": "mask-metrics",
+      "source": "mask",
+      "target": "metrics",
+      "label": "脱敏成功"
+    },
+    {
+      "id": "mask-audit",
+      "source": "mask",
+      "target": "audit",
+      "label": "脱敏成功"
+    },
+    {
+      "id": "metrics-alert",
+      "source": "metrics",
+      "target": "alert",
+      "label": "指标异常"
+    },
+    {
+      "id": "alert-handle",
+      "source": "alert",
+      "target": "handle",
+      "label": "告警事件"
+    },
+    {
+      "id": "handle-audit",
+      "source": "handle",
+      "target": "audit",
+      "label": "处理结果"
+    }
+  ],
+  "lanes": [],
+  "phases": [],
+  "groups": []
+}

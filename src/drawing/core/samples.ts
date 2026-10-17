@@ -11,6 +11,8 @@ swim.nodes=[
   ['confirm','确认项目范围','task','customer','delivery',0],['handoff','项目交接','task','pm','delivery',0],['plan','启动与交付计划','task','project','delivery',0],['done','项目落地','end','project','delivery',1]
 ].map(([id,label,kind,laneId,phaseId,order])=>{(swim.presentation.ranks??={})[String(id)]=Number(order);return {id,label,kind,laneId,phaseId} as DiagramNode})
 swim.edges=[['request','screen'],['screen','context'],['context','goal'],['goal','consulting','N'],['goal','match','Y'],['consulting','match'],['match','feedback','N'],['feedback','stop'],['match','pm-needs','Y'],['customer-needs','pm-needs'],['pm-needs','customer-needs'],['pm-needs','solution'],['solution','proposal'],['proposal','agree'],['agree','revise','N'],['revise','proposal'],['agree','confirm','Y'],['confirm','handoff'],['handoff','plan'],['plan','done']].map(([source,target,label],i)=>({id:`e${i}`,source,target,label}))
+swim.edges.find(e=>e.id==='e9')!.kind='feedback'
+swim.edges.find(e=>e.id==='e15')!.kind='feedback'
 const architecture=base('sample-architecture','生殖专科 AI 辅助诊疗｜总体架构','architecture')
 architecture.groups=[{id:'app',label:'01\n应用层'},{id:'business',label:'02\n业务层'},{id:'system',label:'03\n系统层'},{id:'ai',label:'04\nAI 层'},{id:'data',label:'05\n数据层'},{id:'governance',label:'持续改进与全程治理',kind:'governance'}]
 architecture.presentation.groups={app:{tone:'blue'},business:{tone:'green',columns:5},system:{tone:'blue'},ai:{tone:'green',columns:3},data:{tone:'blue'}}

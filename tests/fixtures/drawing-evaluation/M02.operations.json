@@ -1,0 +1,14 @@
+[
+  {
+    "op": "remove_node",
+    "id": "rules"
+  },
+  {
+    "op": "remove_node",
+    "id": "layout"
+  },
+  {
+    "op": "remove_node",
+    "id": "generation"
+  }
+]

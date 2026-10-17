@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "id": "eval-M01",
+  "title": "M01 产品发现",
+  "kind": "mindmap",
+  "nodes": [
+    {
+      "id": "root",
+      "label": "产品发现",
+      "kind": "topic"
+    },
+    {
+      "id": "users",
+      "label": "用户",
+      "kind": "topic",
+      "parentId": "root"
+    },
+    {
+      "id": "user",
+      "label": "使用者",
+      "kind": "topic",
+      "parentId": "users"
+    },
+    {
+      "id": "decision-maker",
+      "label": "决策者",
+      "kind": "topic",
+      "parentId": "users"
+    },
+    {
+      "id": "problems",
+      "label": "问题",
+      "kind": "topic",
+      "parentId": "root"
+    },
+    {
+      "id": "efficiency",
+      "label": "效率",
+      "kind": "topic",
+      "parentId": "problems"
+    },
+    {
+      "id": "accuracy",
+      "label": "准确性",
+      "kind": "topic",
+      "parentId": "problems"
+    },
+    {
+      "id": "evidence",
+      "label": "证据",
+      "kind": "topic",
+      "parentId": "root"
+    },
+    {
+      "id": "interviews",
+      "label": "访谈",
+      "kind": "topic",
+      "parentId": "evidence"
+    },
+    {
+      "id": "behavior",
+      "label": "行为数据",
+      "kind": "topic",
+      "parentId": "evidence"
+    },
+    {
+      "id": "opportunities",
+      "label": "机会",
+      "kind": "topic",
+      "parentId": "root"
+    },
+    {
+      "id": "improve",
+      "label": "流程改进",
+      "kind": "topic",
+      "parentId": "opportunities"
+    },
+    {
+      "id": "automate",
+      "label": "自动化",
+      "kind": "topic",
+      "parentId": "opportunities"
+    }
+  ],
+  "edges": [],
+  "lanes": [],
+  "phases": [],
+  "groups": []
+}

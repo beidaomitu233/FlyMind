@@ -1,0 +1,124 @@
+import {readControlledEdge} from './controlled'
+import {ROUTING_SUPPLY,type RoutingSupply} from './routing-supply'
+import {attr,children,element,fail,type NativeDocument,type NativeCell} from './xml'
+import {box,mainEntries,businessType,geometry,setStyle,styleValue} from './state'
+import {textUnits} from './template'
+export interface RoutePoint {x:number;y:number}
+export interface RouteBox {id:string;x:number;y:number;w:number;h:number}
+interface LabelRect {x:number;y:number;w:number;h:number;edgeId:string}
+let supply:Promise<RoutingSupply>|undefined
+async function loadSupply():Promise<RoutingSupply>{
+ if(!supply)supply=(async()=>{
+  if(typeof document==='undefined'){
+   // A variable URL + vite-ignore isolates Node built-ins from the Vue graph.
+   const filename='./routing-node'+(import.meta.url.endsWith('.ts')?'.ts':'.js')
+   const adapter=await import(/* @vite-ignore */ new URL(filename,import.meta.url).href)
+   return adapter.loadNodeRoutingSupply()
+  }
+  const directory=new URL('/drawio/js/libavoid-js/',location.origin)
+  for(const [file,hash] of Object.entries(ROUTING_SUPPLY)){const response=await fetch(new URL(file,directory),{redirect:'error'});if(!response.ok)fail('ROUTING_SUPPLY_MISSING','固定路由供应缺失');const bytes=await response.arrayBuffer(),digest=await crypto.subtle.digest('SHA-256',bytes),actual=Array.from(new Uint8Array(digest),x=>x.toString(16).padStart(2,'0')).join('');if(actual!==hash)fail('ROUTING_SUPPLY_HASH_MISMATCH','固定路由供应SHA256不匹配')}
+  await import(/* @vite-ignore */ new URL('libavoid.min.js',directory).href)
+  const global=globalThis as any,Avoid=await global.__libavoidReady;if(!Avoid||typeof Avoid.Router!=='function')fail('ROUTING_INIT_FAILED','固定libavoid初始化失败')
+  await import(/* @vite-ignore */ new URL('libavoid-routing.js',directory).href)
+  if(typeof global.AvoidRouting?.computeRoutes!=='function')fail('ROUTING_INIT_FAILED','固定路由API不可用')
+  return {Avoid,core:global.AvoidRouting}
+ })().catch(error=>{supply=undefined;throw error})
+ return supply
+}
+export function absoluteRouteBox(n:NativeDocument,e:NativeCell):RouteBox{
+ const b=box(e);let parent=attr(e.cell,'parent');const seen=new Set<string>();while(parent){if(seen.has(parent))fail('CYCLIC_PARENT','路由容器引用循环');seen.add(parent);const p=n.cells.get(parent);if(!p)break;const g=children(p.cell,'mxGeometry')[0];if(g){b.x+=Number(attr(g,'x')??0);b.y+=Number(attr(g,'y')??0)}parent=attr(p.cell,'parent')}return {id:e.id,x:b.x,y:b.y,w:b.width,h:b.height}
+}
+const center=(b:RouteBox):RoutePoint=>({x:b.x+b.w/2,y:b.y+b.h/2})
+function meetsBox(a:RoutePoint,b:RoutePoint,r:{x:number;y:number;w:number;h:number},gap=0){
+ const left=r.x-gap,right=r.x+r.w+gap,top=r.y-gap,bottom=r.y+r.h+gap
+ if(a.x===b.x)return a.x>left&&a.x<right&&Math.max(a.y,b.y)>top&&Math.min(a.y,b.y)<bottom
+ if(a.y===b.y)return a.y>top&&a.y<bottom&&Math.max(a.x,b.x)>left&&Math.min(a.x,b.x)<right
+ // Read-only human routes may include a diagonal segment. Use its bounding
+ // corridor conservatively; never let that one segment veto every label slot.
+ return Math.max(a.x,b.x)>left&&Math.min(a.x,b.x)<right&&Math.max(a.y,b.y)>top&&Math.min(a.y,b.y)<bottom
+}
+const overlap=(a:LabelRect,b:{x:number;y:number;w:number;h:number},gap=0)=>a.x<b.x+b.w+gap&&a.x+a.w>b.x-gap&&a.y<b.y+b.h+gap&&a.y+a.h>b.y-gap
+function polyline(source:RouteBox,target:RouteBox,bends:RoutePoint[],sourceConstraint?:{x:number;y:number},targetConstraint?:{x:number;y:number}):RoutePoint[]{
+ const start=sourceConstraint?{x:source.x+sourceConstraint.x*source.w,y:source.y+sourceConstraint.y*source.h}:center(source),end=targetConstraint?{x:target.x+targetConstraint.x*target.w,y:target.y+targetConstraint.y*target.h}:center(target)
+ const result=[start,...bends,end].filter((p,i,a)=>!i||p.x!==a[i-1].x||p.y!==a[i-1].y)
+ // Native floating orthogonal endpoints meet the side midpoint; remove the
+ // terminal-centre portion when computing label arclength positions.
+ if(result.length>1){const a=result[0],b=result[1];result[0]=sourceConstraint?a:Math.abs(a.x-b.x)<=.5?{x:b.x,y:b.y>a.y?source.y+source.h:source.y}:Math.abs(a.y-b.y)<=.5?{x:b.x>a.x?source.x+source.w:source.x,y:b.y}:a;const z=result.length-1,c=result[z],d=result[z-1];result[z]=targetConstraint?c:Math.abs(c.x-d.x)<=.5?{x:d.x,y:d.y>c.y?target.y+target.h:target.y}:Math.abs(c.y-d.y)<=.5?{x:d.x>c.x?target.x+target.w:target.x,y:d.y}:c}
+ return result.filter((p,i,a)=>!i||p.x!==a[i-1].x||p.y!==a[i-1].y)
+}
+function midpoint(points:RoutePoint[]):RoutePoint{let remaining=points.slice(1).reduce((n,p,i)=>n+Math.abs(p.x-points[i].x)+Math.abs(p.y-points[i].y),0)/2;for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],length=Math.abs(b.x-a.x)+Math.abs(b.y-a.y);if(remaining<=length)return {x:a.x+(b.x-a.x)*(length?remaining/length:0),y:a.y+(b.y-a.y)*(length?remaining/length:0)};remaining-=length}return points.at(-1)!}
+/** Read-only label slots around solver segments; never computes edge routes. */
+function labelSlot(n:NativeDocument,entry:NativeCell,points:RoutePoint[],obstacles:RouteBox[],routes:Map<string,RoutePoint[]>,placed:LabelRect[]):LabelRect{
+ const text=readControlledEdge(n,entry)??attr(entry.object,'label')??attr(entry.cell,'value')??'',font=Number(styleValue(entry,'fontSize')??13),labelWidth=Number(styleValue(entry,'labelWidth')??180),lines=text.split('\n').reduce((n,line)=>n+Math.max(1,Math.ceil(textUnits(line)*font/Math.max(font,labelWidth-2))),0)
+ const w=Math.max(16,labelWidth+4),h=Math.ceil(lines*font*1.2)+4,base=midpoint(points),candidates:Array<{rect:LabelRect;cost:number}>=[]
+ for(let i=1;i<points.length;i++){
+  const a=points[i-1],b=points[i],horizontal=a.y===b.y,length=Math.abs(b.x-a.x)+Math.abs(b.y-a.y)
+  if(length<8)continue
+  for(const fraction of [.5,.35,.65,.2,.8,.1,.9,.05,.95])for(const sign of [1,-1])for(const distance of [horizontal?h/2+10:w/2+10,horizontal?h/2+30:w/2+30,horizontal?h/2+54:w/2+54,horizontal?h/2+84:w/2+84]){
+   const x=a.x+(b.x-a.x)*fraction+(horizontal?0:sign*distance),y=a.y+(b.y-a.y)*fraction+(horizontal?sign*distance:0),rect={x:x-w/2,y:y-h/2,w,h,edgeId:entry.id}
+   if(obstacles.some(r=>overlap(rect,r,6))||placed.some(r=>overlap(rect,r,8)))continue
+   let crossed=false;for(const route of routes.values())for(let j=1;j<route.length;j++)if(meetsBox(route[j-1],route[j],rect,4)){crossed=true;break}if(crossed)continue
+   candidates.push({rect,cost:Math.abs(x-base.x)+Math.abs(y-base.y)+distance*.2})
+  }
+ }
+ candidates.sort((a,b)=>a.cost-b.cost||a.rect.y-b.rect.y||a.rect.x-b.rect.x)
+ if(!candidates.length)fail('ROUTING_LABEL_NO_SPACE',`受影响连线标签无安全空白位置 (${entry.id})，未返回穿框布局`)
+ return candidates[0].rect
+}
+const obsoletePorts=['exitX','exitY','exitDx','exitDy','exitPerimeter','entryX','entryY','entryDx','entryDy','entryPerimeter','sourcePort','targetPort','portConstraint','sourcePortConstraint','targetPortConstraint','portConstraintRotation','sourceJettySize','targetJettySize','noEdgeStyle','elbow','segment','libavoidRouting','direction','loopStyle','orthogonalLoop']
+function parentOrigin(n:NativeDocument,e:NativeCell){const p=n.cells.get(attr(e.cell,'parent')??'');return p&&children(p.cell,'mxGeometry').length?absoluteRouteBox(n,p):{x:0,y:0}}
+/** Conservative, read-only occupancy of already edited native routes and labels. */
+function existingOccupancy(n:NativeDocument,e:NativeCell,byId:Map<string,RouteBox>){
+ const s=byId.get(attr(e.cell,'source')??''),t=byId.get(attr(e.cell,'target')??'');if(!s||!t)return
+ const origin=parentOrigin(n,e),g=geometry(e),array=children(g,'Array').find(a=>attr(a,'as')==='points'),bends=array?children(array,'mxPoint').map(p=>({x:Number(attr(p,'x')??0)+origin.x,y:Number(attr(p,'y')??0)+origin.y})):[]
+ const endpoint=(b:RouteBox,prefix:string)=>({x:b.x+Number(styleValue(e,prefix+'X')??.5)*b.w,y:b.y+Number(styleValue(e,prefix+'Y')??.5)*b.h})
+ const a=endpoint(s,'exit'),z=endpoint(t,'entry'),points=bends.length?[a,...bends,z]:[a,{x:a.x,y:z.y},z]
+ // Existing mxGeometry.x is a normalized path position, y is normal distance.
+ const fraction=(Number(attr(g,'x')??0)+1)/2,total=points.slice(1).reduce((sum,p,i)=>sum+Math.hypot(p.x-points[i].x,p.y-points[i].y),0);let remaining=Math.max(0,Math.min(1,fraction))*total,anchor=points[0],normal={x:0,y:0}
+ for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],len=Math.hypot(b.x-a.x,b.y-a.y);if(remaining<=len){anchor={x:a.x+(b.x-a.x)*(len?remaining/len:0),y:a.y+(b.y-a.y)*(len?remaining/len:0)};normal={x:len?(b.y-a.y)/len:0,y:len?-(b.x-a.x)/len:0};break}remaining-=len}
+ const off=children(g,'mxPoint').find(p=>attr(p,'as')==='offset'),font=Number(styleValue(e,'fontSize')??13),text=readControlledEdge(n,e)??attr(e.object,'label')??attr(e.cell,'value')??'',width=Number(styleValue(e,'labelWidth')??Math.max(24,textUnits(text)*font)),height=Math.ceil(Math.max(1,Math.ceil(textUnits(text)*font/width))*font*1.2)+12,y=Number(attr(g,'y')??0)
+ return {points,label:text?{edgeId:e.id,x:anchor.x+normal.x*y+Number(off&&attr(off,'x')||0)-width/2-6,y:anchor.y+normal.y*y+Number(off&&attr(off,'y')||0)-height/2,w:width+12,h:height}:undefined}
+}
+/** Native Loop + orthogonal perimeter. Proxy points validate only
+ * the free-side envelope / label occupancy; no hand-routed loop points are saved. */
+function nativeLoop(b:RouteBox,obstacles:RouteBox[]){
+ for(const side of ['east','west','south','north']){
+  const vertical=side==='east'||side==='west',positive=side==='east'||side==='south',x=positive?1:0
+  const segment=Math.min(32,(vertical?b.h:b.w)/4),start=vertical?{x:b.x+x*b.w,y:b.y+b.h/2-segment}:{x:b.x+b.w/2-segment,y:b.y+x*b.h},end=vertical?{x:start.x,y:b.y+b.h/2+segment}:{x:b.x+b.w/2+segment,y:start.y},outer=vertical?start.x+(positive?2*segment:-2*segment):start.y+(positive?2*segment:-2*segment),points=vertical?[start,{x:outer,y:start.y},{x:outer,y:end.y},end]:[start,{x:start.x,y:outer},{x:end.x,y:outer},end]
+  if(obstacles.some(o=>o.id!==b.id&&points.slice(1).some((p,i)=>meetsBox(points[i],p,o,12))))continue
+  return {points,style:{orthogonalLoop:'0',orthogonal:'1',loopStyle:'loopEdgeStyle',segment:String(segment),direction:side==='east'?'west':side==='west'?'east':side}}
+ }
+ fail('ROUTING_LOOP_NO_SPACE','原生自环周围没有安全包络')
+}
+/** Routes only the supplied edges. All current business shapes are obstacles. */
+export async function routeNativeEdges(n:NativeDocument,affected:NativeCell[]):Promise<void>{
+ if(!affected.length)return
+ const vertices=mainEntries(n).filter(e=>businessType(e)==='node').map(e=>absoluteRouteBox(n,e)),byId=new Map(vertices.map(v=>[v.id,v]))
+ if(vertices.length>500||affected.length>2000)fail('ROUTING_LIMIT','路由输入超过固定预算')
+ const horizontal=[...n.cells.values()].some(e=>attr(e.object,'fmRole')==='title'&&attr(e.object,'fmOrientation')==='horizontal');const pin=(b:RouteBox,start:boolean)=>horizontal?{x:start?1:0,y:(Math.round(b.y+b.h/2)-b.y)/b.h,dir:start?8:4}:{x:(Math.round(b.x+b.w/2)-b.x)/b.w,y:start?1:0,dir:start?2:1};const edges=affected.map(e=>{const source=attr(e.cell,'source'),target=attr(e.cell,'target'),s=byId.get(source??''),t=byId.get(target??'');return {id:e.id,source,target,...(attr(e.object,'fmRole')==='parent-edge'&&s&&t?{sourceConstraint:pin(s,true),targetConstraint:pin(t,false),sourceJetty:24,targetJetty:24}:{})}});for(const e of edges)if(!e.source||!e.target||!byId.has(e.source)||!byId.has(e.target))fail('ROUTING_UNSUPPORTED_EDGE','避障路由需要有效业务端点')
+ const loops=new Map(edges.filter(e=>e.source===e.target).map(e=>[e.id,nativeLoop(byId.get(e.source!)!,vertices)])),regular=edges.filter(e=>e.source!==e.target)
+ let solved:Record<string,RoutePoint[]>={}
+ if(regular.length){const {Avoid,core}=await loadSupply(),releases:Array<()=>void>=[],tracked=Object.create(Avoid);tracked.Router=function(...args:any[]){const r=new Avoid.Router(...args),release=r.delete.bind(r);let done=false;r.delete=()=>{if(!done){done=true;release()}};releases.push(()=>r.delete());return r}
+ // Fixed midpoint pins fan out into a shared tree stem. The supplied solver
+ // rejects duplicate fixed-pin connectors in one transaction; solve each
+ // derived branch separately against ALL node obstacles, without inventing paths.
+ try{const ordinary=regular.filter(edge=>!edge.sourceConstraint),branches=regular.filter(edge=>edge.sourceConstraint);if(ordinary.length)Object.assign(solved,core.computeRoutes(tracked,vertices,ordinary,{shapeBufferDistance:16,idealNudgingDistance:14}));for(const edge of branches)Object.assign(solved,core.computeRoutes(tracked,vertices,[edge],{shapeBufferDistance:16,idealNudgingDistance:14}))}catch{fail('ROUTING_FAILED','固定libavoid求解失败，未退回可能穿框的路由')}finally{for(const release of releases)release()}}
+ const routes=new Map<string,RoutePoint[]>(),placed:LabelRect[]=[],affectedIds=new Set(edges.map(e=>e.id))
+ for(const old of mainEntries(n).filter(e=>businessType(e)==='edge'&&!affectedIds.has(e.id))){const occupancy=existingOccupancy(n,old,byId);if(occupancy){routes.set(old.id,occupancy.points);if(occupancy.label)placed.push(occupancy.label)}}
+ for(const edge of edges){if(loops.has(edge.id)){routes.set(edge.id,loops.get(edge.id)!.points);continue}const bends=solved[edge.id];if(!Array.isArray(bends)||bends.length>2000||bends.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)||Math.abs(p.x)>50000||Math.abs(p.y)>50000))fail('ROUTING_FAILED','固定路由输出无效')
+  const points=polyline(byId.get(edge.source!)!,byId.get(edge.target!)!,bends,edge.sourceConstraint,edge.targetConstraint)
+  for(let i=1;i<points.length;i++){if(points[i-1].x!==points[i].x&&points[i-1].y!==points[i].y)fail('ROUTING_FAILED',`路由不是正交段 (${edge.id}: ${JSON.stringify([points[i-1],points[i]])})`);for(const obstacle of vertices)if(obstacle.id!==edge.source&&obstacle.id!==edge.target&&meetsBox(points[i-1],points[i],obstacle))fail('ROUTING_COLLISION','固定路由仍穿过业务节点，未返回此布局')}
+  routes.set(edge.id,points)
+ }
+ for(const entry of affected){
+  const parentId=attr(entry.cell,'parent'),parent=parentId?n.cells.get(parentId):undefined,parentBox=parent&&children(parent.cell,'mxGeometry').length?absoluteRouteBox(n,parent):{x:0,y:0}
+  const oldGeometry=geometry(entry),g=element(n.document,'mxGeometry',{relative:1,as:'geometry'}),bends=solved[entry.id]??[];if(bends.length){const array=element(n.document,'Array',{as:'points'});for(const p of bends)array.appendChild(element(n.document,'mxPoint',{x:p.x-parentBox.x,y:p.y-parentBox.y}));g.appendChild(array)}
+  const label=readControlledEdge(n,entry)??attr(entry.object,'label')??attr(entry.cell,'value')??'';if(label){const points=routes.get(entry.id)!,slot=labelSlot(n,entry,points,vertices,routes,placed),base=midpoint(points);placed.push(slot);g.insertBefore(element(n.document,'mxPoint',{x:Math.round(slot.x+slot.w/2-base.x),y:Math.round(slot.y+slot.h/2-base.y),as:'offset'}),g.firstChild)}
+  // The canonical routing core rounds its new interior bends to integer pixels.
+  // ELK/user node centres may be fractional: attach to those solver-aligned
+  // perimeter coordinates using native constraints, never round existing nodes
+  // or weaken the final orthogonal/collision/signature checks.
+  const points=routes.get(entry.id)!,source=byId.get(attr(entry.cell,'source')!)!,target=byId.get(attr(entry.cell,'target')!)!,first=points[0],last=points.at(-1)!,ports=loops.has(entry.id)?{}:{exitX:(first.x-source.x)/source.w,exitY:(first.y-source.y)/source.h,exitPerimeter:'0',entryX:(last.x-target.x)/target.w,entryY:(last.y-target.y)/target.h,entryPerimeter:'0'}
+  entry.cell.replaceChild(g,oldGeometry);setStyle(entry,{...Object.fromEntries([...obsoletePorts.map(key=>[key,undefined]),['edgeStyle','orthogonalEdgeStyle'],['curved','0'],['bezier','0'],['rounded','0']]),...ports,...loops.get(entry.id)?.style})
+ }
+}

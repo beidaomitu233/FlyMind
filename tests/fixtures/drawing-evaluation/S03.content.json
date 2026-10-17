@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 1,
+  "id": "eval-S03",
+  "title": "S03 缺货采购",
+  "kind": "swimlane",
+  "nodes": [
+    {
+      "id": "inventory",
+      "label": "确认库存",
+      "kind": "start",
+      "laneId": "warehouse",
+      "phaseId": "stock"
+    },
+    {
+      "id": "enough",
+      "label": "库存足够？",
+      "kind": "decision",
+      "laneId": "warehouse",
+      "phaseId": "stock"
+    },
+    {
+      "id": "dispatch",
+      "label": "办理出库",
+      "kind": "task",
+      "laneId": "warehouse",
+      "phaseId": "stock"
+    },
+    {
+      "id": "dispatched",
+      "label": "出库完成",
+      "kind": "end",
+      "laneId": "warehouse",
+      "phaseId": "stock"
+    },
+    {
+      "id": "inquiry",
+      "label": "采购询价",
+      "kind": "task",
+      "laneId": "procure",
+      "phaseId": "purchase"
+    },
+    {
+      "id": "delivery",
+      "label": "交期满足？",
+      "kind": "decision",
+      "laneId": "procure",
+      "phaseId": "purchase"
+    },
+    {
+      "id": "notify",
+      "label": "告知无法供货",
+      "kind": "task",
+      "laneId": "procure",
+      "phaseId": "purchase"
+    },
+    {
+      "id": "stop",
+      "label": "采购结束",
+      "kind": "end",
+      "laneId": "warehouse",
+      "phaseId": "purchase"
+    },
+    {
+      "id": "order",
+      "label": "下达采购单",
+      "kind": "task",
+      "laneId": "procure",
+      "phaseId": "purchase"
+    },
+    {
+      "id": "pay",
+      "label": "支付采购款",
+      "kind": "task",
+      "laneId": "finance",
+      "phaseId": "purchase"
+    },
+    {
+      "id": "receive",
+      "label": "收货验收",
+      "kind": "task",
+      "laneId": "warehouse",
+      "phaseId": "receive"
+    },
+    {
+      "id": "accepted",
+      "label": "验收通过？",
+      "kind": "decision",
+      "laneId": "warehouse",
+      "phaseId": "receive"
+    },
+    {
+      "id": "supplier",
+      "label": "退供应商处理",
+      "kind": "task",
+      "laneId": "warehouse",
+      "phaseId": "receive"
+    },
+    {
+      "id": "stored",
+      "label": "入库完成",
+      "kind": "end",
+      "laneId": "warehouse",
+      "phaseId": "receive"
+    }
+  ],
+  "edges": [
+    {
+      "id": "inventory-check",
+      "source": "inventory",
+      "target": "enough"
+    },
+    {
+      "id": "enough-dispatch",
+      "source": "enough",
+      "target": "dispatch",
+      "label": "足够"
+    },
+    {
+      "id": "dispatch-end",
+      "source": "dispatch",
+      "target": "dispatched"
+    },
+    {
+      "id": "short-inquiry",
+      "source": "enough",
+      "target": "inquiry",
+      "label": "不足"
+    },
+    {
+      "id": "inquiry-delivery",
+      "source": "inquiry",
+      "target": "delivery"
+    },
+    {
+      "id": "delivery-order",
+      "source": "delivery",
+      "target": "order",
+      "label": "满足"
+    },
+    {
+      "id": "delivery-no",
+      "source": "delivery",
+      "target": "notify",
+      "label": "无法满足"
+    },
+    {
+      "id": "notify-end",
+      "source": "notify",
+      "target": "stop"
+    },
+    {
+      "id": "order-pay",
+      "source": "order",
+      "target": "pay"
+    },
+    {
+      "id": "pay-receive",
+      "source": "pay",
+      "target": "receive"
+    },
+    {
+      "id": "receive-accept",
+      "source": "receive",
+      "target": "accepted"
+    },
+    {
+      "id": "accept-store",
+      "source": "accepted",
+      "target": "stored",
+      "label": "通过"
+    },
+    {
+      "id": "accept-return",
+      "source": "accepted",
+      "target": "supplier",
+      "label": "不通过"
+    },
+    {
+      "id": "supplier-receive",
+      "source": "supplier",
+      "target": "receive",
+      "kind": "feedback"
+    }
+  ],
+  "lanes": [
+    {
+      "id": "warehouse",
+      "label": "仓库"
+    },
+    {
+      "id": "procure",
+      "label": "采购"
+    },
+    {
+      "id": "finance",
+      "label": "财务"
+    }
+  ],
+  "phases": [
+    {
+      "id": "stock",
+      "label": "库存核对"
+    },
+    {
+      "id": "purchase",
+      "label": "采购付款"
+    },
+    {
+      "id": "receive",
+      "label": "到货验收"
+    }
+  ],
+  "groups": []
+}

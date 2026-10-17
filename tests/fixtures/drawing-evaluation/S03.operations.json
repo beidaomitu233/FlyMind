@@ -1,0 +1,74 @@
+[
+  {
+    "op": "add_node",
+    "node": {
+      "id": "invoice",
+      "label": "核验发票",
+      "kind": "task",
+      "laneId": "finance",
+      "phaseId": "purchase"
+    }
+  },
+  {
+    "op": "add_node",
+    "node": {
+      "id": "invoice-ok",
+      "label": "发票合规？",
+      "kind": "decision",
+      "laneId": "finance",
+      "phaseId": "purchase"
+    }
+  },
+  {
+    "op": "add_node",
+    "node": {
+      "id": "invoice-fix",
+      "label": "补正发票",
+      "kind": "task",
+      "laneId": "procure",
+      "phaseId": "purchase"
+    }
+  },
+  {
+    "op": "update_edge",
+    "id": "order-pay",
+    "changes": {
+      "target": "invoice"
+    }
+  },
+  {
+    "op": "add_edge",
+    "edge": {
+      "id": "invoice-check",
+      "source": "invoice",
+      "target": "invoice-ok"
+    }
+  },
+  {
+    "op": "add_edge",
+    "edge": {
+      "id": "invoice-pay",
+      "source": "invoice-ok",
+      "target": "pay",
+      "label": "合规"
+    }
+  },
+  {
+    "op": "add_edge",
+    "edge": {
+      "id": "invoice-back",
+      "source": "invoice-ok",
+      "target": "invoice-fix",
+      "label": "不合规"
+    }
+  },
+  {
+    "op": "add_edge",
+    "edge": {
+      "id": "invoice-recheck",
+      "source": "invoice-fix",
+      "target": "invoice",
+      "kind": "feedback"
+    }
+  }
+]

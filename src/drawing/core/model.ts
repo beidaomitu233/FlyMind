@@ -4,7 +4,7 @@ export interface CardStyle { icon?: 'database' | 'network' | 'check' | 'none'; t
 export interface Point { x:number; y:number }
 export type Port='top'|'right'|'bottom'|'left'
 export interface NodeStyle { fill?:string; stroke?:string; textColor?:string; fontSize?:number;shape?:NodeShape }
-export interface EdgeStyle { color?:string; width?:number; sourcePort?:Port; targetPort?:Port; points?:Point[]; labelPosition?:Point; arrow?:'end'|'both'|'none';dashed?:boolean;route?:LineRoute }
+export interface EdgeStyle { color?:string; width?:number; sourcePort?:Port; targetPort?:Port; points?:Point[]; labelPosition?:Point;labelColor?:string;labelFontSize?:number; arrow?:'end'|'both'|'none';dashed?:boolean;route?:LineRoute }
 export type ThemeName = 'blue' | 'indigo' | 'forest'
 export interface DiagramNode {
   id: string
@@ -42,7 +42,7 @@ export interface DiagramDocument extends DiagramContent {
   createdAt?: number
 }
 export interface SceneNode extends Box { node: DiagramNode; color: string; fill: string; textColor: string }
-export interface SceneContainer extends Box { id: string; label: string; kind: 'title' | 'lane' | 'phase' | 'layer' | 'governance'; tone?: string; vertical?: boolean }
+export interface SceneContainer extends Box { id: string; label: string; kind: 'title' | 'lane' | 'phase' | 'corner' | 'layer' | 'governance'; tone?: string; vertical?: boolean }
 export interface SceneEdge { edge: DiagramEdge; path: string; labelX: number; labelY: number; color: string; points?:Point[];labelBox?:Box }
 export interface DiagramScene { width: number; height: number; nodes: SceneNode[]; edges: SceneEdge[]; containers: SceneContainer[] }
 export const kindLabels: Record<DiagramKind, string> = { swimlane: '泳道图', flowchart: '流程图', architecture: '架构图', mindmap: '思维导图', dataflow: '数据流架构图' }
@@ -99,14 +99,15 @@ export function validateDocument(input: unknown): DiagramDocument {
     if(n.phaseId&&!phases.has(n.phaseId)) throw new Error(`节点 ${n.id} 引用了不存在的阶段`)
     if(n.groupId&&!groups.has(n.groupId)) throw new Error(`节点 ${n.id} 引用了不存在的分层`)
     if(n.parentId&&!ids.has(n.parentId)) throw new Error(`节点 ${n.id} 的父节点不存在`)
-    if(d.kind==='swimlane'&&!n.laneId) throw new Error(`节点 ${n.id} 需要 laneId`)
-    if(d.kind==='swimlane'&&d.phases.length&&!n.phaseId) throw new Error(`节点 ${n.id} 需要 phaseId`)
-    if(d.kind==='architecture'&&!n.groupId) throw new Error(`节点 ${n.id} 需要 groupId`)
+    if(n.kind!=='note'&&d.kind==='swimlane'&&!n.laneId) throw new Error(`节点 ${n.id} 需要 laneId`)
+    if(n.kind!=='note'&&d.kind==='swimlane'&&d.phases.length&&!n.phaseId) throw new Error(`节点 ${n.id} 需要 phaseId`)
+    if(n.kind!=='note'&&d.kind==='architecture'&&!n.groupId) throw new Error(`节点 ${n.id} 需要 groupId`)
   }
   const edgeIds=new Set<string>()
   for(const e of d.edges){if(!e||typeof e.id!=='string'||!e.id||edgeIds.has(e.id)||!ids.has(e.source)||!ids.has(e.target))throw new Error('连线 ID 无效或端点不存在');edgeIds.add(e.id);if(e.label!==undefined&&(typeof e.label!=='string'||e.label.length>200))throw new Error('连线文字过长');if(e.kind!==undefined&&!['flow','feedback'].includes(e.kind))throw new Error('连线类型无效')}
   if(d.kind==='mindmap') {
-    if(d.nodes.filter(n=>!n.parentId).length!==1) throw new Error('思维导图需要一个中心主题')
+    if(d.nodes.filter(n=>n.kind!=='note'&&!n.parentId).length!==1) throw new Error('思维导图需要一个中心主题')
+    if(d.nodes.some(n=>n.kind!=='note'&&d.nodes.some(p=>p.id===n.parentId&&p.kind==='note')))throw new Error('说明文字不能作为父主题')
     if(d.edges.some(e=>d.nodes.some(n=>n.parentId&&e.id===`parent_${n.id}`)))throw new Error('连线 ID 与自动父子连线重复，请为额外连线使用其他 ID')
     for(const n of d.nodes){const seen=new Set<string>();let cur:DiagramNode|undefined=n;while(cur){if(seen.has(cur.id))throw new Error('思维导图不能循环引用父节点');seen.add(cur.id);cur=d.nodes.find(x=>x.id===cur!.parentId)}}
   }
@@ -130,12 +131,14 @@ export function validateDocument(input: unknown): DiagramDocument {
   const color=(v:unknown)=>typeof v==='string'&&/^#[0-9a-f]{6}$/i.test(v)
   const point=(p:Point)=>p&&typeof p==='object'&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&Math.abs(p.x)<=50000&&Math.abs(p.y)<=50000
   if(d.presentation.ranks){map(d.presentation.ranks,'ranks');for(const [id,r] of Object.entries(d.presentation.ranks)){if(!ids.has(id)){delete d.presentation.ranks[id];continue}if(!Number.isInteger(r)||r<0||r>200)throw new Error('渲染布局行应为 0–200 的整数')}}
+  if(d.presentation.texts){map(d.presentation.texts,'texts');for(const [id,t] of Object.entries(d.presentation.texts)){if(!d.nodes.some(n=>n.id===id&&n.kind==='note')){delete d.presentation.texts[id];continue}map(t,'文字渲染');if(Object.keys(t).some(k=>!['width','fontSize','color'].includes(k))||t.width!==undefined&&(!Number.isFinite(t.width)||t.width<24||t.width>4000)||t.fontSize!==undefined&&(!Number.isFinite(t.fontSize)||t.fontSize<10||t.fontSize>48)||t.color!==undefined&&!color(t.color))throw new Error('文字渲染配置无效')}}
+  if(d.presentation.phases){map(d.presentation.phases,'phases');for(const [id,s] of Object.entries(d.presentation.phases)){if(!phases.has(id)){delete d.presentation.phases[id];continue}map(s,'阶段尺寸');if(Object.keys(s).some(k=>k!=='size')||!Number.isFinite(s.size)||s.size<56||s.size>50000)throw new Error('阶段尺寸应为 56–50000')}}
   if(d.presentation.groups){map(d.presentation.groups,'groups');for(const [id,s] of Object.entries(d.presentation.groups)){if(!groups.has(id)){delete d.presentation.groups[id];continue}map(s,'分组渲染配置');if(s.tone&&!['blue','green','amber'].includes(s.tone))throw new Error('分组配色无效');if(s.columns!==undefined&&(!Number.isInteger(s.columns)||s.columns<1||s.columns>10))throw new Error('分组列数应为 1–10')}}
   if(d.presentation.nodeDefaults){map(d.presentation.nodeDefaults,'nodeDefaults');for(const [kind,s] of Object.entries(d.presentation.nodeDefaults)){if(!['task','decision','start','end','module','topic','card','note'].includes(kind))throw new Error('标准节点类型无效');map(s,'标准节点配置');for(const key of ['width','height'] as const)if(s[key]!==undefined&&(!Number.isFinite(s[key])||s[key]!<32||s[key]!>2000))throw new Error('标准节点尺寸应为 32–2000');if(s.fontSize!==undefined&&(!Number.isFinite(s.fontSize)||s.fontSize<10||s.fontSize>48))throw new Error('字号范围为 10–48');if(s.shape&&!['rectangle','rounded','ellipse','diamond'].includes(s.shape))throw new Error('节点形状无效');for(const key of ['fill','stroke','textColor'] as const)if(s[key]!==undefined&&!color(s[key]))throw new Error('颜色必须为 #RRGGBB')}}
   const checkEdge=(s:EdgeStyle)=>{if(s.route&&!['orthogonal','straight','curved'].includes(s.route))throw new Error('连接线类型无效');if(s.dashed!==undefined&&typeof s.dashed!=='boolean')throw new Error('虚线配置无效');if(s.color!==undefined&&!color(s.color))throw new Error('颜色必须为 #RRGGBB');if(s.width!==undefined&&(!Number.isFinite(s.width)||s.width<1||s.width>8))throw new Error('连线宽度范围为 1–8');if(s.arrow&&!['end','both','none'].includes(s.arrow))throw new Error('箭头无效')}
   if(d.presentation.edgeDefaults){map(d.presentation.edgeDefaults,'edgeDefaults');checkEdge(d.presentation.edgeDefaults)}
   if(d.presentation.styles!==undefined){map(d.presentation.styles,'styles');for(const [id,s] of Object.entries(d.presentation.styles)){if(!ids.has(id)){delete d.presentation.styles[id];continue}map(s,'节点样式');if(s.shape&&!['rectangle','rounded','ellipse','diamond'].includes(s.shape))throw new Error('节点形状无效');for(const k of ['fill','stroke','textColor'] as const)if(s[k]!==undefined&&!color(s[k]))throw new Error('颜色必须为 #RRGGBB');if(s.fontSize!==undefined&&(!Number.isFinite(s.fontSize)||s.fontSize<10||s.fontSize>48))throw new Error('字号范围为 10–48')}}
-  if(d.presentation.edges!==undefined){map(d.presentation.edges,'edges');const ports=['top','right','bottom','left'];for(const [id,s] of Object.entries(d.presentation.edges)){if(d.kind==='mindmap')d.nodes.filter(n=>n.parentId).forEach(n=>edgeIds.add(`parent_${n.id}`));if(!edgeIds.has(id)){delete d.presentation.edges[id];continue}map(s,'连线样式');checkEdge(s);if(s.color!==undefined&&!color(s.color))throw new Error('颜色必须为 #RRGGBB');if(s.width!==undefined&&(!Number.isFinite(s.width)||s.width<1||s.width>8))throw new Error('连线宽度范围为 1–8');if(s.sourcePort!==undefined&&!ports.includes(s.sourcePort)||s.targetPort!==undefined&&!ports.includes(s.targetPort))throw new Error('连线端口无效');if(s.arrow!==undefined&&!['end','both','none'].includes(s.arrow))throw new Error('箭头无效');if(s.points!==undefined&&(!Array.isArray(s.points)||s.points.length>40||s.points.some(p=>!point(p))))throw new Error('连线路径点无效');if(s.labelPosition!==undefined&&!point(s.labelPosition))throw new Error('连线标签位置无效')}}
+  if(d.presentation.edges!==undefined){map(d.presentation.edges,'edges');const ports=['top','right','bottom','left'];for(const [id,s] of Object.entries(d.presentation.edges)){if(d.kind==='mindmap')d.nodes.filter(n=>n.parentId).forEach(n=>edgeIds.add(`parent_${n.id}`));if(!edgeIds.has(id)){delete d.presentation.edges[id];continue}map(s,'连线样式');checkEdge(s);if(s.color!==undefined&&!color(s.color))throw new Error('颜色必须为 #RRGGBB');if(s.width!==undefined&&(!Number.isFinite(s.width)||s.width<1||s.width>8))throw new Error('连线宽度范围为 1–8');if(s.sourcePort!==undefined&&!ports.includes(s.sourcePort)||s.targetPort!==undefined&&!ports.includes(s.targetPort))throw new Error('连线端口无效');if(s.arrow!==undefined&&!['end','both','none'].includes(s.arrow))throw new Error('箭头无效');if(s.points!==undefined&&(!Array.isArray(s.points)||s.points.length>40||s.points.some(p=>!point(p))))throw new Error('连线路径点无效');if(s.labelPosition!==undefined&&!point(s.labelPosition))throw new Error('连线标签位置无效');if(s.labelColor!==undefined&&!color(s.labelColor))throw new Error('文字颜色无效');if(s.labelFontSize!==undefined&&(!Number.isFinite(s.labelFontSize)||s.labelFontSize<10||s.labelFontSize>48))throw new Error('字号范围为 10–48')}}
   d.id=typeof d.id==='string'&&d.id?d.id:newId('diagram')
   d.updatedAt=Number.isFinite(d.updatedAt)?d.updatedAt:Date.now()
   return d

@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "id": "eval-M03",
+  "title": "M03 上线准备",
+  "kind": "mindmap",
+  "nodes": [
+    {
+      "id": "root",
+      "label": "上线准备",
+      "kind": "topic"
+    },
+    {
+      "id": "quality",
+      "label": "质量",
+      "kind": "topic",
+      "parentId": "root"
+    },
+    {
+      "id": "accept",
+      "label": "验收",
+      "kind": "topic",
+      "parentId": "quality"
+    },
+    {
+      "id": "regress",
+      "label": "回归",
+      "kind": "topic",
+      "parentId": "quality"
+    },
+    {
+      "id": "operations",
+      "label": "运维",
+      "kind": "topic",
+      "parentId": "root"
+    },
+    {
+      "id": "monitor",
+      "label": "监控",
+      "kind": "topic",
+      "parentId": "operations"
+    },
+    {
+      "id": "backup",
+      "label": "备份",
+      "kind": "topic",
+      "parentId": "operations"
+    },
+    {
+      "id": "release",
+      "label": "发布",
+      "kind": "topic",
+      "parentId": "root"
+    },
+    {
+      "id": "notes",
+      "label": "发布说明",
+      "kind": "topic",
+      "parentId": "release"
+    },
+    {
+      "id": "rollback",
+      "label": "回滚方案",
+      "kind": "topic",
+      "parentId": "release"
+    }
+  ],
+  "edges": [],
+  "lanes": [],
+  "phases": [],
+  "groups": []
+}
