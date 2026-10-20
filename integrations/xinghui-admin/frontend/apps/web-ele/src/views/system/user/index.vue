@@ -1,0 +1,18 @@
+<script setup lang="ts">
+import {onMounted,ref,reactive} from 'vue';
+import {Page} from '@vben/common-ui';
+import {ElMessage,ElMessageBox} from 'element-plus';
+import {listAppUsers,createAppUser,setAppUserStatus,resetAppUserPassword,type AppUserRow} from '#/api/system/flymind';
+const passwordOpen=ref(false),passwordTarget=ref<AppUserRow>(),newPassword=ref(''),resetting=ref(false);
+const rows=ref<AppUserRow[]>([]),loading=ref(false),creating=ref(false),open=ref(false),form=reactive({name:'',phone:'',password:''});
+async function load(){loading.value=true;try{rows.value=await listAppUsers()}finally{loading.value=false}}
+function begin(){form.name='';form.phone='';form.password='';open.value=true}
+async function create(){creating.value=true;try{await createAppUser({...form});form.password='';open.value=false;ElMessage.success('账号已开通');await load()}finally{creating.value=false}}
+async function change(row:AppUserRow){const next=row.status===1?0:1;try{await ElMessageBox.confirm(next?'启用此账号？':'停用后该账号所有应用会话将不能继续访问，确认停用？','账号状态',{type:'warning'});}catch{return}await setAppUserStatus(row.id,next);ElMessage.success('状态已更新');await load()}
+function beginReset(row:AppUserRow){passwordTarget.value=row;newPassword.value='';passwordOpen.value=true}
+async function resetPassword(){if(!passwordTarget.value)return;resetting.value=true;try{await resetAppUserPassword(passwordTarget.value.id,newPassword.value);newPassword.value='';passwordOpen.value=false;ElMessage.success('密码已重置，该账号全部应用会话已撤销')}finally{resetting.value=false}}
+onMounted(()=>void load());
+</script>
+<template><Page title="用户管理"><el-card><div class="mb-4 flex justify-between"><span>FlyMind 应用账号</span><div><el-button @click="load">刷新</el-button><el-button type="primary" @click="begin">开通账号</el-button></div></div><el-table v-loading="loading" :data="rows"><el-table-column prop="name" label="姓名"/><el-table-column prop="phone" label="手机号"/><el-table-column label="状态"><template #default="{row}">{{row.status===1?'启用':'停用'}}</template></el-table-column><el-table-column label="操作"><template #default="{row}"><el-dropdown trigger="click"><el-button link>更多</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item @click="change(row)">{{row.status===1?'停用':'启用'}}</el-dropdown-item><el-dropdown-item @click="beginReset(row)">重置密码</el-dropdown-item></el-dropdown-menu></template></el-dropdown></template></el-table-column></el-table></el-card><el-dialog v-model="open" title="开通账号" width="440px" @closed="form.password=''" :close-on-click-modal="false"><el-form label-position="top" @submit.prevent="create"><el-form-item label="姓名"><el-input v-model="form.name" maxlength="30"/></el-form-item><el-form-item label="手机号"><el-input v-model="form.phone" maxlength="11"/></el-form-item><el-form-item label="初始密码"><el-input v-model="form.password" type="password" autocomplete="new-password" show-password/><span class="text-xs text-gray-500">至少12字符，不超过72 UTF-8字节</span></el-form-item></el-form><template #footer><el-button @click="open=false">取消</el-button><el-button type="primary" :loading="creating" @click="create">开通</el-button></template></el-dialog><el-dialog v-model="passwordOpen" :title="'重置密码 · '+(passwordTarget?.name||'')" width="440px" :close-on-click-modal="false" @closed="newPassword=''">
+<el-form label-position="top" @submit.prevent="resetPassword"><el-form-item label="新密码"><el-input v-model="newPassword" type="password" autocomplete="new-password" show-password/></el-form-item><p class="text-sm text-gray-500">至少12字符，不超过72 UTF-8字节。重置后该账号全部应用设备须重新登录。</p></el-form>
+<template #footer><el-button @click="passwordOpen=false">取消</el-button><el-button type="primary" :loading="resetting" @click="resetPassword">重置密码</el-button></template></el-dialog></Page></template>

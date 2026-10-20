@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth'
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
+    {path:'/cloud',name:'cloud-studio',component:()=>import('@/drawing/ui/CloudStudio.vue')},
     {
       path: '/native',
       name: 'native-studio',

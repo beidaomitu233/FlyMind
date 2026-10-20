@@ -49,7 +49,7 @@ export class DiagramStore {
   private use<T>(fn:(db:DB)=>T):T{const db=this.connect();try{return fn(db)}catch(e){if((e as any).code==='SQLITE_BUSY')throw new StoreError('数据正在保存，请稍后重试',423);throw e}finally{db.close()}}
   private transaction<T>(fn:(db:DB)=>T){return this.use(db=>db.transaction(()=>fn(db)).immediate())}
   private initialized(db:DB){return !!db.prepare("SELECT 1 FROM metadata WHERE key='initialized'").get()}
-  async init(){
+  async init(options:{seedExamples?:boolean}={}){
     if(this.use(db=>this.initialized(db)))return
     const records=new Map<string,{record:DiagramRecord;deletedAt?:number}>();let legacy=false
     const org:{groups:WorkspaceGroup[];assignments:Record<string,string>}=await this.json(join(this.root,'workspace.json'),{groups:[],assignments:{}})
@@ -64,7 +64,7 @@ export class DiagramStore {
     this.transaction(db=>{
       if(this.initialized(db))return
       for(const g of org.groups){this.id(g.id);db.prepare('INSERT INTO workspace_groups VALUES(?,?,?,?,?)').run(g.id,this.groupName(g.name),g.revision,g.createdAt,g.updatedAt)}
-      if(!legacy)for(const document of samples){const now=Date.now(),d=copy(document);d.createdAt??=now;records.set(d.id,{record:{document:d,revision:1,savedAt:now,createdAt:d.createdAt}})}
+      if(!legacy&&options.seedExamples!==false)for(const document of samples){const now=Date.now(),d=copy(document);d.createdAt??=now;records.set(d.id,{record:{document:d,revision:1,savedAt:now,createdAt:d.createdAt}})}
       for(const [id,{record,deletedAt}] of records){const groupId=org.assignments[id]||null;this.insert(db,{...record,workspaceGroupId:groupId},deletedAt)}
       db.prepare('INSERT INTO metadata VALUES(?,?)').run('initialized','1');db.prepare('INSERT INTO metadata VALUES(?,?)').run('schema_version','1');if(backupDirectory)db.prepare('INSERT INTO metadata VALUES(?,?)').run('legacy_backup',backupDirectory)
     })
@@ -265,6 +265,19 @@ export class DiagramStore {
     })
   }
   async getNativeExport(id:string){return this.transaction(db=>{const job=this.exportRow(db,id),current=this.exportAccess(db,job);return {job,currentRevision:current.revision}})}
+  /** Queue scheduling only; does not claim jobs or change their durable state. */
+  async nativeExportQueueState(now=Date.now()):Promise<{pending:boolean;ready:boolean;nextAttemptAt?:number}>{
+    if(!Number.isSafeInteger(now)||now<0)throw new StoreError('导出队列时间无效')
+    return this.use(db=>{
+      if(!this.exportSchema(db))return {pending:false,ready:false}
+      const pending=!!db.prepare("SELECT 1 FROM native_export_jobs WHERE status IN ('queued','running') LIMIT 1").get()
+      if(!pending)return {pending:false,ready:false}
+      const running=db.prepare("SELECT MAX(lease_until) AS until FROM native_export_jobs WHERE status='running' AND lease_until>?").get(now) as {until:number|null}
+      if(running.until!==null)return {pending:true,ready:false,nextAttemptAt:running.until}
+      const ready=!!db.prepare("SELECT 1 FROM native_export_jobs WHERE status='queued' OR (status='running' AND lease_until<=?) LIMIT 1").get(now)
+      return {pending:true,ready}
+    })
+  }
   async claimNativeExport(owner:string,leaseMs:number,now=Date.now(),maxAttempts=3):Promise<StoredNativeExport|undefined>{
     if(!owner||!Number.isSafeInteger(leaseMs)||leaseMs<10)throw new StoreError('导出租约参数无效')
     return this.transaction(db=>{
