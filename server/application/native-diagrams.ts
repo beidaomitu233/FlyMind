@@ -6,7 +6,7 @@ import {nativeDocumentCapabilities} from '../../src/drawing/services/native-capa
 import {assertIsolatedNativeRoot,workspaceDataRootId} from '../native-pilot'
 import type {DiagramContent} from '../../src/drawing/core/model'
 import type {DiagramOperation} from '../../src/drawing/core/operations'
-import {validateContent,extractContent} from '../../src/drawing/core/layers'
+import {validateContent,extractContent,composeDocument,applyContentOperations} from '../../src/drawing/core/layers'
 import {canonicalContentJson} from '../../src/drawing/engine/content-hash'
 import {createDrawingProject,validateDrawingProject} from '../../src/drawing/engine/project'
 import {compileDrawio,patchDrawio} from '../../src/drawing/engine/drawio'
@@ -92,7 +92,7 @@ export class NativeDiagramService {
     if(canonicalContentJson(candidate.content)!==canonicalContentJson(base.document.content))throw new StoreError('渲染配置改变了业务内容，未提交',400,undefined,'CONTENT_DIFF_MISMATCH')
     return this.store.commitNative(id,expected,candidate,m)
   }
-  async validateAI(input:unknown){this.available();if((input as any)?.schemaVersion!==1||typeof(input as any)?.id!=='string')throw new StoreError('content 必须提供 schemaVersion:1 和稳定 id');const content=validateContent(input);this.supportedAI(content);await compileDrawio(content);const quality=inspectDrawing(content);return {valid:quality.passed,quality,nodes:content.nodes.length,edges:content.edges.length}}
+  async validateAI(input:unknown){this.available();if((input as any)?.schemaVersion!==1||typeof(input as any)?.id!=='string')throw new StoreError('content 必须提供 schemaVersion:1 和稳定 id');const content=validateContent(input);this.supportedAI(content);const quality=inspectDrawing(content);if(quality.passed)await compileDrawio(content);return {valid:quality.passed,quality,nodes:content.nodes.length,edges:content.edges.length}}
   async patchAI(id:string,input:unknown,expectedDataRootId?:string){return this.changeAI(id,input,expectedDataRootId,false)}
   async updateAI(id:string,input:unknown,expectedDataRootId?:string){return this.changeAI(id,input,expectedDataRootId,true)}
   private async changeAI(id:string,input:unknown,expectedDataRootId:string|undefined,full:boolean){
@@ -108,6 +108,9 @@ export class NativeDiagramService {
     let operations:DiagramOperation[],intended:DiagramContent|undefined
     if(full){if(value.content?.schemaVersion!==1||typeof value.content?.id!=='string')throw new StoreError('content 必须提供 schemaVersion:1 和稳定 id');intended=validateContent(value.content);this.supportedAI(intended);operations=diffNativeContent(base.document.content,intended)}
     else {if(!Array.isArray(value.operations)||!value.operations.length||value.operations.length>500)throw new StoreError('operations需要1–500项');operations=value.operations}
+    // Quality must reject invalid semantic edits before they reach layout/routing.
+    const proposed=intended??extractContent(applyContentOperations(composeDocument(base.document.content),operations))
+    requireNativeAIQuality(proposed,base.document.content,intent)
     const engine=operations.length?await patchDrawio(base.document,operations):base.document.rendering.engine
     const projection=await import('../../src/drawing/engine/drawio').then(module=>module.projectDrawio(engine.xml,base.document.content))
     if(intended){const semantic=(c:DiagramContent)=>({...c,nodes:[...c.nodes].sort((a,b)=>a.id.localeCompare(b.id)),edges:[...c.edges].sort((a,b)=>a.id.localeCompare(b.id))});if(canonicalContentJson(semantic(projection.content))!==canonicalContentJson(semantic(intended)))throw new StoreError('完整更新投影与目标业务内容不符，未提交',400,undefined,'CONTENT_DIFF_MISMATCH')}

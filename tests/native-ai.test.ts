@@ -73,11 +73,12 @@ test('all measurable quality scales include warning growth, improved families an
   const old=clone(basic);old.nodes[1].label='甲'.repeat(20)
   const worse=clone(old);worse.nodes[1].label='甲'.repeat(22);issue(()=>requireNativeAIQuality(worse,old),'wordy_label','b')
   const long=clone(basic);long.nodes[1].label='甲'.repeat(35);const improved=clone(long);improved.nodes[1].label='甲'.repeat(20);assert.doesNotThrow(()=>requireNativeAIQuality(improved,long))
-  const desc=clone(basic);desc.nodes[1].description='甲'.repeat(200);const moreDesc=clone(desc);moreDesc.nodes[1].description='甲'.repeat(220);issue(()=>requireNativeAIQuality(moreDesc,desc),'wordy_description','b')
+  const desc=clone(basic);desc.nodes[1].description='甲'.repeat(200);const moreDesc=clone(desc);moreDesc.nodes[1].description='甲'.repeat(220);issue(()=>requireNativeAIQuality(moreDesc,desc),'long_description','b')
   const paragraph=clone(basic);paragraph.nodes[1].label='甲\n乙\n丙\n丁';const extra=clone(paragraph);extra.nodes[1].label+='\n戊';issue(()=>requireNativeAIQuality(extra,paragraph),'paragraph_label','b')
   const continued=clone(basic);continued.edges.push({id:'ca',source:'c',target:'a',kind:'feedback'});const twice=clone(continued);twice.edges.push({id:'cb',source:'c',target:'b',kind:'feedback'});issue(()=>requireNativeAIQuality(twice,continued),'end_continues','c')
   const decision=clone(basic);decision.nodes[1].kind='decision';decision.edges.push({id:'ba',source:'b',target:'a',kind:'feedback',label:'退回'});const missing=clone(decision);missing.edges.push({id:'self',source:'b',target:'b',kind:'feedback'});issue(()=>requireNativeAIQuality(missing,decision),'decision_conditions','b')
   const arch:DiagramContent={...clone(basic),kind:'architecture',nodes:[{id:'m',kind:'module',label:'业务模块',items:['A'.repeat(150)]}],edges:[],lanes:[],phases:[]};const moreItems=clone(arch);moreItems.nodes[0].items=['A'.repeat(101),'B'.repeat(101)];issue(()=>requireNativeAIQuality(moreItems,arch),'long_item','m')
+  const nine=clone(arch);nine.nodes[0].items=Array.from({length:9},(_,i)=>'能力'+i);const ten=clone(nine);ten.nodes[0].items!.push('新增能力');issue(()=>requireNativeAIQuality(ten,nine),'many_items','m')
   const mind:DiagramContent={...clone(basic),kind:'mindmap',nodes:[{id:'root',kind:'topic',label:'根主题'},{id:'one',kind:'topic',label:'相同',parentId:'root'},{id:'two',kind:'topic',label:'相同',parentId:'root'},{id:'three',kind:'topic',label:'不同',parentId:'root'}],edges:[],lanes:[],phases:[]};const duplicates=clone(mind);duplicates.nodes[3].label='相同';issue(()=>requireNativeAIQuality(duplicates,mind),'duplicate_topic','one')
 })
 
@@ -129,4 +130,22 @@ test('mixed reads expose strict pure content and only declare v3 synced after XM
     const db=new Database(s.store.databasePath);try{const wrong=clone(created.document);wrong.rendering.engine.xml=wrong.rendering.engine.xml.replace('办理申请','偷偷更换正文');db.prepare('UPDATE diagrams SET document=? WHERE id=?').run(JSON.stringify(wrong),basic.id)}finally{db.close()}
     await assert.rejects(s.service.readContent(basic.id))
   }finally{await cleanup(s.root)}
+})
+
+test('1.1 validate/create/patch/update enforce identical AI budgets while manual drafts remain saveable',async()=>{
+ const s=await setup()
+ try{
+  const bad=clone(basic);bad.nodes[1].items=['方案说明'];bad.nodes[1].description='甲'.repeat(121)
+  const validation=await s.service.validateAI(bad);assert.equal(validation.valid,false);assert.ok(validation.quality.issues.some(i=>i.code==='node_field_items'))
+  await assert.rejects(s.service.createAI({content:bad,requestId:'bad-field'},s.identity),(e:any)=>e.code==='QUALITY_FAILED')
+  const manual=await s.service.create({content:{...bad,id:'human-budget'},requestId:'human-budget'},s.identity);assert.equal(manual.revision,1)
+  const first=await s.service.createAI({content:basic,requestId:'clean'},s.identity),baseline=counts(s.store)
+  await assert.rejects(s.service.patchAI(basic.id,{expectedRevision:1,requestId:'huge-before-routing',operations:[{op:'update_node',id:'b',changes:{label:'长段'.repeat(200)}}]},s.identity),(e:any)=>e.code==='QUALITY_FAILED'&&e.quality.issues.some((i:any)=>i.code==='long_label'))
+  const hugeUpdate=clone(basic);hugeUpdate.nodes[1].label='长段'.repeat(200);await assert.rejects(s.service.updateAI(basic.id,{expectedRevision:1,requestId:'huge-update-before-routing',content:hugeUpdate},s.identity),(e:any)=>e.code==='QUALITY_FAILED')
+  const operations=[{op:'add_node',node:{id:'extra-note',kind:'note',label:'这里应该补处理逻辑'}},{op:'update_node',id:'b',changes:{label:'核验申请'}}]
+  await assert.rejects(s.service.patchAI(basic.id,{expectedRevision:1,requestId:'note-and-word',operations},s.identity),(e:any)=>e.quality.issues.some((i:any)=>i.code==='annotation_only_change'))
+  const updated=clone(basic);updated.nodes.push({id:'extra-note',kind:'note',label:'这里应该补处理逻辑'});updated.nodes[1].label='核验申请'
+  await assert.rejects(s.service.updateAI(basic.id,{expectedRevision:1,requestId:'update-note-and-word',content:updated},s.identity),(e:any)=>e.code==='QUALITY_FAILED')
+  assert.deepEqual(counts(s.store),baseline);assert.deepEqual(await s.service.get(basic.id),first)
+ }finally{await cleanup(s.root)}
 })

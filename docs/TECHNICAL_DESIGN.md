@@ -1,5 +1,11 @@
 # FlyMind draw.io 技术设计
 
+> 2026-10-20 v1.1集成基线：按[版本计划](releases/V1_1_PLAN.md)合入冻结云端账号/团队/OAuth/协同核心与当前质量线。操作记录绑定权威身份和持久提交；目录导入复用已有结构验证/来源保留并增加批次去重与目标归档。发布同时保护MCP会话、协同未ACK编辑和不可变导出任务，服务器OS和现有服务待SSH只读核查。v1.1仍待实施/整体验收，不修改当前数据或取消本机安全边界。
+
+> 2026-10-20 R22：采用固定 `/mcp` 远程接入，网关与绘图应用进程分离，稳定工具契约与动态权威guide配合；规则/schema/校验器同包发布，任务绑定不可变修订和引擎供应。云端首期SQLite仍为单活写入者，升级排空/重启/回滚由维护者完成；不以改客户端URL或静默上传本地图形完成更新。详细设计与实际缺口见[MCP持久更新方案](MCP_UPDATE_STRATEGY.md)，不能把设计误标为已实装。
+
+> 2026-10-20 R21：内容层质量规则集中在 `core/drawing-quality.ts`，新旧MCP共享，native只映射结构化错误；在渲染前预检并在原生投影后复核。新建和显式重排由draw.io适配器执行分类型渲染策略、标题禁入区与标签避让，自动脑图方向写回渲染配置。流程备注保留为明确业务属性，不膨胀流程节点；不自动改业务类型/关系、截字或降低字号掩盖问题。人工保存与历史问题渐进修复仍保留。实际范围和限制见 [绘图质量批次](DRAWING_QUALITY_PLAN.md)。
+
 > 2026-10-18 发布增补 R19：npm 制品包含预编译服务和共享 drawing JS、构建后的原工作台、CLI、标准/guide 和第三方许可。bin 提供 mcp（默认）、setup、doctor、studio。CLI 显式选择当前原生模式，数据默认存 LOCALAPPDATA/FlyMind/data，凭据存 runtime，固定资源缓存独立于安装目录；FLYMIND_DATA_DIR、FLYMIND_PRIVATE_RUNTIME_DIR、FLYMIND_RESOURCES_DIR 可覆盖。先 setup 准备固定版本资源，再注册 MCP，避免首次下载阻塞客户端握手。STDIO stdout 仅协议，安装进度/诊断走 stderr。Registry 登记名 io.github.beidaomitu233/flymind，元数据不承载安装包；npm 发布后再登记。Windows 为本批验证平台。原源码入口兼容，既有用户根目录和模式不自动切换。
 
 日期：2026-10-16。本文同时记录目标设计与已验收的原生pilot实现边界；D06已在隔离副本通过迁移/离线恢复，默认入口和用户数据尚未切换。需求见 [PRD](PRD.md)，任务与证据见 [实施计划](IMPLEMENTATION_PLAN.md)。

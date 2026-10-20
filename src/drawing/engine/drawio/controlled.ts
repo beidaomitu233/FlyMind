@@ -24,7 +24,9 @@ export function controlledChildren(n:NativeDocument,owner:NativeCell){return [..
 /** Strict projection never fills missing visible text from stale hidden metadata. */
 export function readControlledNode(n:NativeDocument,owner:NativeCell):Partial<DiagramNode>|undefined{
  const manifest=fields(owner);if(!manifest)return
- if(['fmDescription','fmItems','fmBadge'].some(k=>attr(owner.object,k)!==undefined))fail('DUPLICATE_CONTROLLED_METADATA','受控可见字段不能另有隐藏副本')
+ const propertyBody=attr(owner.object,'fmDescriptionMode')==='property'
+ if(attr(owner.object,'fmDescriptionMode')!==undefined&&(!propertyBody||manifest.body||!isFlowNode(n,owner)))fail('INVALID_CONTROLLED_FIELDS','正文属性模式仅用于流程业务节点且不能同时有可见正文')
+ if((propertyBody?['fmItems','fmBadge']:['fmDescription','fmItems','fmBadge']).some(k=>attr(owner.object,k)!==undefined))fail('DUPLICATE_CONTROLLED_METADATA','受控可见字段不能另有隐藏副本')
  const parts=controlledChildren(n,owner),singles=new Map<string,NativeCell>(),items=new Map<number,NativeCell>()
  for(const part of parts){if(kind(part)!==kind(owner)||attr(part.object,'fmId')!==attr(owner.object,'fmId'))fail('CONTROLLED_OWNER_MISMATCH','受控业务身份与祖先不一致');const r=role(part);if(r==='item'){const index=Number(attr(part.object,'fmItemIndex'));if(attr(part.object,'fmItemIndex')===undefined||!Number.isInteger(index)||index<0||items.has(index))fail('DUPLICATE_CONTROLLED_BINDING','条目索引缺失或重复');items.set(index,part)}else{if(!['title','body','badge','icon'].includes(r)||singles.has(r))fail('DUPLICATE_CONTROLLED_BINDING','受控字段重复或不属于当前节点');singles.set(r,part)}}
  for(const r of ['title','body','badge','icon'] as const)if(!!manifest[r]!==singles.has(r))fail('MISSING_CONTROLLED_ELEMENT','受控字段清单与可见元素不一致')
@@ -35,21 +37,23 @@ export function readControlledNode(n:NativeDocument,owner:NativeCell):Partial<Di
  return result
 }
 export function needsControlledNode(node:DiagramNode){return node.description!==undefined||node.items!==undefined||node.badge!==undefined}
-export function controlledNodeMetrics(node:DiagramNode,width:number,font:number,shape:string,minHeight:number){
+function isFlowNode(n:NativeDocument,owner:NativeCell){return attr(owner.object,'fmKind')!=='note'&&[...n.cells.values()].some(e=>attr(e.object,'fmRole')==='title'&&attr(e.object,'fmType')==='decoration'&&attr(e.object,'fmKind')==='flowchart')}
+export function controlledNodeMetrics(node:DiagramNode,width:number,font:number,shape:string,minHeight:number,propertyDescription=false){
  const body=Math.max(10,font-3),usable=Math.max(font,(shape==='diamond'?width*.5:shape==='ellipse'?width*.72:width)-24),x=(width-usable)/2,lineHeight=(text:string,size:number)=>text.split('\n').reduce((n,line)=>n+Math.max(1,Math.ceil(textUnits(line)*size/usable)),0)*size*1.45
  let y=12;const parts:Part[]=[];const add=(r:Part['role'],text:string,size:number,index?:number)=>{const height=Math.ceil(lineHeight(text,size))+8;parts.push({role:r,text,index,x,y,width:usable,height,font:size});y+=height}
- add('title',node.label,font);if(node.description!==undefined)add('body',node.description,body);node.items?.forEach((text,index)=>add('item',text,body,index));if(node.badge!==undefined)add('badge',node.badge,body)
+ add('title',node.label,font);if(node.description!==undefined&&!propertyDescription)add('body',node.description,body);node.items?.forEach((text,index)=>add('item',text,body,index));if(node.badge!==undefined)add('badge',node.badge,body)
  const height=Math.max(minHeight,Math.ceil((y+12)*(shape==='diamond'?2:shape==='ellipse'?1.4:1))),shift=(height-(y+12))/2;parts.forEach(p=>p.y+=shift);return {height,parts}
 }
 /** Controlled fields are native editable text shapes; old simple cells remain
  * supported. Only the explicitly affected node's subtree is reconciled. */
 export function writeControlledNode(n:NativeDocument,owner:NativeCell,node:DiagramNode){
  if(!needsControlledNode(node)&&!fields(owner)&&!['database','network','check'].includes(attr(owner.object,'fmCardIcon')??''))return
- const g=children(owner.cell,'mxGeometry')[0],style=attr(owner.cell,'style')??'',get=(key:string)=>style.split(';').find(p=>p.startsWith(key+'='))?.slice(key.length+1),width=Number(attr(g,'width')),font=Number(get('fontSize')??16),shape=style.includes('rhombus')?'diamond':style.split(';').includes('ellipse')?'ellipse':'rectangle',metrics=controlledNodeMetrics(node,width,font,shape,Number(attr(g,'height'))),old=controlledChildren(n,owner),wanted=new Set<string>()
+ const propertyDescription=isFlowNode(n,owner),g=children(owner.cell,'mxGeometry')[0],style=attr(owner.cell,'style')??'',get=(key:string)=>style.split(';').find(p=>p.startsWith(key+'='))?.slice(key.length+1),width=Number(attr(g,'width')),font=Number(get('fontSize')??16),shape=style.includes('rhombus')?'diamond':style.split(';').includes('ellipse')?'ellipse':'rectangle',metrics=controlledNodeMetrics(node,width,font,shape,Number(attr(g,'height')),propertyDescription),old=controlledChildren(n,owner),wanted=new Set<string>()
  const icon=attr(owner.object,'fmCardIcon'),hasIcon=!!icon&&icon!=='none';if(hasIcon){const title=metrics.parts[0],width=Math.max(24,title.width-44),height=Math.ceil(title.text.split('\n').reduce((sum,line)=>sum+Math.max(1,Math.ceil(textUnits(line)*title.font/width)),0)*title.font*1.45)+8,delta=Math.max(0,height-title.height);title.x+=44;title.width=width;title.height+=delta;for(const part of metrics.parts.slice(1))part.y+=delta;metrics.height+=delta}
  const preserve=old.length===metrics.parts.length+(hasIcon?1:0)&&metrics.parts.every(p=>{const e=old.find(e=>role(e)===p.role&&(p.index===undefined||Number(attr(e.object,'fmItemIndex'))===p.index)),g=e&&children(e.cell,'mxGeometry')[0];return g&&Number(attr(g,'width'))===p.width&&Number(attr(g,'height'))>=p.height})
  if(!preserve)g.setAttribute('height',String(metrics.height));setCellText(owner,'');for(const key of ['fmDescription','fmItems','fmBadge'])owner.object.removeAttribute(key)
- const manifest:Fields={title:true,...(node.description!==undefined?{body:true as const}:{}),...(node.items!==undefined?{items:node.items.length}:{}),...(node.badge!==undefined?{badge:true as const}:{}),...(hasIcon?{icon:true as const}:{})};owner.object.setAttribute('fmControlled','1');owner.object.setAttribute('fmFields',JSON.stringify(manifest))
+ if(propertyDescription&&node.description!==undefined){owner.object.setAttribute('fmDescriptionMode','property');owner.object.setAttribute('fmDescription',node.description)}else owner.object.removeAttribute('fmDescriptionMode')
+ const manifest:Fields={title:true,...(node.description!==undefined&&!propertyDescription?{body:true as const}:{}),...(node.items!==undefined?{items:node.items.length}:{}),...(node.badge!==undefined?{badge:true as const}:{}),...(hasIcon?{icon:true as const}:{})};owner.object.setAttribute('fmControlled','1');owner.object.setAttribute('fmFields',JSON.stringify(manifest))
  for(const part of metrics.parts){const key=part.role+':'+(part.index??''),existing=old.find(e=>role(e)===part.role&&(part.index===undefined||Number(attr(e.object,'fmItemIndex'))===part.index));let entry=existing
   if(!entry){let id=owner.id+':field:'+part.role+(part.index===undefined?'':':'+part.index),suffix=0;while(n.cells.has(id))id=owner.id+':field:'+part.role+':'+(++suffix)
    const object=element(n.document,'UserObject',{id,label:part.text,fmType:attr(owner.object,'fmType'),fmId:attr(owner.object,'fmId'),fmRole:part.role,fmItemIndex:part.index,fmAdapter:DRAWIO_ADAPTER_VERSION}),cell=element(n.document,'mxCell',{vertex:1,parent:owner.id,style:`text;html=0;whiteSpace=wrap;fontFamily=${FONT};fontSize=${part.font};fontColor=${get('fontColor')??'#32495d'};align=${node.kind==='note'?'left':'center'};verticalAlign=middle;spacing=0;fillColor=none;strokeColor=none;connectable=0;${part.role==='title'?'fontStyle=1;':''}`});object.appendChild(cell);n.root.appendChild(object);entry={id,object,cell};n.cells.set(id,entry);cell.appendChild(element(n.document,'mxGeometry',{as:'geometry'}))
@@ -63,7 +67,7 @@ export function writeControlledNode(n:NativeDocument,owner:NativeCell,node:Diagr
  * clone identity follows its actual main ancestor after new IDs are assigned. */
 export function restoreControlledAcknowledgements(n:NativeDocument,base:NativeDocument){for(const previous of base.cells.values()){
  const incoming=n.cells.get(previous.id);if(!incoming)continue
- if(role(previous)==='main'&&['node','annotation','edge'].includes(attr(previous.object,'fmType')??''))for(const key of ['fmControlled','fmFields','fmCardIcon']){const value=attr(previous.object,key);if(value===undefined)incoming.object.removeAttribute(key);else incoming.object.setAttribute(key,value)}
+ if(role(previous)==='main'&&['node','annotation','edge'].includes(attr(previous.object,'fmType')??''))for(const key of ['fmControlled','fmFields','fmCardIcon','fmDescriptionMode']){const value=attr(previous.object,key);if(value===undefined)incoming.object.removeAttribute(key);else incoming.object.setAttribute(key,value)}
  if(isControlled(previous))for(const key of ['fmType','fmId','fmRole','fmAdapter','fmItemIndex']){const value=attr(previous.object,key);if(value!==undefined)incoming.object.setAttribute(key,value)}
 }}
 export function rebindControlledCopies(n:NativeDocument){for(const entry of n.cells.values())if(isControlled(entry)){const owner=controlledOwner(n,entry);entry.object.setAttribute('fmId',attr(owner.object,'fmId')!);entry.object.setAttribute('fmType',attr(owner.object,'fmType')!)}}

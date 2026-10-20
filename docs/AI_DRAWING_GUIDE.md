@@ -2,7 +2,7 @@
 
 ## 原生 pilot（D05）
 
-仅在 `FLYMIND_NATIVE_PILOT=1` 与显式隔离数据根下启用；G2 前默认仍走旧入口。本节优先于下文旧引擎参数。当前只支持 `swimlane`，其他四类模板待 D07；`configure_rendering` 返回 `NATIVE_RENDERING_EDIT_UNSUPPORTED`，`get_rendering_config` 返回原生 profile/preferences，不接受旧坐标配置。
+仅在 `FLYMIND_NATIVE_PILOT=1` 与显式隔离数据根下启用；G2 前默认仍走旧入口。本节优先于下文旧引擎参数。实际支持集合以 get_drawing_guide 的 capabilities 为准，当前五类已适配。get_rendering_config 返回原生 profile/preferences；configure_rendering 先读取 get_rendering_config 及实际工具 schema，仅提交支持且需要修改的字段；切换方向需 relayout:true，不默认传坐标。
 
 原工具名保持。content 必须有 `schemaVersion:1`、稳定 `id` 和全部业务数组（`groups:[]`）。create/patch/update 必须有稳定 `requestId`；同一请求重试保持 payload 不变。AI 新建须质量合格，历史人工草稿的修改不得新增或加重 error 或 warning，只有明确批注才用 annotation；来源缺口不得猜边修复。网页人工保存仍允许结构合法草稿。
 
@@ -12,9 +12,15 @@ queued/running 也可通过 `export_diagram({id,requestId,jobId})` 继续等待�
 
 AI 提供内容，FlyMind 自动布局并渲染。普通绘图只提交 `content`，无需 API Key、坐标或美化配置。
 
-绘图和修改必须遵循 [绘图内容标准 1.0](DRAWING_STANDARD.md)。`get_drawing_guide` 自动合并返回该标准；也可读取 `flymind://drawing-standard`。`validate_diagram` 返回 `valid` 和 `quality:{standardVersion,passed,score,issues}`，新建或修改不合格内容时返回 `QUALITY_FAILED`，数据库不写入。文字简洁、判断出口、业务连通性、模块/主题抽象各有规则；机器检查之外仍须核对真实业务。
+绘图和修改必须遵循 [绘图内容标准 1.1](DRAWING_STANDARD.md)。`get_drawing_guide` 自动合并返回该标准；也可读取 `flymind://drawing-standard`。`validate_diagram` 返回 `valid` 和 `quality:{standardVersion,passed,score,issues}`，新建或修改不合格内容时返回 `QUALITY_FAILED`，数据库不写入。文字简洁、判断出口、业务连通性、模块/主题抽象各有规则；机器检查之外仍须核对真实业务。
 
-修改时直接改原业务步骤、判断条件、连接或原文案，不得用说明代替流程变更。工具顶层可带 `editIntent:"structure"|"wording"|"annotation"`，默认 structure；只有用户明确要批注时使用 annotation。纯补注释或非卡片说明文字的修改会被默认拒绝，改标题也不能绕过。历史问题允许逐步修复，不能新增或加重；网页可保存手工草稿。
+修改时直接改原业务步骤、判断条件、连接或原文案，不得用说明代替流程变更。工具顶层可带 `editIntent:"structure"|"wording"|"annotation"`，默认 structure；只有用户明确要批注时使用 annotation。纯补注释或非卡片说明文字的修改会被默认拒绝，微改节点/边/容器文字也不能绕过。历史问题允许逐步修复，不能新增或加重；网页可保存手工草稿。
+
+## 内容标准1.1的强制边界
+
+流程/泳道只用动作/判断；架构module可有依赖箭头，不能因有箭头就当流程；脑图topic表达分类，数据流card表达来源/处理/去向。流程图需明确起终点和可达结果；泳道允许task入口与明确交付结果，不强造start/end。纯技术组件名、性能/成本预算不能伪装task。
+
+items仅架构，badge仅架构/数据卡；其余类型不借字段藏说明。流程标题硬上限24中文/80纯外文，description120字符；架构/数据卡正文240，其他正文120。note标题80中文/240纯外文且总量200，数量max(2,ceil(业务节点×15%))；各字段和节点总预算详见唯一正式标准，不靠分字段绕过。人工网页草稿不受AI准入阻断；旧新MCP均不能新增/加重error或warning。
 
 ## 1. 两层职责
 

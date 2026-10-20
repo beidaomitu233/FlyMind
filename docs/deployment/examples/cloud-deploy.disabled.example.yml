@@ -1,0 +1,148 @@
+# DOCUMENTATION ONLY. This file is not in .github/workflows.
+# Every path/CI helper/dispatcher below is a proposed contract, not implemented.
+# safety_gate ALWAYS FAILS. Do not merely remove it: SSH inventory, cloud merge,
+# Linux/browser/SQLite ABI, room drain, provenance, backups and rollback must pass.
+name: EXAMPLE ONLY - v1.1 cloud delivery BLOCKED
+
+on:
+  pull_request:
+  push:
+    branches: [main] # Proposed protected integration branch; PM must confirm.
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: Promote to production an existing CI-built and staging-verified candidate; never an arbitrary ref
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+# A later candidate must not cancel backup/room sealing already in progress.
+# This alone is NOT a durable FIFO queue; the remote dispatcher must also lock.
+concurrency:
+  group: flymind-cloud-release-example
+  cancel-in-progress: false
+
+jobs:
+  safety_gate:
+    runs-on: ubuntu-24.04 # Example CI OS only; says nothing about target host OS/CPU.
+    timeout-minutes: 2
+    steps:
+      - name: Refuse deployment until reviewed infrastructure exists
+        shell: bash
+        run: |
+          echo '::error::Documentation scaffold only. No reviewed v1.1 cloud artifact, Linux supply or deploy dispatcher exists.'
+          exit 1
+
+  verify_build:
+    needs: safety_gate
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      # In a real workflow split PR verification from trusted package publishing.
+      # Only the trusted build/publish job may receive packages:write.
+    outputs:
+      release_id: ${{ steps.package.outputs.release_id }}
+      manifest_sha256: ${{ steps.package.outputs.manifest_sha256 }}
+    steps:
+      - name: Missing reviewed checkout and cloud build implementation
+        id: package
+        shell: bash
+        run: |
+          # Future: official checkout/setup actions, reviewed FULL commit SHAs.
+          # npm ci + Java tests + Linux native addons/fixed browser + real suites.
+          # Build immutable images/manifest ONCE, sign/prove source, push only on
+          # protected branch. PR must never receive deploy/runtime secrets.
+          # Publish release_id and manifest_sha256 only after verification.
+          echo '::error::Cloud verify/build/provenance scripts are not implemented.'
+          exit 1
+
+  staging:
+    needs: [safety_gate, verify_build]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: staging
+    permissions:
+      contents: read
+    steps:
+      - name: Proposed restricted SSH promotion (currently unreachable)
+        shell: bash
+        env:
+          RELEASE_ID: ${{ needs.verify_build.outputs.release_id }}
+          MANIFEST_SHA256: ${{ needs.verify_build.outputs.manifest_sha256 }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_ID" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$ ]]
+          [[ "$MANIFEST_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]]
+          (( DEPLOY_PORT >= 1 && DEPLOY_PORT <= 65535 ))
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,252}$ ]]
+          [[ "$DEPLOY_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_-]{0,31}$ ]]
+          umask 077
+          task_tmp=$(mktemp -d "$RUNNER_TEMP/flymind-deploy.XXXXXXXX")
+          trap 'rm -f -- "$task_tmp/key" "$task_tmp/known_hosts"; rmdir -- "$task_tmp"' EXIT
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$task_tmp/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$task_tmp/known_hosts"
+          # Server authorized_keys forced-command parses EXACT grammar, resolves
+          # manifest only from an allowlisted registry, verifies trusted CI source,
+          # owns lock/backups/single writer/room drain/recovery. No arbitrary shell.
+          ssh -T -p "$DEPLOY_PORT" -i "$task_tmp/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$task_tmp/known_hosts" \
+            "$DEPLOY_USER@$DEPLOY_HOST" "promote staging $RELEASE_ID $MANIFEST_SHA256"
+      - name: Required staging evidence, not a fake success check
+        shell: bash
+        run: |
+          # Future: real Java auth + double browser/AI concurrent editing during
+          # update + PNG/SVG + recovery. Publish signed staging evidence for digest.
+          echo '::error::Real staging collaboration/upgrade acceptance is not implemented.'
+          exit 1
+
+  select_production_candidate:
+    needs: safety_gate
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      release_id: ${{ steps.select.outputs.release_id }}
+      manifest_sha256: ${{ steps.select.outputs.manifest_sha256 }}
+    steps:
+      - name: Require existing immutable CI candidate and staging evidence
+        id: select
+        shell: bash
+        run: |
+          # Future: resolve Release/validated input to EXISTING signed manifest;
+          # check protected commit, staging evidence and compatibility. NO rebuild.
+          # Never interpolate release body/title/input directly into shell code.
+          echo '::error::Trusted candidate selection is not implemented.'
+          exit 1
+
+  production:
+    needs: [safety_gate, select_production_candidate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production # Required-review approval is an OPTIONAL repo policy.
+    permissions:
+      contents: read
+    steps:
+      - name: Production dispatcher integration remains blocked
+        shell: bash
+        run: |
+          # Future: same restricted SSH pattern as staging, separate Environment
+          # key, same selected manifest SHA. Remote lock rejects stale candidates.
+          # Dispatcher must finish/record room ACK boundary, backup/fence old
+          # SQLite writer, switch, real health, then reopen writes or hold maintenance.
+          # Auto rollback must NEVER overwrite post-release user data.
+          echo '::error::No approved production dispatcher or restore drill exists.'
+          exit 1

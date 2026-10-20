@@ -1,5 +1,7 @@
 # Codex 接入 FlyMind
 
+推广的后续方向为[固定HTTPS远程MCP](MCP_UPDATE_STRATEGY.md)：首次配置和登录后，服务端承担日常更新。该服务尚未部署，示例域名不是可用地址；下方仍为当前本地安装方式。源码/安装包升级不会凭空将既有客户切到云端或上传本地图形。
+
 普通用户先按 [安装与使用](INSTALL_AND_USE.md)从 [GitHub Release](https://github.com/beidaomitu233/FlyMind/releases/tag/mcp-v1.0.0) 下载 ZIP、解压并安装 tgz。npm 在线包与 MCP Registry 延期，不使用 npx 请求未发布包。
 
 ## 安装后注册
@@ -62,3 +64,9 @@ npm run setup:codex
 官方配置依据：[Codex MCP](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)。该文档确认 STDIO command/args/env/cwd 与 CLI `--env`；实际包名/CLI 功能以本项目当前实装及 PM 验收为准。
 
 重新加载 MCP 配置或新开会话，先确认 `get_drawing_guide` 可用；注册成功不等于当前对话已发现工具。既有 flymind 表应修改而不是重复追加同名表，不覆盖其他 MCP 配置。不要把本机 npm/Registry token、Runtime 凭据或个人配置提交仓库。
+
+## 切换已有工作区
+
+要继续使用已有图形，先记录原工作台实际的 `FLYMIND_DATA_DIR`、`FLYMIND_PRIVATE_RUNTIME_DIR`、`FLYMIND_RESOURCES_DIR` 和端口，再通过 `codex mcp add flymind --env ... -- <绝对Node> <绝对bin/flymind.mjs> mcp` 更新同名配置。仅改入口而漏填数据目录，会连到默认用户目录，不能据此认为原图丢失。切换不代表迁移旧库，禁止测试性重建/合并用户图形。
+
+保存后在Codex设置→MCP服务器→flymind→Restart，重新读取 `get_drawing_guide`：本次源码质量批次应返回 `standardVersion=1.1`、原生能力及五类支持；再用 `list_diagrams` 核对已有列表。当前聊天的旧进程可能继续返回1.0，CLI配置检查通过不能证明该进程已热更新。此处标准版本不是应用版本，既有GitHub安装包不会因源码改动自动升级。

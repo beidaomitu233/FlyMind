@@ -49,7 +49,7 @@ export async function compileForRelayout(input:DiagramContent,options:DrawioComp
   file.appendChild(diagram);diagram.appendChild(model);model.appendChild(root)
   root.appendChild(element(doc,'mxCell',{id:'0'}));root.appendChild(element(doc,'mxCell',{id:'1',parent:'0'}))
   const sizes=new Map(content.nodes.filter(n=>n.kind!=='note').map(n=>{const size=hints.nodes?.[n.id]?{...hints.nodes[n.id]}:dimensions(n,options);if(needsControlledNode(n))size.height=controlledNodeMetrics(n,size.width,size.font,size.shape,size.height).height;if(options.preferences?.orientation==='horizontal')[size.width,size.height]=[size.height,size.width];return [n.id,size]}))
-  const laneWidths=content.lanes.map(l=>Math.max(360,...content.nodes.filter(n=>n.kind!=='note'&&n.laneId===l.id).map(n=>sizes.get(n.id)!.width+100),Math.ceil(textUnits(l.label)*18+36)))
+  const laneWidths=content.lanes.map(l=>{const labelChannel=Math.max(100,...content.edges.filter(e=>{const s=content.nodes.find(n=>n.id===e.source),t=content.nodes.find(n=>n.id===e.target);return s?.laneId!==t?.laneId&&(s?.laneId===l.id||t?.laneId===l.id)}).map(e=>Math.min(180,Math.ceil(textUnits(e.label??'')*13)+8)+32));return Math.max(360,...content.nodes.filter(n=>n.kind!=='note'&&n.laneId===l.id).map(n=>sizes.get(n.id)!.width+labelChannel),Math.ceil(textUnits(l.label)*18+36))})
   const left=160,totalWidth=left+laneWidths.reduce((a,b)=>a+b,0),header=64,padding=54,gap=options.preferences?.orientation==='horizontal'?144:88
   const titleLines=content.title.split('\n').reduce((n,line)=>n+Math.max(1,Math.ceil(textUnits(line)*24/(totalWidth-24))),0),titleHeight=Math.max(48,titleLines*36+16),tableTop=24+titleHeight+24
   const phaseList=content.phases.length?content.phases:[{id:'',label:''}]

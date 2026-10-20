@@ -8,13 +8,13 @@ export const revision=z.number().int().positive().describe('刚读取的 revisio
 const ref=z.string().min(1),color=z.string().regex(/^#[0-9a-f]{6}$/i)
 const nodeKind=z.enum(['task','decision','start','end','module','topic','card','note'])
 const node=z.strictObject({
-  id:ref,label:z.string().trim().min(1).max(500),kind:nodeKind.describe('note 为独立浮动说明文字，五类图形均支持；不需要角色/阶段/分层/父主题，不参与业务节点布局'),
+  id:ref,label:z.string().trim().min(1).max(500),kind:nodeKind.describe('流程/泳道仅start/end/task/decision；架构module；脑图topic；数据流card；note仅明确要求的短批注，不替代业务步骤'),
   laneId:z.string().optional().describe('泳道图角色归属'),phaseId:z.string().optional().describe('泳道图阶段归属'),
   groupId:z.string().optional().describe('架构图分层归属'),parentId:z.string().optional().describe('思维导图父主题；根主题不填'),
-  color:color.optional().describe('可选语义颜色；自动美化无需填写'),description:z.string().max(4000).optional().describe('业务备注或数据卡片正文；不是排版指令，不用于步骤排序，无需为布局补写'),
-  items:z.array(z.string().max(200)).max(30).optional(),badge:z.string().max(30).optional()
+  color:color.optional().describe('可选语义颜色；自动美化无需填写'),description:z.string().max(4000).optional().describe('结构上限不等于AI质量预算：流程/泳道/脑图/批注最多120字符短属性，架构/数据卡片240；不塞参数预算或连续步骤'),
+  items:z.array(z.string().max(200)).max(30).optional().describe('仅架构module使用；质量上限12条，每项32中文/100纯外文字符'),badge:z.string().max(30).optional().describe('仅架构module/数据流card短标记；12中文/30纯外文字符')
 })
-const edge=z.strictObject({id:ref,source:ref,target:ref,label:z.string().max(200).optional(),kind:z.enum(['flow','feedback']).optional().describe('flow 或省略表示 source 在 target 之前，跨角色同样推进；退回/驳回/重试/回流用 feedback，不参与主流程排序')})
+const edge=z.strictObject({id:ref,source:ref,target:ref,label:z.string().max(200).optional(),kind:z.enum(['flow','feedback']).optional().describe('流程/泳道的flow表示执行先后；架构flow表示模块依赖，允许依赖箭头但不是流程步骤；数据流表示数据方向。退回/驳回/重试/回写用feedback')})
 const container=z.strictObject({id:ref,label:z.string().trim().min(1).max(160)})
 const group=container.extend({kind:z.enum(['layer','governance']).optional(),color:color.optional()})
 export const contentSchema=z.strictObject({
@@ -77,14 +77,14 @@ export const groupsOutput=z.object({groups:z.array(workspaceGroupSchema)})
 export const successOutput=z.object({success:z.literal(true)})
 export const trashOutput=z.object({diagrams:z.array(z.object({id:diagramId,title:z.string(),kind:diagramKind,revision,deletedAt:z.number().positive(),createdAt:z.number().positive(),workspaceGroupId:z.string().nullable()}))})
 export const qualitySchema=z.object({standardVersion:z.string(),passed:z.boolean(),score:z.number().min(0).max(100),issues:z.array(z.object({code:z.string(),severity:z.enum(['error','warning']),message:z.string(),nodeId:z.string().optional(),edgeId:z.string().optional(),actual:z.number().optional(),limit:z.number().optional()}))})
-export const editIntent=z.enum(['structure','wording','annotation']).default('structure').describe('修改业务结构或原文案；annotation 仅在用户明确要求批注时使用，不能用补说明代替修改流程')
+export const editIntent=z.enum(['structure','wording','annotation']).default('structure').describe('修改业务结构或原文案；annotation 仅在用户明确要求批注时使用；新增批注后微改节点/连线/容器文字仍不算结构修改')
 export const diagramOutput=z.object({...metadata,quality:qualitySchema.optional(),exportedAt:z.number().positive().optional(),content:contentSchema.optional(),documentPath:z.string().optional(),
   files:z.record(z.string(),z.string()).optional(),urls:z.record(z.string(),z.string()).optional(),
   resources:z.record(z.string(),z.string()).optional(),width:z.number().optional(),height:z.number().optional()})
 export const guideOutput=z.object({guide:z.string(),standardVersion:z.string(),sample:contentSchema.optional()})
 export const listOutput=z.object({diagrams:z.array(z.object(metadata))})
 export const renderingOutput=z.object({...metadata,rendering:renderingSchema,standards:z.object({nodes:z.record(z.string(),preset),effectiveNodes:z.record(z.string(),preset),edges:edgeDefault})})
-export const validationOutput=z.object({valid:z.boolean(),quality:qualitySchema,width:z.number(),height:z.number(),nodes:z.number().int(),edges:z.number().int()})
+export const validationOutput=z.object({valid:z.boolean(),quality:qualitySchema,width:z.number().optional(),height:z.number().optional(),nodes:z.number().int(),edges:z.number().int()})
 
 // Hints help clients choose approval policies; they do not enforce permissions.
 export const readAnnotations={readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:false}

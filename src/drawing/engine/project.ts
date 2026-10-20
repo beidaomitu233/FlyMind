@@ -6,6 +6,7 @@ import {DRAWIO_VERSION,DRAWIO_ADAPTER_VERSION,DEFAULT_SWIMLANE_PROFILE} from './
 import {projectDrawio} from './drawio'
 import {validateProfilePreferences} from './preferences'
 import {defaultProfileForKind} from './profiles'
+import {parseNative,attr} from './drawio/xml'
 export {validateRenderingPreferences} from './preferences'
 
 type JsonObject=Record<string,unknown>
@@ -84,7 +85,11 @@ export interface CreateDrawingProjectOptions {
 
 /** Build a detached v3 project; never writes a store or migrates an existing workspace. */
 export async function createDrawingProject(content:DiagramContent,engine:DrawioEngineDocument,options:CreateDrawingProjectOptions={}):Promise<DrawingProjectV3> {
-  const selected=exact(options,['profile','preferences','createdAt','updatedAt'],[],'options')
+  const selected={...exact(options,['profile','preferences','createdAt','updatedAt'],[],'options')}
+  if(content.kind==='mindmap'&&(options.preferences?.orientation===undefined)){
+    const title=[...parseNative(engine.xml).cells.values()].find(e=>attr(e.object,'fmRole')==='title'&&attr(e.object,'fmType')==='decoration'&&attr(e.object,'fmAutoOrientation')==='1')
+    const orientation=title&&attr(title.object,'fmOrientation');if(orientation==='vertical'||orientation==='horizontal')selected.preferences={...options.preferences,orientation}
+  }
   const createdAt=selected.createdAt!==undefined?selected.createdAt:selected.updatedAt!==undefined?selected.updatedAt:Date.now()
   return validateDrawingProject({schemaVersion:3,content,rendering:{profile:selected.profile!==undefined?selected.profile:defaultProfileForKind(content.kind),preferences:selected.preferences!==undefined?selected.preferences:{},engine},createdAt,updatedAt:selected.updatedAt!==undefined?selected.updatedAt:createdAt})
 }
