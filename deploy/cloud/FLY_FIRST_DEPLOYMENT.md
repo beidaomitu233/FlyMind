@@ -24,6 +24,7 @@
 
 - 固定Playwright1.62.1本地源码 `node_modules/playwright-core/lib/coreBundle.js` 的hostPlatform逻辑：未识别Linux发行版回退ubuntu24.04包，并标为非官方支持。OpenCloudOS实际Chromium动态库、glibc、sandbox/user namespaces必须实测；`install-deps`的Ubuntu apt流程不能当作该机器已兼容。不使用no-sandbox兜底。
 - CI平台构建现固定Ubuntu22.04：先前24.04宿主的AppArmor userns限制导致 `No usable sandbox`，改基础镜像以保留Chromium sandbox并使用更低glibc构建基线；仍执行相同固定Node和五类实际导出烟测，不改production门槛。目标OpenCloudOS的供给/动态库仍独立核验，不能以CI镜像替代目标机验收。
+- Linux候选冻结前，`cloud-bundle-smoke.mjs` 通过现有 `resolveRuntimeAssets` 定位固定浏览器目录，仅将公开 `rpm.deps`、`deb.deps` 权限规范为0644（原供应为0600）。保留五型烟测、原文件字节和SHA，仍由root严格制品校验拒绝其他不可读文件；不是全目录chmod或放宽权限规则。该修正的实际Linux行为由下一轮CI确认。
 - `verify-cloud-candidate.mjs` 当前要求完整Node版本和ABI精确一致。宝塔已有Node若不是22.23.3，不能仅因同为22就跳过；PM应选择单独固定Node或统一正式候选版本（不是本审查擅改依赖）。
 - DEPLOY-FLY-02追加盘点确认目标Python3.11.6具有安全 `tarfile.data_filter`。PM授权将promote硬版本检查改为该能力检测，保留 `tarfile.extractall(filter='data')` 和全部路径/数量/展开预算；缺能力仍明确拒绝，不使用裸tar兜底。其余目标Linux兼容仍须实测。
 - 服务器内存紧张：源码/Java/管理端构建放CI，不在服务器并行pnpm/Maven/浏览器矩阵；不新起另一套完整staging常驻占同一端口/内存。先测现有Java/MySQL/Redis RSS，再限定新增控制面heap、Node及单全局renderer预算。swap不等于8GB可用RAM，不承诺CI导出耗时可在此机器复现。
