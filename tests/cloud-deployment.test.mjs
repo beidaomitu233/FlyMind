@@ -1,6 +1,6 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdtemp,writeFile,readFile,rm,mkdir,symlink} from 'node:fs/promises'
+import {mkdtemp,writeFile,readFile,rm,mkdir,symlink,realpath} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join,resolve,sep} from 'node:path'
 import {createHash} from 'node:crypto'
@@ -19,7 +19,14 @@ test('uploader requires non-root fixed SSH identity, pinned host and bounded res
  for(const bad of [{...env,DEPLOY_SSH_USER:'root'},{...env,DEPLOY_SSH_USER:'x;sh'},{...env,DEPLOY_RELEASE_ID:'x;sh'},{...env,DEPLOY_RELEASE_ID:'../other'},{...env,DEPLOY_SSH_HOST:'-oProxyCommand=sh'},{...env,DEPLOY_SSH_PORT:'65536'},{...env,DEPLOY_SSH_PORT:'22;sh'},{...env,DEPLOY_KNOWN_HOSTS:''},{...env,DEPLOY_SSH_KEY:''},{...env,DEPLOY_ENVIRONMENT:'anything'}])assert.throws(()=>deploymentUploadConfig(bad))
 })
 
-async function fixture(){const parent=await mkdtemp(join(tmpdir(),'flymind-deploy-')),root=join(parent,'release');await mkdir(root);const bytes=Buffer.from('immutable fixture\n'),manifest={schemaVersion:1,releaseId:'qa-release',sourceCommit:'a'.repeat(40),dirty:false,prepared:true,platform:process.platform,arch:process.arch,node:process.version,abi:process.versions.modules,files:[{path:'app.txt',bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')}]};await writeFile(join(root,'app.txt'),bytes);const save=()=>writeFile(join(root,'candidate.json'),JSON.stringify(manifest));await save();return {parent,root,manifest,save,async close(){assert.ok(resolve(parent).startsWith(resolve(tmpdir())+sep)&&parent.includes('flymind-deploy-'));await rm(parent,{recursive:true,force:true,maxRetries:5,retryDelay:100})}}}
+async function fixture(tempRoot=tmpdir()){const parent=await mkdtemp(join(tempRoot,'flymind-deploy-')),created=join(parent,'release');await mkdir(created);const root=await realpath(created);const bytes=Buffer.from('immutable fixture\n'),manifest={schemaVersion:1,releaseId:'qa-release',sourceCommit:'a'.repeat(40),dirty:false,prepared:true,platform:process.platform,arch:process.arch,node:process.version,abi:process.versions.modules,files:[{path:'app.txt',bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')}]};await writeFile(join(root,'app.txt'),bytes);const save=()=>writeFile(join(root,'candidate.json'),JSON.stringify(manifest));await save();return {parent,root,manifest,save,async close(){assert.ok(resolve(parent).startsWith(resolve(tmpdir())+sep)&&parent.includes('flymind-deploy-'));await rm(parent,{recursive:true,force:true,maxRetries:5,retryDelay:100})}}}
+test('fixture canonicalizes a TEMP alias without weakening candidate root redirect rejection',async()=>{
+ // A private junction models the noncanonical parent prefix used by RUNNER~1.
+ // This does not require enabling or changing Windows 8.3 name generation.
+ const parent=await mkdtemp(join(tmpdir(),'flymind-deploy-alias-'));let f
+ try{const actual=join(parent,'actual-temp'),alias=join(parent,'TEMP~1');await mkdir(actual);await symlink(actual,alias,'junction');f=await fixture(alias);assert.equal(f.root,await realpath(join(f.parent,'release')));assert.ok(!f.root.startsWith(alias+sep));assert.equal((await verifyCandidate(f.root)).releaseId,'qa-release');await assert.rejects(verifyCandidate(join(f.parent,'release')),/redirects/)}
+ finally{if(f)await f.close();assert.ok(resolve(parent).startsWith(resolve(tmpdir())+sep)&&parent.includes('flymind-deploy-alias-'));await rm(parent,{recursive:true,force:true,maxRetries:5,retryDelay:100})}
+})
 test('candidate verifier accepts unchanged bytes and rejects changed/hash/unregistered/unknown-type entries',async()=>{
  const f=await fixture();try{
   assert.equal((await verifyCandidate(f.root)).releaseId,'qa-release')
