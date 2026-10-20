@@ -1,6 +1,6 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdtemp,rm,readFile,stat,readdir,writeFile} from 'node:fs/promises'
+import {mkdtemp,rm,readFile,stat,readdir,writeFile,realpath} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join,resolve,sep} from 'node:path'
 import {randomUUID} from 'node:crypto'
@@ -80,7 +80,8 @@ test('single worker publishes five verified files from one snapshot without chan
     assert.equal((await s.exports.file(job.id,'drawio')).buffer.toString(),s.record.document.rendering.engine.xml)
     assert.deepEqual(await s.diagrams.get(content.id),s.record)
     const delivery=await s.exports.delivery(job.id)
-    for(const format of EXPORT_FORMATS){assert.equal(delivery.files[format],join(directory,done.files![format].filename));assert.ok((await stat(delivery.files[format])).isFile())}
+    // Delivery intentionally returns a canonical path; Windows TEMP may use an 8.3 alias.
+    for(const format of EXPORT_FORMATS){assert.equal(delivery.files[format],await realpath(join(directory,done.files![format].filename)));assert.ok((await stat(delivery.files[format])).isFile())}
     assert.ok(!JSON.stringify(done).includes(s.root));assert.ok(!JSON.stringify(done).includes('leaseToken'));assert.equal(await readFile(join(directory,'manifest.json'),'utf8').then(x=>JSON.parse(x).revision),1)
     const repeat=await create(s,'second-export');await worker.runOnce();const regenerated=await s.exports.get(repeat.id);assert.notEqual(repeat.id,job.id);assert.ok(regenerated.exportedAt!>=done.exportedAt!);assert.deepEqual(await s.diagrams.get(content.id),s.record)
   }finally{await worker.close();assert.equal(renderer.closed,true);await cleanup(s.root)}
