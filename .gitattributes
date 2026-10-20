@@ -5,3 +5,9 @@
 /resources/fonts/OFL.txt -text
 /resources/fonts/supply.json -text
 /resources/fonts/NotoSansCJKsc-Regular.otf binary
+# These files are assembled on Windows and installed on Linux.
+/deploy/cloud/*.sh.example text eol=lf
+/deploy/cloud/*.service text eol=lf
+/deploy/cloud/*.env.example text eol=lf
+/integrations/xinghui-admin/backend/deploy/*.service text eol=lf
+/integrations/xinghui-admin/backend/deploy/*.env.example text eol=lf

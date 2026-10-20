@@ -5,6 +5,7 @@ import {compileDrawio,projectDrawio,patchDrawio,DRAWIO_VERSION,DRAWIO_ADAPTER_VE
 import {attr,element,parseNative,serialize,children,MAX_DRAWIO_BYTES,type NativeDocument} from '../src/drawing/engine/drawio/xml'
 import {validateContent} from '../src/drawing/core/layers'
 import {contentHash} from '../src/drawing/engine/content-hash'
+import {inspectNativeLayout} from '../src/drawing/engine/drawio/routing'
 import type {DiagramContent} from '../src/drawing/core/model'
 import type {DrawingProjectV3} from '../src/drawing/engine/types'
 const fixture=async(name='pbs-main')=>validateContent(JSON.parse(await readFile(new URL(`./fixtures/drawio-baseline/${name}.content.json`,import.meta.url),'utf8')))
@@ -151,6 +152,17 @@ test('a new label reserves the unrelated native label and route without rewritin
  const c=routingContent(),e=await compileDrawio(c),before=parseNative(e.xml),old=serialize(bound(before,'edge','ab').object)
  const patched=await patchDrawio(project(c,e),[{op:'add_edge',edge:{id:'parallel',source:'a',target:'b',label:'另行复核'}}]),n=parseNative(patched.xml)
  assert.equal(serialize(bound(n,'edge','ab').object),old)
- const offset=(id:string)=>children(children(bound(n,'edge',id).cell,'mxGeometry')[0],'mxPoint').find(p=>attr(p,'as')==='offset')!
- assert.notEqual(serialize(offset('parallel')),serialize(offset('ab')))
+ for(const[id,entry]of before.cells)assert.equal(serialize(n.cells.get(id)!.object),serialize(entry.object),'new route must not rewrite '+id)
+ assert.ok(!inspectNativeLayout(n).some(issue=>issue.cellIds.includes(bound(n,'edge','parallel').id)), 'new label and route must satisfy the unchanged geometry gates')
+ // Relative offsets may both be zero when the new solver route itself uses a
+ // separate channel. Compare actual route geometry, not offset strings alone.
+ assert.notEqual(serialize(children(bound(n,'edge','parallel').cell,'mxGeometry')[0]),serialize(children(bound(n,'edge','ab').cell,'mxGeometry')[0]))
+})
+
+test('a genuinely blocked manual route corridor still rejects a new label without moving the old drawing',async()=>{
+ const c=routingContent();delete c.edges[0].label
+ const e=await compileDrawio(c);e.xml=mutate(e.xml,n=>{const g=children(bound(n,'edge','ab').cell,'mxGeometry')[0],points=element(n.document,'Array',{as:'points'});for(const[x,y]of [[-10000,306],[10000,306],[10000,326],[-10000,326],[-10000,346],[10000,346]])points.appendChild(element(n.document,'mxPoint',{x,y}));g.appendChild(points)})
+ const input=project(c,e),original=input.rendering.engine.xml
+ await assert.rejects(()=>patchDrawio(input,[{op:'add_edge',edge:{id:'blocked',source:'a',target:'b',label:'通道已被人工线路占用'}}]),/ROUTING_LABEL_NO_SPACE/)
+ assert.equal(input.rendering.engine.xml,original)
 })

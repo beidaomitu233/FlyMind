@@ -71,4 +71,6 @@ v1.1 本机业务接口也逐次校验授权，缺少配置、断网或撤权时
 
 ## 5 当前验证边界
 
+本次本地交付有 `output/v11-deployable-win32/` 和 `output/flymind-v1.1-development-win32-x64.tar.gz`，Windows x64、Node20.19.6/ABI115，包内五类出图与全文件摘要已验证。它是带未提交标记的开发候选，不能用于生产晋级，也不能当成Linux包。最新协作规则之后的改动尚未提交；需先审阅/授权提交，再从干净源码运行正式CI。安装说明在本文件，组件初始化见包内 `ops/README.md`、`control-plane/deploy/README.md`。
+
 Windows 隔离环境已验证真实双浏览器与 MCP、PNG、目录导入与精确重试、授权和维护的定向链路，详见 [实施台账](V1_1_EXECUTION.md)。Java HTTP 使用完整 Spring/Tomcat，但数据库为 H2、Redis 为替身。真实 MySQL/Redis、目标 Linux sandbox/字体、TLS、SSH、GitHub 远端执行及生产恢复演练尚待目标环境验证；不能据此宣称公网 v1.1 已发布。

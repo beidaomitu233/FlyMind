@@ -1,10 +1,11 @@
 <template>
   <aside class="studio-sidebar workspace-sidebar" :style="{width:width+'px'}" @dragover.prevent @drop.prevent="drop($event,null)">
     <header class="workspace-header"><button class="workspace-brand workspace-menu-trigger" aria-label="工作区菜单：新建分组、导入、排序" title="工作区菜单 · 新建分组、导入、排序" @click.stop="openMenu('workspace','',$event)"><strong>FlyMind</strong><Icon name="chevron" :size="11"/></button><button class="studio-icon" aria-label="搜索图形" title="搜索（Ctrl+K）" @click="showSearch"><Icon name="search" :size="16"/></button><button class="studio-icon" aria-label="新建图形" title="新建图形" :disabled="props.readOnly" @click="emit('new',currentGroup)"><Icon name="plus" :size="18"/></button></header>
+    <slot name="workspace"/>
     <div v-if="searchOpen" class="workspace-search"><Icon name="search" :size="14"/><input ref="searchField" v-model="search" placeholder="搜索图形" aria-label="搜索图形"/><button class="studio-icon" aria-label="关闭搜索" @click="closeSearch"><Icon name="close" :size="13"/></button></div>
-    <div v-if="props.showGroupCreation&&!props.readOnly" class="workspace-section-heading"><span>图形</span><button class="studio-icon" aria-label="新建分组" title="新建分组" :disabled="!studio.shared||!!studio.pending||newGroup" @click="beginGroup"><Icon name="folder-plus" :size="16"/></button></div>
+    <div v-if="props.showGroupCreation&&!props.readOnly" class="workspace-section-heading"><span>图形</span><button ref="newGroupTrigger" class="studio-icon" :aria-label="newGroup?'收起新建分组':'新建分组'" :title="newGroup?'取消新建分组':'新建分组'" :disabled="!studio.shared||!!studio.pending" @click="newGroup?cancelNewGroup():beginGroup()"><Icon :name="newGroup?'close':'folder-plus'" :size="16"/></button></div>
     <div class="workspace-tree" :class="{dragging}" role="tree" aria-label="图形工作区">
-      <form v-if="newGroup" class="workspace-inline" @submit.prevent="createGroup"><Icon name="folder" :size="16"/><input ref="groupField" v-model="groupName" aria-label="新分组名称" placeholder="分组名称" maxlength="80" @keydown.esc="newGroup=false"/><button class="studio-icon" aria-label="保存分组" :disabled="!groupName.trim()||!!studio.pending"><Icon name="check" :size="15"/></button></form>
+      <form v-if="newGroup" ref="groupForm" class="workspace-inline" @submit.prevent="createGroup" @keydown.esc.prevent.stop="cancelNewGroup()"><Icon name="folder" :size="16"/><input ref="groupField" v-model="groupName" aria-label="新分组名称" placeholder="分组名称" maxlength="80"/><button type="submit" class="studio-icon" aria-label="保存分组" :disabled="!groupName.trim()||!!studio.pending"><Icon name="check" :size="15"/></button><button type="button" class="studio-icon" aria-label="取消新建分组" title="取消（Esc）" :disabled="!!studio.pending" @click="cancelNewGroup()"><Icon name="close" :size="15"/></button></form>
       <template v-if="!query">
         <section v-for="g in studio.workspaceGroups" :key="g.id" class="workspace-group" :data-workspace-group="g.id">
           <div class="workspace-folder" :class="{drop:dropGroup===g.id}" @dragover.prevent.stop="dropGroup=g.id" @dragleave="dropGroup=''" @drop.prevent.stop="drop($event,g.id)" @contextmenu.prevent="openMenu('group',g.id,$event)">
@@ -22,6 +23,7 @@
       <template v-else><WorkspaceFileRow v-for="d in searchResults" :key="d.id" v-bind="fileProps(d)" v-on="fileEvents"/><p v-if="!searchResults.length" class="workspace-empty">没有找到图形</p></template>
     </div>
     <footer class="workspace-footer"><button @click="trashOpen=true"><Icon name="trash" :size="15"/>回收站</button><button v-if="studio.recoveries.length" @click="emit('recoveries')"><Icon name="restore" :size="15"/>待恢复内容</button></footer>
+    <slot name="sidebar-footer"/>
     <div class="workspace-resizer" aria-label="调整侧栏宽度" @pointerdown="resizeSidebar"/>
     <div v-if="menu" class="workspace-popup" role="menu" :style="{left:menu.x+'px',top:menu.y+'px'}">
       <template v-if="menu.type==='workspace'"><button :disabled="props.readOnly||!studio.shared" @click="beginGroup"><Icon name="folder" :size="15"/>新建文件夹分组</button><button :disabled="props.readOnly" @click="emit('import',currentGroup);menu=null"><Icon name="import" :size="15"/>导入图形</button><hr/><button role="menuitemradio" :aria-checked="sortBy==='updated'" @click="sort('updated')">按修改时间<Icon v-if="sortBy==='updated'" name="check" :size="14"/></button><button role="menuitemradio" :aria-checked="sortBy==='created'" @click="sort('created')">按创建时间<Icon v-if="sortBy==='created'" name="check" :size="14"/></button><hr/><button v-if="props.backupEnabled" :disabled="!studio.shared" @click="emit('backup');menu=null"><Icon name="export" :size="15"/>备份工作区</button><button v-if="props.adapter" @click="emit('activity');menu=null">操作记录</button><button @click="emit('help');menu=null"><Icon name="code" :size="15"/>AI 绘图说明</button></template>
@@ -45,6 +47,7 @@ const studio=(props.adapter??useStudio()) as unknown as SidebarAdapter,emit=defi
 function storedGroups(){try{const value=JSON.parse(localStorage.getItem('flymind-expanded-groups')||'[]');return Array.isArray(value)?value.filter(v=>typeof v==='string'):[]}catch{return []}}
 const expanded=ref<string[]>(storedGroups()),showAll=ref<string[]>([]),currentGroup=ref<string|null>(null),searchOpen=ref(false),search=ref(''),query=computed(()=>search.value.trim().toLowerCase())
 const newGroup=ref(false),groupName=ref(''),dropGroup=ref(''),dragging=ref(false),trashOpen=ref(false),trashSearch=ref(''),searchField=ref<HTMLInputElement>(),groupField=ref<HTMLInputElement>()
+const groupForm=ref<HTMLFormElement>(),newGroupTrigger=ref<HTMLButtonElement>()
 const width=ref(Math.max(240,Math.min(420,Number(localStorage.getItem('flymind-sidebar-width'))||276))),sortBy=ref(localStorage.getItem('flymind-list-sort')==='created'?'created':'updated')
 const menu=ref<{type:'file'|'group'|'workspace';id:string;x:number;y:number}|null>(null),renaming=ref<{type:'file'|'group';id:string;name:string}|null>(null)
 const sorted=computed(()=>[...studio.documents].sort(sortBy.value==='created'?byCreationNewest:byModifiedNewest)),rootFiles=computed(()=>sorted.value.filter(d=>!studio.assignments[d.id])),searchResults=computed(()=>sorted.value.filter(d=>d.title.toLowerCase().includes(query.value)))
@@ -61,7 +64,8 @@ function toggleGroup(id:string){currentGroup.value=id;expanded.value=expanded.va
 function showSearch(){searchOpen.value=true;nextTick(()=>searchField.value?.focus())}
 function closeSearch(){search.value='';searchOpen.value=false}
 function sort(value:string){sortBy.value=value;localStorage.setItem('flymind-list-sort',value);menu.value=null}
-function beginGroup(){menu.value=null;newGroup.value=true;nextTick(()=>groupField.value?.focus())}
+function beginGroup(){menu.value=null;groupName.value='';newGroup.value=true;nextTick(()=>groupField.value?.focus())}
+function cancelNewGroup(restoreFocus=true){if(studio.pending)return;newGroup.value=false;groupName.value='';if(restoreFocus)void nextTick(()=>newGroupTrigger.value?.focus())}
 function openMenu(type:'file'|'group'|'workspace',id:string,e:MouseEvent){if(props.readOnly&&type!=='workspace')return;menu.value={type,id,x:Math.max(8,Math.min(e.clientX,window.innerWidth-220)),y:Math.max(8,Math.min(e.clientY+8,window.innerHeight-295))}}
 function rename(type:'file'|'group',id:string,name:string){renaming.value={type,id,name};menu.value=null;nextTick(()=>document.querySelector<HTMLInputElement>('.workspace-rename')?.select())}
 async function finishRename(){const item=renaming.value;if(!item)return;renaming.value=null;if(!item.name.trim())return;if(item.type==='file')studio.renameDocument(item.id,item.name.trim());else await studio.renameWorkspaceGroup(item.id,item.name.trim())}
@@ -74,8 +78,8 @@ function drop(e:DragEvent,group:string|null){dropGroup.value='';dragging.value=f
 function purge(item:SidebarAdapter['trash'][number]){if(window.confirm(`永久删除“${item.title}”？此操作无法从回收站恢复。`))studio.purgeDeleted(item)}
 let stopResize:(()=>void)|undefined
 function resizeSidebar(e:PointerEvent){e.preventDefault();const x=e.clientX,start=width.value,move=(p:PointerEvent)=>{width.value=Math.max(240,Math.min(420,start+p.clientX-x))},up=()=>{localStorage.setItem('flymind-sidebar-width',String(width.value));window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);stopResize=undefined};stopResize?.();stopResize=up;window.addEventListener('pointermove',move);window.addEventListener('pointerup',up)}
-function outside(e:PointerEvent){if(!(e.target as Element).closest('.workspace-popup,.workspace-menu-trigger'))menu.value=null}
-function shortcut(e:KeyboardEvent){if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();showSearch()}if(e.key==='Escape'){menu.value=null;trashOpen.value=false;closeSearch();newGroup.value=false}}
+function outside(e:PointerEvent){if(!(e.target instanceof Element))return;if(!e.target.closest('.workspace-popup,.workspace-menu-trigger'))menu.value=null;if(newGroup.value&&!groupForm.value?.contains(e.target)&&!newGroupTrigger.value?.contains(e.target))cancelNewGroup(false)}
+function shortcut(e:KeyboardEvent){if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();showSearch()}if(e.key==='Escape'){menu.value=null;trashOpen.value=false;closeSearch();if(newGroup.value)cancelNewGroup()}}
 onMounted(()=>{window.addEventListener('pointerdown',outside);window.addEventListener('keydown',shortcut)})
 onUnmounted(()=>{stopResize?.();window.removeEventListener('pointerdown',outside);window.removeEventListener('keydown',shortcut)})
 </script>

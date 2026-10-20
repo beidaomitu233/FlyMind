@@ -104,7 +104,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   staging:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.CLOUD_AUTO_STAGING == 'true'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.CLOUD_AUTO_STAGING == 'true' && vars.CLOUD_AUTO_PRODUCTION != 'true'
     needs: platform
     runs-on: ubuntu-24.04
     environment: staging
@@ -123,6 +123,37 @@ jobs:
       - name: Deploy verified staging candidate
         env:
           DEPLOY_ENVIRONMENT: staging
+          DEPLOY_RELEASE_ID: run-${{ github.run_id }}-${{ github.run_attempt }}
+          DEPLOY_SSH_HOST: ${{ secrets.SSH_HOST }}
+          DEPLOY_SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_SSH_PORT: ${{ secrets.SSH_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: node scripts/upload-cloud-candidate.mjs
+  production:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.CLOUD_AUTO_PRODUCTION == 'true'
+    needs: platform
+    runs-on: ubuntu-24.04
+    environment: production
+    concurrency:
+      group: cloud-production
+      cancel-in-progress: false
+    steps:
+      - name: Require one deployment mode
+        env:
+          AUTO_STAGING: ${{ vars.CLOUD_AUTO_STAGING }}
+        run: test "$AUTO_STAGING" != 'true'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.23.3
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: flymind-linux-x64
+          path: download
+      - name: Deploy exact verified production candidate
+        env:
+          DEPLOY_ENVIRONMENT: production
           DEPLOY_RELEASE_ID: run-${{ github.run_id }}-${{ github.run_attempt }}
           DEPLOY_SSH_HOST: ${{ secrets.SSH_HOST }}
           DEPLOY_SSH_USER: ${{ secrets.SSH_USER }}

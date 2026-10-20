@@ -7,6 +7,7 @@ import {operationSchema,contentSchema} from '../server/contracts'
 import {applyContentOperations,composeDocument,extractContent,validateContent} from '../src/drawing/core/layers'
 import {attr,children,element,parseNative,serialize,type NativeDocument,type NativeCell} from '../src/drawing/engine/drawio/xml'
 import {mainEntry,businessType,geometry,removeEntry} from '../src/drawing/engine/drawio/state'
+import {inspectNativeLayout} from '../src/drawing/engine/drawio/routing'
 async function base(){const content=JSON.parse(await readFile(new URL('./fixtures/drawio-baseline/pbs-main.content.json',import.meta.url),'utf8'));return createDrawingProject(content,await compileDrawio(content),{createdAt:1,updatedAt:1})}
 const edit=(xml:string,fn:(n:NativeDocument)=>void)=>{const n=parseNative(xml);fn(n);return serialize(n.document)}
 function clone(n:NativeDocument,e:NativeCell,id:string){const obj=e.object.cloneNode(true) as Element;obj.setAttribute('id',id);if(obj.nodeName!=='mxCell')children(obj,'mxCell')[0].removeAttribute('id');n.root.appendChild(obj);for(const child of [...n.cells.values()].filter(x=>attr(x.cell,'parent')===e.id)){const copy=clone(n,child,id+':'+child.id);copy.cell.setAttribute('parent',id)}return {id,object:obj,cell:obj.nodeName==='mxCell'?obj:children(obj,'mxCell')[0]}}
@@ -91,11 +92,25 @@ test('two rounds of structural AI patches add, reconnect, move and delete actual
  const p2=await projectDrawio(second.xml),n=parseNative(second.xml);assert.equal(p2.content.nodes.find(n=>n.id==='new-step')!.laneId,'r01');assert.ok(!p2.content.nodes.some(n=>n.id==='n16'));assert.ok(!p2.content.edges.some(e=>['new-edge','e03','e04'].includes(e.id)));assert.equal(serialize(mainEntry(n,'node','n15').object),untouched);assert.equal(serialize(geometry(mainEntry(n,'edge','e25'))),waypoints)
 })
 test('container add/reorder/remove uses the native table and preserves unknown decorations when a container is removed',async()=>{
- const b=await base(),a=await patchDrawio(b,[{op:'add_container',collection:'lanes',item:{id:'review',label:'复核人'},index:1},{op:'add_container',collection:'phases',item:{id:'review-phase',label:'复核阶段'},index:2},{op:'add_node',node:{id:'review-node',label:'独立复核',kind:'task',laneId:'review',phaseId:'review-phase'}}])
+ const content={schemaVersion:1 as const,id:'container-crud',title:'容器编辑',kind:'swimlane' as const,nodes:[{id:'a',label:'提交',kind:'task' as const,laneId:'r01',phaseId:'p03'},{id:'b',label:'办理',kind:'task' as const,laneId:'r04',phaseId:'p05'}],edges:[{id:'ab',source:'a',target:'b',label:'已提交'}],lanes:[{id:'r01',label:'申请人'},{id:'r04',label:'经办人'}],phases:[{id:'p03',label:'受理'},{id:'p05',label:'交付'}],groups:[]}
+ const b=await createDrawingProject(content,await compileDrawio(content),{createdAt:1,updatedAt:1}),a=await patchDrawio(b,[{op:'add_container',collection:'lanes',item:{id:'review',label:'复核人'},index:1},{op:'add_container',collection:'phases',item:{id:'review-phase',label:'复核阶段'},index:2},{op:'add_node',node:{id:'review-node',label:'独立复核',kind:'task',laneId:'review',phaseId:'review-phase'}}])
  const p=await projectDrawio(a.xml);assert.equal(p.content.lanes[1].id,'review');assert.equal(p.content.phases[2].id,'review-phase')
  a.xml=edit(a.xml,n=>{const parent=mainEntry(n,'node','review-node').cell.getAttribute('parent');const e=element(n.document,'mxCell',{id:'keep-decor',vertex:1,value:'人工装饰',parent});e.appendChild(element(n.document,'mxGeometry',{x:20,y:10,width:80,height:30,as:'geometry'}));n.root.appendChild(e)})
  const b1=await createDrawingProject(p.content,a,{createdAt:1,updatedAt:2}),last=await patchDrawio(b1,[{op:'reorder_container',collection:'phases',id:'p05',index:0},{op:'remove_container',collection:'lanes',id:'review',moveTo:'r04'},{op:'remove_container',collection:'phases',id:'review-phase',moveTo:'p03'}])
  const p2=await projectDrawio(last.xml);assert.equal(p2.content.phases[0].id,'p05');assert.equal(p2.content.nodes.find(n=>n.id==='review-node')!.laneId,'r04');assert.equal(p2.content.nodes.find(n=>n.id==='review-node')!.phaseId,'p03');assert.ok(last.xml.includes('keep-decor'));assert.equal(attr(parseNative(last.xml).cells.get('keep-decor')!.cell,'parent'),'1')
+ assert.equal(p2.content.nodes.length,3);assert.deepEqual(p2.content.edges,content.edges)
+ const final=parseNative(last.xml),edge=mainEntry(final,'edge','ab')
+ const issues=inspectNativeLayout(final).filter(issue=>['ROUTE_THROUGH_SHAPE','LABEL_OVERLAP_SHAPE','LABEL_OVERLAP_LABEL','ROUTE_THROUGH_LABEL','LABEL_TOO_FAR_FROM_EDGE'].includes(issue.code)&&issue.cellIds.includes(edge.id));assert.deepEqual(issues,[],'ordinary container editing must retain the original collision/near-line gates')
+})
+test('crowded PBS container reorder rejects an unsafe label slot without mutating the source',async()=>{
+ const b=await base();assert.equal(b.content.nodes.length,23);assert.equal(b.content.edges.length,26)
+ const a=await patchDrawio(b,[{op:'add_container',collection:'lanes',item:{id:'review',label:'复核人'},index:1},{op:'add_container',collection:'phases',item:{id:'review-phase',label:'复核阶段'},index:2},{op:'add_node',node:{id:'review-node',label:'独立复核',kind:'task',laneId:'review',phaseId:'review-phase'}}]),project=await createDrawingProject((await projectDrawio(a.xml)).content,a,{createdAt:1,updatedAt:2})
+ // The pure compiler receives the document, not permission to advance the
+ // caller's revision. A rejected candidate must leave both completely intact.
+ const record={revision:2,document:project},before=JSON.stringify(record),xml=project.rendering.engine.xml,hash=project.rendering.engine.contentHash
+ await assert.rejects(()=>patchDrawio(record.document,[{op:'reorder_container',collection:'phases',id:'p05',index:0},{op:'remove_container',collection:'lanes',id:'review',moveTo:'r04'},{op:'remove_container',collection:'phases',id:'review-phase',moveTo:'p03'}]),/ROUTING_LABEL_NO_SPACE: 连线 e17 的 145×28px/)
+ assert.equal(JSON.stringify(record),before);assert.equal(record.revision,2);assert.equal(project.rendering.engine.xml,xml);assert.equal(project.rendering.engine.contentHash,hash)
+ assert.equal((await projectDrawio(xml)).contentHash,hash);assert.equal(project.content.nodes.length,24);assert.equal(project.content.edges.length,26);assert.ok(project.content.lanes.some(l=>l.id==='review'));assert.ok(project.content.phases.some(p=>p.id==='review-phase'))
 })
 test('long text grows only its local business range while notes neither occupy steps nor stretch phases',async()=>{
  const b=await base();b.rendering.engine.xml=edit(b.rendering.engine.xml,n=>{const note=mainEntry(n,'node','n21'),parent=mainEntry(n,'node','n01').cell.getAttribute('parent');note.cell.setAttribute('parent',parent);geometry(note).setAttribute('y','9000');const e=element(n.document,'mxCell',{id:'far-decoration',vertex:1,parent});e.appendChild(element(n.document,'mxGeometry',{x:10,y:10000,width:100,height:100,as:'geometry'}));n.root.appendChild(e)})

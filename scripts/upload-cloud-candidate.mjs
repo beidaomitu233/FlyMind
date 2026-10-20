@@ -1,21 +1,39 @@
 // CI-only uploader. Remote execution is restricted to the root-owned dispatcher.
-import {readFile,mkdtemp,writeFile,rm} from 'node:fs/promises'
+import {readFile,mkdtemp,writeFile,rm,lstat} from 'node:fs/promises'
 import {createReadStream} from 'node:fs'
 import {createHash} from 'node:crypto'
 import {spawn} from 'node:child_process'
+import {pipeline} from 'node:stream/promises'
 import {tmpdir} from 'node:os'
-import {join,resolve} from 'node:path'
-const env=process.env,environment=env.DEPLOY_ENVIRONMENT,id=env.DEPLOY_RELEASE_ID,host=env.DEPLOY_SSH_HOST,user=env.DEPLOY_SSH_USER,port=env.DEPLOY_SSH_PORT||'22'
-if(!['staging','production'].includes(environment)||!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(id??'')||!/^[a-zA-Z0-9][a-zA-Z0-9.-]{0,252}$/.test(host??'')||!/^[a-z_][a-z0-9_-]{0,31}$/.test(user??'')||!/^\d{1,5}$/.test(port)||+port<1||+port>65535)throw Error('Deployment identity invalid')
-if(!env.DEPLOY_SSH_KEY?.includes('PRIVATE KEY')||!env.DEPLOY_KNOWN_HOSTS?.trim())throw Error('Pinned SSH host and deployment key are required')
-const archive=resolve('download/flymind-linux-x64.tar.gz'),sidecar=(await readFile(archive+'.sha256','utf8')).trim(),expected=sidecar.split(/\s+/)[0]
+import {join,resolve,sep} from 'node:path'
+import {pathToFileURL} from 'node:url'
+export const MAX_UPLOAD_BYTES=2_000_000_000
+export function deploymentUploadConfig(env=process.env){
+ const environment=env.DEPLOY_ENVIRONMENT,id=env.DEPLOY_RELEASE_ID,host=env.DEPLOY_SSH_HOST,user=env.DEPLOY_SSH_USER,port=env.DEPLOY_SSH_PORT||'22'
+ if(!['staging','production'].includes(environment)||!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(id??'')||!/^[a-zA-Z0-9][a-zA-Z0-9.-]{0,252}$/.test(host??'')||!/^[a-z_][a-z0-9_-]{0,31}$/.test(user??'')||user==='root'||!/^\d{1,5}$/.test(port)||+port<1||+port>65535)throw Error('Deployment identity invalid')
+ if(!env.DEPLOY_SSH_KEY?.includes('PRIVATE KEY')||!env.DEPLOY_KNOWN_HOSTS?.trim())throw Error('Pinned SSH host and deployment key are required')
+ return {environment,id,host,user,port}
+}
+export async function runSSH(args,inputPath){
+ const child=spawn('ssh',args,{stdio:[inputPath?'pipe':'ignore','inherit','inherit'],shell:false,windowsHide:true})
+ const finished=new Promise((yes,no)=>{child.once('error',no);child.once('close',code=>code===0?yes():no(Error('ssh failed with code '+code)))})
+ const timer=setTimeout(()=>child.kill('SIGTERM'),20*60*1000)
+ try{const results=await Promise.allSettled([finished,...(inputPath?[pipeline(createReadStream(inputPath),child.stdin)]:[])]);for(const result of results)if(result.status==='rejected')throw result.reason}
+ finally{clearTimeout(timer)}
+}
+export async function uploadCloudCandidate(env=process.env){
+const {environment,id,host,user,port}=deploymentUploadConfig(env)
+const archive=resolve('download/flymind-linux-x64.tar.gz'),info=await lstat(archive)
+if(!info.isFile()||info.isSymbolicLink()||info.size>MAX_UPLOAD_BYTES)throw Error('Deployment archive exceeds upload budget or is not a regular file')
+const sidecar=(await readFile(archive+'.sha256','utf8')).trim(),expected=sidecar.split(/\s+/)[0]
 if(!/^[a-f0-9]{64}$/.test(expected))throw Error('Invalid digest sidecar')
 const hash=createHash('sha256');for await(const bytes of createReadStream(archive))hash.update(bytes);if(hash.digest('hex')!==expected)throw Error('Downloaded artifact digest mismatch')
 const root=await mkdtemp(join(tmpdir(),'flymind-deploy-')),key=join(root,'key'),known=join(root,'known_hosts')
-function run(command,args){return new Promise((yes,no)=>{const child=spawn(command,args,{stdio:'inherit',shell:false,windowsHide:true});child.once('error',no);child.once('exit',code=>code===0?yes():no(Error(command+' failed with code '+code)))})}
 try{
  await writeFile(key,env.DEPLOY_SSH_KEY.replaceAll('\r','')+'\n',{mode:0o600});await writeFile(known,env.DEPLOY_KNOWN_HOSTS+'\n',{mode:0o600})
- const options=['-i',key,'-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','StrictHostKeyChecking=yes','-o','UserKnownHostsFile='+known,'-o','ConnectTimeout=15']
- await run('scp',[...options,'-P',port,archive,user+'@'+host+':/var/lib/flymind/incoming/'+id+'.tar.gz'])
- await run('ssh',[...options,'-p',port,user+'@'+host,'sudo -n /usr/local/libexec/flymind-promote '+environment+' '+id+' '+expected])
-}finally{await rm(root,{recursive:true,force:true})}
+ const options=['-T','-i',key,'-o','RequestTTY=no','-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','StrictHostKeyChecking=yes','-o','UserKnownHostsFile='+known,'-o','ConnectTimeout=15','-o','ServerAliveInterval=30','-o','ServerAliveCountMax=3','-p',port,user+'@'+host]
+ await runSSH([...options,'flymind-upload '+id+' '+expected],archive)
+ await runSSH([...options,'sudo -n /usr/local/libexec/flymind-promote '+environment+' '+id+' '+expected])
+}finally{if(!resolve(root).startsWith(resolve(tmpdir())+sep)||!root.includes('flymind-deploy-'))throw Error('Unsafe credential cleanup path');await rm(root,{recursive:true,force:true})}
+}
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)await uploadCloudCandidate()

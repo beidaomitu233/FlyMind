@@ -8,12 +8,12 @@ const router = createRouter({
     {
       path: '/native',
       name: 'native-studio',
-      component: () => import('@/drawing/ui/NativeStudio.vue')
+      component: () => import('@/drawing/ui/LocalAuthorization.vue')
     },
     {
       path: '/',
       name: 'drawing-studio',
-      component: () => import('@/drawing/ui/Studio.vue')
+      component: () => import('@/drawing/ui/LocalAuthorization.vue')
     },
     {
       path: '/legacy',

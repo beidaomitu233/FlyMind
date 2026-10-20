@@ -18,7 +18,9 @@
 - 调度器由管理员**从审核后的源码**独立安装为 `/usr/local/libexec/flymind-promote.mjs`，同目录配套审核的 `verify-cloud-candidate.mjs`；root所有、不可被上传账号修改。固定 `/usr/local/libexec/flymind-promote` 入口采用root-owned小wrapper：`exec /usr/bin/node /usr/local/libexec/flymind-promote.mjs "$@"`（实际Node绝对路径先核对）。保留.mjs以免Node20把无扩展文件当CommonJS。不要以root运行候选包内的ops脚本。导入路径要求此配对文件相邻。
 - sudoers只允许该固定调度器；调度器再次检查environment/releaseId/SHA，不授权任意node、systemctl、tar、shell、cp等命令。部署账号密钥在GitHub受限Environment secrets中，主机authorized_keys限制forwarding/PTY；不要赋予一般root shell。具体SSH限制配置由首次主机检查后确定。
 
-固定调用：上传 `/var/lib/flymind/incoming/<releaseId>.tar.gz`，随后
+自动化密钥必须配置 `restrict,command="<root-owned ssh-command.py绝对入口>"`，仅 `restrict` 仍可能得到shell，不能作为充分隔离。PM管理的固定dispatch只接受 `flymind-upload <safeReleaseId> <archiveSHA256>`（stdin二进制，最多2,000,000,000字节，核SHA后原子写入固定incoming）及下述原有promote命令；不允许shell/SFTP/SCP。Node uploader使用 `ssh -T` 流式stdin，不再调用scp。
+
+固定调用：通过 `flymind-upload` 将候选保存为 `/var/lib/flymind/incoming/<releaseId>.tar.gz`，随后
 
 ```text
 sudo -n /usr/local/libexec/flymind-promote <staging|production> <safeReleaseId> <archiveSHA256>
@@ -48,3 +50,14 @@ Java/gateway二进制即使存在候选包，也**不会被promote自动安装�
 ## 定向验证
 
 `node --test tests/cloud-deployment.test.mjs` 覆盖纯配置约束、字节/清单篡改、未知类型、根/链接越界。脚本导入不会执行promote。没有在Windows模拟systemd或声称Linux权限、Python解压、真实停机/回退已验收；这些须目标机staging进行。全栈自动流水线与不可变包烟测由PM集成。
+
+## 单环境线上测试与双环境二选一
+
+当前 `fly.hui7.fun` 首次落地采用单环境线上测试：PM完成独立控制面/网关/TLS bootstrap及目标机固定供应检查后，受控首次production晋级无需伪造staging记录。详见 [首次部署审查](FLY_FIRST_DEPLOYMENT.md)。
+
+- 单环境：仓库 `CLOUD_AUTO_PRODUCTION=true`、`CLOUD_AUTO_STAGING` 不为true。main push的source/platform全部成功后，production job从同run下载已冻结Linux包，经production Environment中的受限部署账号执行uploader，`cloud-production`并发锁与手动晋级共享。无需人工SSH逐次更新；Environment审批为运维可选策略。
+- 双环境：关闭自动production，另设隔离端口/service/current/dataRoot后启用 `CLOUD_AUTO_STAGING=true`；保留既有 `cloud-promote.yml` 同一成功staging包手动晋级。不能在同机同数据/同端口同时开启两模式。
+- 两变量同时true时，staging被禁用，production在取包/SSH之前检查失败，避免两份dispatcher并发操作同一实例。PR及非main不进入自动production。
+- 原手动生产workflow仍要求staging成功，不能用于单环境首次bootstrap。单环境首次由PM已授权受控调度器执行；后续main走自动production，不删除原手动workflow的来源检查。
+
+本次离线定向：`tests/cloud-deployment.test.mjs`配置与文件校验4/4，workflow本地YAML解析及job依赖/环境/并发检查；未执行GitHub远端pipeline或服务器命令。目标OpenCloudOS、Node绝对路径、Python及sandbox验证由PM真实部署收口。

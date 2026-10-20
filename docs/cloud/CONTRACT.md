@@ -2,6 +2,8 @@
 
 日期：2026-10-19。状态：实现契约；未验收前不写入用户调用指南。
 
+2026-10-20 实测补充：受控 Java Jackson 将 Long 时间戳输出为十进制字符串。Node 仅在明确的 `expiresAt`、OAuth `client_id_issued_at` / `expires_in` 数值字段接受正安全整数或等价的十进制字符串，规范化后再执行到期/SDK校验；拒绝空串、空格、指数、小数、布尔和溢出。不转换用户ID、token或任意业务JSON。真实 Node→Tomcat 组合已验证；本地设备授权见 [LOCAL_AUTH_GATE.md](LOCAL_AUTH_GATE.md)，v1.1 实际状态见[台账](../releases/V1_1_EXECUTION.md)。
+
 ## 1. 所有权与约束
 
 - 应用代理拥有 `../../xinghui-admin/` 中 Java/Vben 实现；主代理拥有 `server/cloud/` 的身份客户端和工作区隔离。引擎代理当前拥有同步探针及其报告。

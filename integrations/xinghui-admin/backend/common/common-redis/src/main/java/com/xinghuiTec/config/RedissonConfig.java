@@ -1,6 +1,5 @@
 package com.xinghuiTec.config;
 
-import org.redisson.api.RedissonClient;
 import org.redisson.spring.starter.RedissonAutoConfigurationCustomizer;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -19,6 +18,16 @@ public class RedissonConfig {
      */
     @Bean
     public RedissonAutoConfigurationCustomizer redissonCustomizer() {
-        return config -> config.setUseScriptCache(true);
+        return config -> {
+            config.setUseScriptCache(true);
+            // The starter copies an empty Spring Redis password as "", which
+            // makes Redisson issue AUTH even when Redis has no password.
+            if (config.isSingleConfig()) {
+                var single = config.useSingleServer();
+                if (single.getPassword() != null && single.getPassword().isEmpty()) {
+                    single.setPassword(null);
+                }
+            }
+        };
     }
 }

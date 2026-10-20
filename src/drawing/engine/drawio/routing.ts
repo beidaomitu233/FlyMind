@@ -88,13 +88,23 @@ function polyline(source:RouteBox,target:RouteBox,bends:RoutePoint[],sourceConst
 }
 function midpoint(points:RoutePoint[]):RoutePoint{let remaining=points.slice(1).reduce((n,p,i)=>n+Math.abs(p.x-points[i].x)+Math.abs(p.y-points[i].y),0)/2;for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],length=Math.abs(b.x-a.x)+Math.abs(b.y-a.y);if(remaining<=length)return {x:a.x+(b.x-a.x)*(length?remaining/length:0),y:a.y+(b.y-a.y)*(length?remaining/length:0)};remaining-=length}return points.at(-1)!}
 /** Read-only label slots around solver segments; never computes edge routes. */
-function labelSlot(n:NativeDocument,entry:NativeCell,points:RoutePoint[],obstacles:RouteBox[],routes:Map<string,RoutePoint[]>,placed:LabelRect[]):LabelRect{
+function labelSlot(n:NativeDocument,entry:NativeCell,points:RoutePoint[],obstacles:RouteBox[],routes:Map<string,RoutePoint[]>,placed:LabelRect[]):{rect?:LabelRect;w:number;h:number}{
  const text=readControlledEdge(n,entry)??attr(entry.object,'label')??attr(entry.cell,'value')??'',font=Number(styleValue(entry,'fontSize')??13),labelWidth=Number(styleValue(entry,'labelWidth')??180),lines=text.split('\n').reduce((n,line)=>n+Math.max(1,Math.ceil(textUnits(line)*font/Math.max(font,labelWidth-2))),0)
- const w=Math.max(16,labelWidth+4),h=Math.ceil(lines*font*1.2)+4,base=midpoint(points),candidates:Array<{rect:LabelRect;cost:number}>=[]
+ // Match the conservative native occupancy used by the read-only quality gate
+ // (label width + spacing, line-height + spacing), not a smaller text-only box.
+ const w=Math.max(16,labelWidth+12),h=Math.ceil(lines*font*1.2)+12,base=midpoint(points),candidates:Array<{rect:LabelRect;cost:number}>=[]
  for(let i=1;i<points.length;i++){
   const a=points[i-1],b=points[i],horizontal=a.y===b.y,length=Math.abs(b.x-a.x)+Math.abs(b.y-a.y)
   if(length<8)continue
-  for(const fraction of [.5,.35,.65,.2,.8,.1,.9,.05,.95])for(const sign of [1,-1])for(const distance of [0,horizontal?h/2+8:w/2+8,horizontal?h/2+16:w/2+16,horizontal?h/2+24:w/2+24]){
+  // Fixed fractions miss narrow but valid channels after a container reorder.
+  // Sample obstacle interval boundaries too; this only chooses a label offset,
+  // never moves a node/old edge or relaxes any clearance predicate below.
+  const from=horizontal?a.x:a.y,to=horizontal?b.x:b.y,half=horizontal?w/2:h/2,positions=new Set([.5,.35,.65,.2,.8,.1,.9,.05,.95])
+  const boundary=(coordinate:number)=>{const fraction=(coordinate-from)/(to-from);if(fraction>=0&&fraction<=1)positions.add(fraction)}
+  for(const r of [...obstacles,...placed]){const low=horizontal?r.x:r.y,high=low+(horizontal?r.w:r.h);boundary(low-half-9);boundary(high+half+9)}
+  for(const[id,route]of routes)if(id!==entry.id)for(const p of route){const coordinate=horizontal?p.x:p.y;boundary(coordinate-half-5);boundary(coordinate+half+5)}
+  const fractions=[...positions].sort((a,b)=>Math.abs(a-.5)-Math.abs(b-.5)||a-b).slice(0,256)
+  for(const fraction of fractions)for(const sign of [1,-1])for(const distance of [0,horizontal?h/2+8:w/2+8,horizontal?h/2+16:w/2+16,horizontal?h/2+24:w/2+24]){
    const x=a.x+(b.x-a.x)*fraction+(horizontal?0:sign*distance),y=a.y+(b.y-a.y)*fraction+(horizontal?sign*distance:0),rect={x:x-w/2,y:y-h/2,w,h,edgeId:entry.id}
    if(obstacles.some(r=>overlap(rect,r,6))||placed.some(r=>overlap(rect,r,8)))continue
    let crossed=false;for(const [id,route]of routes)if(id!==entry.id)for(let j=1;j<route.length;j++)if(meetsBox(route[j-1],route[j],rect,4)){crossed=true;break}if(crossed)continue
@@ -102,8 +112,7 @@ function labelSlot(n:NativeDocument,entry:NativeCell,points:RoutePoint[],obstacl
   }
  }
  candidates.sort((a,b)=>a.cost-b.cost||a.rect.y-b.rect.y||a.rect.x-b.rect.x)
- if(!candidates.length)fail('ROUTING_LABEL_NO_SPACE',`连线 ${attr(entry.object,'fmId')??entry.id} 的 ${w}×${h}px 标签没有近线空位；请显式自动排版以预留层间或列间标签通道，未改动其他人工对象`)
- return candidates[0].rect
+ return {rect:candidates[0]?.rect,w,h}
 }
 const obsoletePorts=['exitX','exitY','exitDx','exitDy','exitPerimeter','entryX','entryY','entryDx','entryDy','entryPerimeter','sourcePort','targetPort','portConstraint','sourcePortConstraint','targetPortConstraint','portConstraintRotation','sourceJettySize','targetJettySize','noEdgeStyle','elbow','segment','libavoidRouting','direction','loopStyle','orthogonalLoop']
 function parentOrigin(n:NativeDocument,e:NativeCell){const p=n.cells.get(attr(e.cell,'parent')??'');return p&&children(p.cell,'mxGeometry').length?absoluteRouteBox(n,p):{x:0,y:0}}
@@ -136,24 +145,45 @@ export async function routeNativeEdges(n:NativeDocument,affected:NativeCell[]):P
  const nodes=mainEntries(n).filter(e=>businessType(e)==='node').map(e=>absoluteRouteBox(n,e)),vertices=[...nodes,...nativeForbiddenRegions(n)],byId=new Map(nodes.map(v=>[v.id,v]))
  if(nodes.length>500||affected.length>2000)fail('ROUTING_LIMIT','路由输入超过固定预算')
  const title=[...n.cells.values()].find(e=>attr(e.object,'fmRole')==='title'&&attr(e.object,'fmType')==='decoration'),horizontal=title&&attr(title.object,'fmOrientation')==='horizontal',flow=title&&attr(title.object,'fmKind')==='flowchart';const pin=(b:RouteBox,start:boolean)=>horizontal?{x:start?1:0,y:(Math.round(b.y+b.h/2)-b.y)/b.h,dir:start?8:4}:{x:(Math.round(b.x+b.w/2)-b.x)/b.w,y:start?1:0,dir:start?2:1};const edges=affected.map(e=>{const source=attr(e.cell,'source'),target=attr(e.cell,'target'),s=byId.get(source??''),t=byId.get(target??''),forward=flow&&attr(e.object,'fmKind')!=='feedback'&&s&&t&&(horizontal?t.x>s.x:t.y>s.y),returning=flow&&attr(e.object,'fmRole')!=='parent-edge'&&s&&t&&(attr(e.object,'fmKind')==='feedback'||(horizontal?t.x<s.x:t.y<s.y)),side=(b:RouteBox)=>horizontal?{x:(Math.round(b.x+b.w/2)-b.x)/b.w,y:1,dir:2}:{x:1,y:(Math.round(b.y+b.h/2)-b.y)/b.h,dir:8};return {id:e.id,source,target,...(returning&&s&&t?{sourceConstraint:side(s),targetConstraint:side(t),sourceJetty:24,targetJetty:24}:(attr(e.object,'fmRole')==='parent-edge'||forward)&&s&&t?{sourceConstraint:pin(s,true),targetConstraint:pin(t,false),sourceJetty:24,targetJetty:24}:{})}});for(const e of edges)if(!e.source||!e.target||!byId.has(e.source)||!byId.has(e.target))fail('ROUTING_UNSUPPORTED_EDGE','避障路由需要有效业务端点')
- const loops=new Map(edges.filter(e=>e.source===e.target).map(e=>[e.id,nativeLoop(byId.get(e.source!)!,vertices)])),regular=edges.filter(e=>e.source!==e.target)
+ const affectedIds=new Set(edges.map(e=>e.id)),routes=new Map<string,RoutePoint[]>(),placed:LabelRect[]=[]
+ for(const old of mainEntries(n).filter(e=>businessType(e)==='edge'&&!affectedIds.has(e.id))){const occupancy=existingOccupancy(n,old,byId);if(occupancy){routes.set(old.id,occupancy.points);if(occupancy.label)placed.push(occupancy.label)}}
+ // Existing labels are immutable visual obstacles, not merely forbidden slots
+ // for the next label. Otherwise a new parallel route can run through them.
+ const solverVertices=[...vertices,...placed.map(r=>({id:r.edgeId+':protected-label',x:r.x,y:r.y,w:r.w,h:r.h}))]
+ const loops=new Map(edges.filter(e=>e.source===e.target).map(e=>[e.id,nativeLoop(byId.get(e.source!)!,solverVertices)])),regular=edges.filter(e=>e.source!==e.target)
  let solved:Record<string,RoutePoint[]>={}
- if(regular.length){const {Avoid,core}=await loadSupply(),releases:Array<()=>void>=[],tracked=Object.create(Avoid);tracked.Router=function(...args:any[]){const r=new Avoid.Router(...args),release=r.delete.bind(r);let done=false;r.delete=()=>{if(!done){done=true;release()}};releases.push(()=>r.delete());return r}
+ async function solveFixed(obstacles:RouteBox[],items:typeof regular){const {Avoid,core}=await loadSupply(),releases:Array<()=>void>=[],tracked=Object.create(Avoid),result:Record<string,RoutePoint[]>={};tracked.Router=function(...args:any[]){const r=new Avoid.Router(...args),release=r.delete.bind(r);let done=false;r.delete=()=>{if(!done){done=true;release()}};releases.push(()=>r.delete());return r}
  // Fixed midpoint pins fan out into a shared tree stem. The supplied solver
  // rejects duplicate fixed-pin connectors in one transaction; solve each
  // derived branch separately against ALL node obstacles, without inventing paths.
- try{const ordinary=regular.filter(edge=>!edge.sourceConstraint),branches=regular.filter(edge=>edge.sourceConstraint);if(ordinary.length)Object.assign(solved,core.computeRoutes(tracked,vertices,ordinary,{shapeBufferDistance:16,idealNudgingDistance:36}));for(const edge of branches)Object.assign(solved,core.computeRoutes(tracked,vertices,[edge],{shapeBufferDistance:16,idealNudgingDistance:36}))}catch{fail('ROUTING_FAILED','固定libavoid求解失败，未退回可能穿框的路由')}finally{for(const release of releases)release()}}
- const routes=new Map<string,RoutePoint[]>(),placed:LabelRect[]=[],affectedIds=new Set(edges.map(e=>e.id))
- for(const old of mainEntries(n).filter(e=>businessType(e)==='edge'&&!affectedIds.has(e.id))){const occupancy=existingOccupancy(n,old,byId);if(occupancy){routes.set(old.id,occupancy.points);if(occupancy.label)placed.push(occupancy.label)}}
- for(const edge of edges){if(loops.has(edge.id)){routes.set(edge.id,loops.get(edge.id)!.points);continue}const bends=solved[edge.id];if(!Array.isArray(bends)||bends.length>2000||bends.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)||Math.abs(p.x)>50000||Math.abs(p.y)>50000))fail('ROUTING_FAILED','固定路由输出无效')
+ try{const ordinary=items.filter(edge=>!edge.sourceConstraint),branches=items.filter(edge=>edge.sourceConstraint);if(ordinary.length)Object.assign(result,core.computeRoutes(tracked,obstacles,ordinary,{shapeBufferDistance:16,idealNudgingDistance:36}));for(const edge of branches)Object.assign(result,core.computeRoutes(tracked,obstacles,[edge],{shapeBufferDistance:16,idealNudgingDistance:36}));return result}catch{fail('ROUTING_FAILED','固定libavoid求解失败，未退回可能穿框的路由')}finally{for(const release of releases)release()}}
+ if(regular.length)solved=await solveFixed(solverVertices,regular)
+ function installRoute(edge:typeof edges[number],bends:RoutePoint[],obstacles=vertices){if(!Array.isArray(bends)||bends.length>2000||bends.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)||Math.abs(p.x)>50000||Math.abs(p.y)>50000))fail('ROUTING_FAILED','固定路由输出无效')
   const points=polyline(byId.get(edge.source!)!,byId.get(edge.target!)!,bends,edge.sourceConstraint,edge.targetConstraint)
-  for(let i=1;i<points.length;i++){if(points[i-1].x!==points[i].x&&points[i-1].y!==points[i].y)fail('ROUTING_FAILED',`路由不是正交段 (${edge.id}: ${JSON.stringify([points[i-1],points[i]])})`);for(const obstacle of vertices)if(obstacle.id!==edge.source&&obstacle.id!==edge.target&&meetsBox(points[i-1],points[i],obstacle))fail('ROUTING_COLLISION','固定路由仍穿过业务节点，未返回此布局')}
+  for(let i=1;i<points.length;i++){if(points[i-1].x!==points[i].x&&points[i-1].y!==points[i].y)fail('ROUTING_FAILED',`路由不是正交段 (${edge.id}: ${JSON.stringify([points[i-1],points[i]])})`);for(const obstacle of obstacles)if(obstacle.id!==edge.source&&obstacle.id!==edge.target&&meetsBox(points[i-1],points[i],obstacle))fail('ROUTING_COLLISION','固定路由仍穿过业务节点或保留标签，未返回此布局')}
   routes.set(edge.id,points)
  }
+ for(const edge of edges){if(loops.has(edge.id))routes.set(edge.id,loops.get(edge.id)!.points);else installRoute(edge,solved[edge.id],solverVertices)}
  for(const entry of affected){
+  let slot:LabelRect|undefined
+  const label=readControlledEdge(n,entry)??attr(entry.object,'label')??attr(entry.cell,'value')??''
+  if(label){let choice=labelSlot(n,entry,routes.get(entry.id)!,vertices,routes,placed)
+   if(!choice.rect&&!loops.has(entry.id)){
+    // One bounded retry for this affected edge only, using the fixed solver.
+    // Earlier labels/old edges remain immutable; no node or sibling is moved.
+    const edge=edges.find(e=>e.id===entry.id)!,obstacles=[...vertices,...placed.map(r=>({id:r.edgeId+':protected-label',x:r.x,y:r.y,w:r.w,h:r.h}))],s=byId.get(edge.source!)!,t=byId.get(edge.target!)!
+    // Opposing feedback across one row/column can have only a tiny internal
+    // elbow. Give that edge an outward native port pair, then let libavoid
+    // find the free external channel; never invent waypoints or move boxes.
+    const sameRow=s.y<t.y+t.h&&s.y+s.h>t.y,sameColumn=s.x<t.x+t.w&&s.x+s.w>t.x,outward=(b:RouteBox)=>sameRow?{x:(Math.round(b.x+b.w/2)-b.x)/b.w,y:1,dir:2}:{x:1,y:(Math.round(b.y+b.h/2)-b.y)/b.h,dir:8},rerouted=attr(entry.object,'fmKind')==='feedback'&&(sameRow||sameColumn)?{...edge,sourceConstraint:outward(s),targetConstraint:outward(t),sourceJetty:24,targetJetty:24}:edge
+    const retry=await solveFixed(obstacles,[rerouted]);solved[entry.id]=retry[entry.id];installRoute(rerouted,retry[entry.id],obstacles);choice=labelSlot(n,entry,routes.get(entry.id)!,vertices,routes,placed)
+   }
+   if(!choice.rect)fail('ROUTING_LABEL_NO_SPACE',`连线 ${attr(entry.object,'fmId')??entry.id} 的 ${choice.w}×${choice.h}px 标签没有近线空位；请显式自动排版以预留层间或列间标签通道，未改动其他人工对象`)
+   slot=choice.rect;placed.push(slot)
+  }
   const parentId=attr(entry.cell,'parent'),parent=parentId?n.cells.get(parentId):undefined,parentBox=parent&&children(parent.cell,'mxGeometry').length?absoluteRouteBox(n,parent):{x:0,y:0}
   const oldGeometry=geometry(entry),g=element(n.document,'mxGeometry',{relative:1,as:'geometry'}),bends=solved[entry.id]??[];if(bends.length){const array=element(n.document,'Array',{as:'points'});for(const p of bends)array.appendChild(element(n.document,'mxPoint',{x:p.x-parentBox.x,y:p.y-parentBox.y}));g.appendChild(array)}
-  const label=readControlledEdge(n,entry)??attr(entry.object,'label')??attr(entry.cell,'value')??'';if(label){const points=routes.get(entry.id)!,slot=labelSlot(n,entry,points,vertices,routes,placed),base=midpoint(points);placed.push(slot);g.insertBefore(element(n.document,'mxPoint',{x:Math.round(slot.x+slot.w/2-base.x),y:Math.round(slot.y+slot.h/2-base.y),as:'offset'}),g.firstChild)}
+  if(slot){const base=midpoint(routes.get(entry.id)!);g.insertBefore(element(n.document,'mxPoint',{x:Math.round(slot.x+slot.w/2-base.x),y:Math.round(slot.y+slot.h/2-base.y),as:'offset'}),g.firstChild)}
   // The canonical routing core rounds its new interior bends to integer pixels.
   // ELK/user node centres may be fractional: attach to those solver-aligned
   // perimeter coordinates using native constraints, never round existing nodes
