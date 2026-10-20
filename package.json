@@ -52,6 +52,7 @@
     "preview": "vite preview",
     "backend": "python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000",
     "test": "node --import tsx --test tests/canvas.test.ts tests/complex-layout.test.ts tests/drawing-quality.test.ts tests/drawing-quality-layout.test.ts tests/drawing.test.ts tests/drawio-canvas.test.ts tests/drawio-configure.test.ts tests/drawio-controlled.test.ts tests/drawio-editing.test.ts tests/drawio-engine.test.ts tests/drawio-generic-migration.test.ts tests/drawio-generic.test.ts tests/drawio-host.test.ts tests/drawio-layout.test.ts tests/drawio-migration.test.ts tests/drawio-native-storage.test.ts tests/drawio-project.test.ts tests/drawio-rebind.test.ts tests/drawio-renderer.test.ts tests/drawio-svg-fonts.test.ts tests/editing-stability.test.ts tests/export-time.test.ts tests/floating-text.test.ts tests/native-ai.test.ts tests/native-backups.test.ts tests/native-business-service.test.ts tests/native-canvas-storage.test.ts tests/native-exports.test.ts tests/native-imports.test.ts tests/native-mcp.test.ts tests/mcp-quality.test.ts tests/native-migrations.test.ts tests/native-session.test.ts tests/native-workspace.test.ts tests/objects.test.ts tests/runtime-instance.test.ts tests/runtime.test.ts tests/sqlite.test.ts tests/workspace.test.ts && node --test tests/package-cli.test.mjs",
+    "test:cloud": "node --import tsx --test tests/cloud-workspaces.test.ts tests/cloud-http.test.ts",
     "test:legacy": "node tests/run-tests.mjs",
     "render": "tsx scripts/render-diagram.ts",
     "examples": "tsx scripts/build-examples.ts",

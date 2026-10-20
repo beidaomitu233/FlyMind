@@ -1,0 +1,19 @@
+# Generated builds, dependencies and local infrastructure never belong in source.
+node_modules/
+target/
+dist/
+.turbo/
+.pnpm-store/
+.local/
+output/
+*.log
+*.db
+*.sqlite*
+*.dump
+*.hprof
+.env
+.env.*
+!.env.example
+!*.env.example
+*-private.json
+*-secrets.json

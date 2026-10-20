@@ -14,6 +14,7 @@ import {inspectDrawing,type EditIntent} from '../../src/drawing/core/drawing-qua
 import {requireNativeAIQuality} from './native-quality'
 import {diffNativeContent} from './native-content-diff'
 import {defaultProfileForKind,drawioCapabilities} from '../../src/drawing/engine/profiles'
+import {mergeNativeSnapshots,CollaborationMergeError} from '../../src/drawing/engine/collaboration/merge'
 import type {DrawioRenderingChanges,DrawioConfigureResult,DrawingProjectV3} from '../../src/drawing/engine/types'
 
 type Input=Record<string,any>
@@ -131,6 +132,35 @@ export class NativeDiagramService {
     const normalized=await normalizeDrawioEdits(value.xml,base.document)
     const candidate=await validateDrawingProject({...base.document,content:normalized.content,rendering:{...base.document.rendering,engine:{...base.document.rendering.engine,xml:normalized.xml,contentHash:normalized.contentHash}}})
     return this.store.commitNative(id,expected,candidate,m)
+  }
+  /** Cloud-only optimistic collaboration. The durable historical revision is
+   * the three-way base; existing local save remains strict CAS. The request
+   * receipt hashes the original input so a retry survives a lost response. */
+  async saveCollaborativeEditor(id:string,input:unknown,expectedDataRootId?:string):Promise<NativeDrawingRecord>{
+    this.available();this.store.id(id)
+    const value=exact(input,['xml','expectedRevision','requestId'],['xml','expectedRevision','requestId'])
+    const expected=revision(value.expectedRevision)
+    if(typeof value.xml!=='string'||!value.xml.trim()||Buffer.byteLength(value.xml)>4_000_000)throw new StoreError('xml 不能为空或超过 4 MB')
+    const m=mutation('editor-save',id,value,expectedDataRootId),replay=await this.store.replayNativeDrawing(m)
+    if(replay)return replay
+    const base=await this.store.getNativeDrawingRevision(id,expected)
+    for(let attempt=0;attempt<4;attempt++){
+      const current=await this.getDrawing(id)
+      if(expected>current.revision||isCanvasRecord(base)!==isCanvasRecord(current))throw new StoreError('图形模式或基线已改变，请保留草稿',409,current.revision,'COLLABORATION_CONFLICT')
+      let xml:string
+      try{xml=mergeNativeSnapshots(base.document.rendering.engine.xml,value.xml,current.document.rendering.engine.xml)}
+      catch(error){if(error instanceof CollaborationMergeError)throw new StoreError(error.message,409,current.revision,error.code);throw error}
+      let candidate:NativeDrawingRecord['document']
+      if(isCanvasRecord(current))candidate=await createNativeCanvasProject(xml,{id:current.document.id,title:current.document.title,createdAt:current.document.createdAt,updatedAt:current.document.updatedAt})
+      else{
+        const {normalizeDrawioEdits}=await import('../../src/drawing/engine/drawio')
+        const normalized=await normalizeDrawioEdits(xml,current.document)
+        candidate=await validateDrawingProject({...current.document,content:normalized.content,rendering:{...current.document.rendering,engine:{...current.document.rendering.engine,xml:normalized.xml,contentHash:normalized.contentHash}}})
+      }
+      try{return await this.store.commitNativeDrawing(id,current.revision,candidate,m)}
+      catch(error){if(!(error instanceof StoreError&&error.code==='REVISION_CONFLICT')||attempt===3)throw error}
+    }
+    throw new StoreError('协同提交繁忙，请以同一请求重试',409,undefined,'COLLABORATION_BUSY')
   }
   async mapCanvas(id:string,input:unknown,expectedDataRootId?:string){
     this.available();this.store.id(id)
