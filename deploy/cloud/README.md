@@ -4,7 +4,7 @@
 
 ## 首次 SSH：先只读识别
 
-确认实际 OS/CPU、Node路径/完整版本与ABI、systemd/Python版本、CPU/内存/磁盘、用户/UID、已占端口、现有服务/卷/备份、MySQL/Redis、TLS与反代。不得假定Ubuntu/x64，也不能把Windows node_modules或Chromium带到Linux。Python解压要求3.12+；制品必须在目标OS/架构/固定Node上安装生产依赖并实际通过固定Chromium sandbox/字体/五类PNG烟测，生成 `prepared:true` 后才能晋级。`verify-cloud-candidate.mjs` 默认要求干净来源、精确Node版本/ABI、完整清单及摘要。
+确认实际 OS/CPU、Node路径/完整版本与ABI、systemd/Python版本、CPU/内存/磁盘、用户/UID、已占端口、现有服务/卷/备份、MySQL/Redis、TLS与反代。不得假定Ubuntu/x64，也不能把Windows node_modules或Chromium带到Linux。Python解压要求 `tarfile.data_filter` 安全能力（支持含安全回移植的Python3.11.6等版本），仍强制 `extractall(filter='data')`；制品必须在目标OS/架构/固定Node上安装生产依赖并实际通过固定Chromium sandbox/字体/五类PNG烟测，生成 `prepared:true` 后才能晋级。`verify-cloud-candidate.mjs` 默认要求干净来源、精确Node版本/ABI、完整清单及摘要。
 
 ## 一次性受控初始化（运维审核后执行）
 
@@ -26,7 +26,7 @@
 sudo -n /usr/local/libexec/flymind-promote <staging|production> <safeReleaseId> <archiveSHA256>
 ```
 
-不能变更相同releaseId对应的字节。调度器仅固定参数、子命令无shell且不继承上传者PATH；可信标准PATH下的Python3须至少3.12。先以O_NOFOLLOW打开上传文件并复制到root私有随机临时文件，再对该副本流式校验SHA和解压，上传者后续改动原文件不会进入提取。提取使用Python data filter、数量/展开字节预算、禁止越界路径；随后校验每个文件/链接/未知文件及root权限，制品目录需可遍历、普通文件需可读，不能只通过root烟测而让服务账号打不开。现有Node依赖的包内链接只允许最终目标仍在制品内。
+不能变更相同releaseId对应的字节。调度器仅固定参数、子命令无shell且不继承上传者PATH；可信标准PATH下的Python3须提供 `tarfile.data_filter`。先以O_NOFOLLOW打开上传文件并复制到root私有随机临时文件，再对该副本流式校验SHA和解压，上传者后续改动原文件不会进入提取。提取使用Python data filter、数量/展开字节预算、禁止越界路径；随后校验每个文件/链接/未知文件及root权限，制品目录需可遍历、普通文件需可读，不能只通过root烟测而让服务账号打不开。现有Node依赖的包内链接只允许最终目标仍在制品内。
 
 ## 首次全栈装配不由dispatcher完成
 

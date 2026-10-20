@@ -24,7 +24,7 @@
 
 - 固定Playwright1.62.1本地源码 `node_modules/playwright-core/lib/coreBundle.js` 的hostPlatform逻辑：未识别Linux发行版回退ubuntu24.04包，并标为非官方支持。OpenCloudOS实际Chromium动态库、glibc、sandbox/user namespaces必须实测；`install-deps`的Ubuntu apt流程不能当作该机器已兼容。不使用no-sandbox兜底。
 - `verify-cloud-candidate.mjs` 当前要求完整Node版本和ABI精确一致。宝塔已有Node若不是22.23.3，不能仅因同为22就跳过；PM应选择单独固定Node或统一正式候选版本（不是本审查擅改依赖）。
-- `promote.mjs` 当前强制Python3.12+并使用 `tarfile.extractall(filter='data')`。目标Python版本未知，必须先核；若系统是有安全data_filter回移植的旧Python，可另审批改为能力检测，但不能删除filter、用裸tar替换或降低越界/预算检查。本批未改该实现。
+- DEPLOY-FLY-02追加盘点确认目标Python3.11.6具有安全 `tarfile.data_filter`。PM授权将promote硬版本检查改为该能力检测，保留 `tarfile.extractall(filter='data')` 和全部路径/数量/展开预算；缺能力仍明确拒绝，不使用裸tar兜底。其余目标Linux兼容仍须实测。
 - 服务器内存紧张：源码/Java/管理端构建放CI，不在服务器并行pnpm/Maven/浏览器矩阵；不新起另一套完整staging常驻占同一端口/内存。先测现有Java/MySQL/Redis RSS，再限定新增控制面heap、Node及单全局renderer预算。swap不等于8GB可用RAM，不承诺CI导出耗时可在此机器复现。
 - `candidate`逐文件校验当前readFile会暂存大二进制；若目标内存峰值明显受影响，可单独改成流式hash，不影响SHA语义。本批未改源码。
 
