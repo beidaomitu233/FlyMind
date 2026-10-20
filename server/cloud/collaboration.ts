@@ -72,4 +72,7 @@ export class CloudCollaborationRooms {
   }}
  }
  close(){this.closed=true;clearInterval(this.timer);for(const peer of this.peers)this.drop(peer)}
+ /** Transport reconnect is not an ACK or revocation. Clients keep their durable
+  * unconfirmed draft and resume from the last applied persisted revision. */
+ quiesce(){if(this.closed)return;for(const peer of this.peers)this.send(peer,'reconnect',{code:'CLOUD_UPDATING',retryAfter:2});this.close()}
 }

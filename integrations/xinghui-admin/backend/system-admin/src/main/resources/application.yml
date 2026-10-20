@@ -2,10 +2,18 @@
 server:
   address: ${ADMIN_BIND_ADDRESS:127.0.0.1}
   port: ${ADMIN_PORT:18080}
+  shutdown: graceful
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
   application:
     name: flymind-admin
   datasource:
+    druid:
+      stat-view-servlet:
+        enabled: false
+      web-stat-filter:
+        enabled: false
     dynamic:
       primary: master
       strict: true
@@ -21,10 +29,13 @@ spring:
       port: ${ADMIN_REDIS_PORT:6379}
       password: ${ADMIN_REDIS_PASSWORD}
       database: ${ADMIN_REDIS_DATABASE:0}
+      timeout: 3s
+      connect-timeout: 3s
   flyway:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: false
+    clean-disabled: true
 mybatis-plus:
   mapper-locations: classpath*:mapper/**/*.xml
   configuration:

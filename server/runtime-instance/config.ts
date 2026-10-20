@@ -8,7 +8,7 @@ import {RuntimeInstanceError,type EnsureNativeRuntimeOptions,type NativeRuntimeC
 import {nativeDocumentCapabilities} from '../../src/drawing/services/native-capabilities'
 import {PACKAGE_ROOT} from '../package-paths'
 export const API_VERSION=1 as const
-export const runtimeCapabilities=():NativeRuntimeCapabilities=>{const c=nativeDocumentCapabilities();return {apiVersion:1,drawingProjectVersion:3,drawioVersion:DRAWIO_VERSION,adapterVersion:DRAWIO_ADAPTER_VERSION,profile:{...DEFAULT_SWIMLANE_PROFILE},supportedKinds:c.supportedKinds,profiles:c.profiles,configureRendering:c.configureRendering,imports:c.imports,nativePilot:true,nativeDocumentWrites:true,mixedWorkspace:true,nativeExports:true}}
+export const runtimeCapabilities=():NativeRuntimeCapabilities=>{const c=nativeDocumentCapabilities();return {apiVersion:1,drawingProjectVersion:3,drawioVersion:DRAWIO_VERSION,adapterVersion:DRAWIO_ADAPTER_VERSION,profile:{...DEFAULT_SWIMLANE_PROFILE},supportedKinds:c.supportedKinds,profiles:c.profiles,configureRendering:c.configureRendering,imports:c.imports,nativePilot:true,nativeDocumentWrites:true,mixedWorkspace:true,nativeExports:true,localAuthorization:true}}
 export {VERSION}
 export function runtimeConfiguration(options:EnsureNativeRuntimeOptions={}){
  const env={...process.env,...options.env},projectRoot=resolve(options.projectRoot??PACKAGE_ROOT)

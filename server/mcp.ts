@@ -1,4 +1,6 @@
-// Select before importing either implementation: never init legacy storage in native pilot.
-if(process.env.FLYMIND_NATIVE_PILOT==='1')await import('./mcp-native/index')
-else await import('./mcp-legacy')
+// Shipped v1.1 entry never falls back to a direct, unguarded legacy store.
+// Legacy source development must explicitly invoke mcp-legacy.ts itself.
+import {localRuntimeAuthorization} from './local-auth/runtime'
+localRuntimeAuthorization()
+await import('./mcp-native/index')
 export {}

@@ -44,3 +44,5 @@ docs/
 # JVM 崩溃转储
 hs_err_pid*.log
 replay_pid*.log
+
+deploy/out/

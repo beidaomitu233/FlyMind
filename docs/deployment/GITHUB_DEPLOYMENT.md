@@ -1,5 +1,7 @@
 # v1.1 GitHub 自动部署方案（待 SSH 探测与实施）
 
+最新实现：已编写 `.github/workflows/cloud-candidate.yml`、`cloud-promote.yml`、`scripts/build-cloud-bundle.mjs` 和受限晋级调度器。实际使用入口见 [v1.1 安装与持续更新](../releases/V1_1_DEPLOY_AND_USE.md)、[部署配置与边界](../../deploy/cloud/README.md)。尚未推送执行 Actions 或连接服务器；下文“仅 docs 示例/未编写脚本”为方案审计时的历史状态。自动晋级当前覆盖 app+admin，Java/网关需独立装配，不能称全栈自动发布。
+
 日期：2026-10-20。状态：方案经PM定点复核，实际配置和部署待SSH探测及实施验收，**没有启动、部署或启用工作流**。用户尚未提供目标服务器。本文件和 [workflow示例](examples/cloud-deploy.disabled.example.yml) 仅位于 docs；示例首job恒失败，不可直接作为生产流水线。
 
 ## 1. 交付目标与当前事实

@@ -50,3 +50,6 @@ vite.config.ts.*
 *.sw?
 .history
 .cursor
+
+# Local verification evidence
+.validation/

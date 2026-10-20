@@ -67,7 +67,7 @@ async function submit(){
   }
  }finally{working.value=false;update()}
 }
-function resultText(row:Row){if(row.result==='imported')return '已导入';if(row.result==='duplicate')return '已存在，未重复导入';if(row.unknown)return '结果待确认，可重试';if(row.error)return row.error;if(row.status==='duplicate')return row.reason??'重复来源';if(row.status==='unsupported'||row.status==='conflict')return row.reason;return row.preview?.duplicate?'已存在':row.preview?'可导入':'待预检'}
+function resultText(row:Row){if(row.result==='imported')return '已导入';if(row.result==='duplicate')return '已存在，未重复导入';if(row.unknown)return '结果待确认，可重试';if(row.error)return row.error;if(row.status==='duplicate')return row.reason??'重复来源';if(row.status==='unsupported'||row.status==='conflict')return row.reason;return row.preview?.duplicate?'已存在':row.preview?row.preview.quality?.issues.length?'可导入 · '+row.preview.quality.issues.length+' 项内容建议':'可导入':'待预检'}
 defineExpose({show,dropped})
 </script>
 <template>

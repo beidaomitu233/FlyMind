@@ -1,6 +1,7 @@
 import {parseNative,attr} from '../drawio/xml'
 import {businessLibraryConfiguration} from './library'
 import {nativeProtocolPatch} from '../collaboration/protocol-patch'
+import {NativeRemoteUndoGuard} from '../collaboration/undo-guard'
 
 export const MAX_HOST_XML_BYTES=5*1024*1024
 export const MAX_HOST_MESSAGE_BYTES=12*1024*1024
@@ -136,11 +137,12 @@ export class DrawioHostController {
     return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.incremental.delete(id);reject(new DrawioHostProtocolError('REMOTE_PATCH_TIMEOUT','原生增量同步超时，当前草稿已保留'))},this.options.requestTimeoutMs??10000);this.incremental.set(id,{action,resolve,reject,timer});try{this.send(action,{...fields,message:id})}catch(error){clearTimeout(timer);this.incremental.delete(id);reject(error)}})
   }
   /** Public patch keeps native Undo and viewport; never loads the full document. */
-  async applyRemoteXML(fromXML:string,toXML:string):Promise<void>{
+  async applyRemoteXML(fromXML:string,toXML:string,protectUndo=true):Promise<void>{
     if(!validXML(fromXML)||!validXML(toXML))throw new DrawioHostProtocolError('INVALID_XML','协同XML无效或超过预算')
     const patch=nativeProtocolPatch(fromXML,toXML)
     if(Object.keys(patch).length)await this.incrementalRequest('patch',{patch})
     await this.incrementalRequest('resetDiff')
+    if(protectUndo)this.remoteUndo.observe(fromXML,toXML)
   }
   async groupSelection(ungroup=false):Promise<string>{
     if(this.phase!=='ready')throw new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪')
@@ -148,8 +150,15 @@ export class DrawioHostController {
     this.send('invokeAction',{actionName:ungroup?'ungroup':'group'})
     return this.commitAndCaptureXML()
   }
-  undo():Promise<void>{if(this.phase!=='ready')return Promise.reject(new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪'));this.send('invokeAction',{actionName:'undo'});return Promise.resolve()}
-  redo():Promise<void>{if(this.phase!=='ready')return Promise.reject(new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪'));this.send('invokeAction',{actionName:'redo'});return Promise.resolve()}
+  private readonly remoteUndo=new NativeRemoteUndoGuard()
+  private async historyAction(actionName:'undo'|'redo'):Promise<void>{
+    if(this.phase!=='ready')throw new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪')
+    if(!this.options.collaboration){this.send('invokeAction',{actionName});return}
+    const before=await this.commitAndCaptureXML();this.send('invokeAction',{actionName});const after=await this.captureXML()
+    try{this.remoteUndo.assertSafe(before,after)}catch(error){try{await this.applyRemoteXML(after,before,false)}catch{throw new DrawioHostProtocolError('REMOTE_UNDO_RESTORE_FAILED','原生撤销恢复未确认，请保留草稿并载入最新图形')};throw error}
+  }
+  undo():Promise<void>{return this.historyAction('undo')}
+  redo():Promise<void>{return this.historyAction('redo')}
   fit(){if(this.phase!=='ready')throw new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪');this.send('fit',{border:16,maxScale:1})}
   dispose(error:Error=new DrawioHostProtocolError('SESSION_CLOSED','编辑会话已关闭')){
     this.phase='closed';clearTimeout(this.startup);this.startup=undefined

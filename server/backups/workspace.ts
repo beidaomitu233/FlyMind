@@ -63,7 +63,7 @@ export async function supplyFingerprint(projectRoot?:string){
  fingerprints.playwrightRegistry=hash(await readFile(join(dirname(createRequire(import.meta.url).resolve('playwright-core/package.json')),'browsers.json')))
  return fingerprints
 }
-function jobRow(row:any):StoredNativeExport{return {id:row.id,diagramId:row.diagram_id,dataRootId:row.data_root_id,revision:row.revision,requestId:row.request_id,requestHash:row.request_hash,snapshot:JSON.parse(row.snapshot),snapshotSha256:row.snapshot_hash,options:JSON.parse(row.options),status:row.status,createdAt:row.created_at,updatedAt:row.updated_at,attempts:row.attempts,leaseToken:row.lease_token,manifest:row.manifest?JSON.parse(row.manifest):undefined}}
+function jobRow(row:any):StoredNativeExport{return {id:row.id,diagramId:row.diagram_id,dataRootId:row.data_root_id,revision:row.revision,requestId:row.request_id,requestHash:row.request_hash,snapshot:JSON.parse(row.snapshot),snapshotSha256:row.snapshot_hash,options:JSON.parse(row.options),...(row.release?{release:JSON.parse(row.release)}:{}),status:row.status,createdAt:row.created_at,updatedAt:row.updated_at,attempts:row.attempts,leaseToken:row.lease_token,manifest:row.manifest?JSON.parse(row.manifest):undefined}}
 export async function validateWorkspace(root:string){
  const databaseFile=join(root,'flymind.sqlite');if((await lstat(databaseFile)).isSymbolicLink()||!resolve(await realpath(databaseFile)).startsWith(resolve(root)+sep))throw new StoreError('数据库文件路径越界',400,undefined,'BACKUP_PATH_INVALID')
  const db=new Database(join(root,'flymind.sqlite'),{readonly:true,fileMustExist:true})

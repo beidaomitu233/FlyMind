@@ -1,7 +1,7 @@
 import type {DiagramKind} from '../../src/drawing/core/model'
 import type {DrawioKindCapabilities} from '../../src/drawing/engine/types'
 export interface NativeRuntimeCapabilities {
- nativePilot:boolean;nativeDocumentWrites:boolean;mixedWorkspace:boolean;nativeExports:boolean
+ nativePilot:boolean;nativeDocumentWrites:boolean;mixedWorkspace:boolean;nativeExports:boolean;localAuthorization:boolean
  apiVersion:1;drawingProjectVersion:3;drawioVersion:string;adapterVersion:string;profile:{id:string;version:string}
  supportedKinds:DiagramKind[];configureRendering:boolean;profiles:DrawioKindCapabilities[]
  imports:{contentJSON:boolean;businessProjectJSON:boolean;drawio:boolean;canvasOnly:boolean;maxSourceBytes:number;maxRequestBytes:number;maxXMLBytes:number}

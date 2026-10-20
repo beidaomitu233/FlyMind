@@ -16,6 +16,10 @@ import {runtimeAssetsRouter} from './rendering/assets'
 import {prepareNativeRuntime} from './runtime-instance/boot'
 import {runtimeSessionMiddleware,explicitRuntimeShutdown} from './runtime-instance/session'
 import {challengeProof} from './runtime-instance/protocol'
+import {localRuntimeAuthorization,localAuthorizationMiddleware} from './local-auth/runtime'
+import {localAuthBrowserRouter} from './local-auth'
+import {runtimeOrigin} from './runtime-instance/origin'
+const authorizationConfiguration=localRuntimeAuthorization()
 // Guard the pilot root before any store construction/init can touch SQLite.
 const pilot=nativePilotConfiguration(process.env,PROJECT_ROOT)
 const nativeBoot=pilot.enabled?await prepareNativeRuntime():undefined
@@ -27,11 +31,15 @@ const app=express(),port=nativeBoot?.port??Number(process.env.FLYMIND_PORT||5179
 const nativeService=new NativeDiagramService(store,pilot.enabled),workspaceId=store.nativeWorkspaceId(false),dataRootId=nativeService.dataRootId||(workspaceId?workspaceDataRootId(workspaceId):pilot.dataRootId)
 // Local tools and editor only; reject cross-origin writes and DNS rebinding.
 app.use((req,res,next)=>{const host=req.hostname;if(!['localhost','127.0.0.1','[::1]'].includes(host)){res.status(403).json({error:'仅限本机访问',code:'LOCAL_ACCESS_ONLY'});return}const origin=req.headers.origin;if(origin&&!runtimeAllowedOrigins(port).has(origin)){res.status(403).json({error:'来源不允许',code:'ORIGIN_FORBIDDEN'});return}next()})
-app.use(express.json({limit:'4mb'}))
 const currentDataRootId=()=>{const current=store.nativeWorkspaceId(false);return current?workspaceDataRootId(current):dataRootId}
+const authorizationGate=authorizationConfiguration.create(dataRootId)
+app.use('/studio-api/local-auth',localAuthBrowserRouter(authorizationGate,{runtimeOrigin:runtimeOrigin(port)}))
+app.use(express.json({limit:'4mb'}))
 app.get('/studio-api/health',(req,res)=>{const identity=currentDataRootId(),health=nativeBoot?nativeBoot.health(identity):{name:'flymind',version:VERSION,storage:'sqlite',dataRootId:identity,capabilities:{nativePilot:pilot.enabled,nativeDocumentWrites:pilot.enabled,mixedWorkspace:pilot.enabled}};res.set('Cache-Control','no-store');const challenge=req.get('X-FlyMind-Challenge');if(nativeBoot&&challenge&&/^[a-f0-9]{64}$/.test(challenge))res.json({...health,proof:challengeProof(nativeBoot.sessionToken,challenge,nativeBoot.health(identity))});else res.json(health)})
 if(nativeBoot)app.use('/studio-api',runtimeSessionMiddleware(nativeBoot,currentDataRootId))
 if(nativeBoot)app.post('/studio-api/runtime/shutdown',explicitRuntimeShutdown(nativeBoot,currentDataRootId,shutdown))
+// Bootstrap establishes only a local transport cookie, never account authorization.
+app.use('/studio-api',async(req,res,next)=>{if(req.path==='/session')return next();if(currentDataRootId()!==dataRootId){res.status(409).json({code:'LOCAL_AUTH_BINDING_MISMATCH',error:'工作区身份已改变，未自动重绑授权'});return}return localAuthorizationMiddleware(authorizationGate)(req,res,next)})
 const nativeExports=new NativeExportService(store,pilot.enabled)
 app.use('/studio-api/native',nativeRouter(nativeService,nativeExports))
 if(pilot.enabled){app.use(runtimeAssetsRouter());exportWorker=new NativeExportWorker(store,new NativeDrawioRenderer());exportWorker.start()}
@@ -56,7 +64,7 @@ app.patch('/studio-api/diagrams/:id',async(req,res)=>res.json(await store.patch(
 app.delete('/studio-api/diagrams/:id',async(req,res)=>{await store.delete(req.params.id,Number(req.query.revision));res.status(204).end()})
 app.post('/studio-api/diagrams/:id/export',async(req,res)=>{const record=await store.get(req.params.id),result=await renderArtifacts(record,store.root);res.json({revision:record.revision,exportedAt:result.exportedAt,files:result.files,urls:result.urls})})
 if(pilot.enabled)app.use('/artifacts',(_req,res)=>res.status(403).json({error:'Native pilot仅通过认证制品API下载',code:'LEGACY_ARTIFACT_DISABLED'}))
-else app.use('/artifacts',async(req,_res,next)=>{try{await store.get(req.path.split('/')[1]||'');next()}catch(e){next(e)}},express.static(join(store.root,'artifacts'),{setHeaders:res=>res.setHeader('Cache-Control','no-cache')}))
+else app.use('/artifacts',localAuthorizationMiddleware(authorizationGate),async(req,_res,next)=>{try{await store.get(req.path.split('/')[1]||'');next()}catch(e){next(e)}},express.static(join(store.root,'artifacts'),{setHeaders:res=>res.setHeader('Cache-Control','no-cache')}))
 app.use(express.static(join(PROJECT_ROOT,'dist')))
 app.get('/',(_req,res)=>res.sendFile(join(PROJECT_ROOT,'dist/index.html')))
 app.use((err:Error,_req:express.Request,res:express.Response,_next:express.NextFunction)=>{const result=nativeError(err);res.status(result.status).json(result.body)})

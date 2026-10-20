@@ -35,7 +35,7 @@ class FlymindIdentityTest {
  @BeforeEach void reset()throws Exception {
   db.execute("DROP ALL OBJECTS");
   db.execute("CREATE TABLE sys_user(user_id BIGINT PRIMARY KEY,tenant_id VARCHAR(20),username VARCHAR(50),nickname VARCHAR(50),password VARCHAR(100),mobile VARCHAR(20),status INT,is_deleted INT)");
-  try(var c=source.getConnection()){ScriptUtils.executeSqlScript(c,new ClassPathResource("db/migration/V20261019_01__flymind_identity.sql"));ScriptUtils.executeSqlScript(c,new ClassPathResource("db/migration/V20261019_03__flymind_oauth.sql"));}
+  try(var c=source.getConnection()){ScriptUtils.executeSqlScript(c,new ClassPathResource("db/migration/V20261019_01__flymind_identity.sql"));ScriptUtils.executeSqlScript(c,new ClassPathResource("db/migration/V20261019_03__flymind_oauth.sql"));ScriptUtils.executeSqlScript(c,new ClassPathResource("db/migration/V20261020_01__flymind_local_device.sql"));}
   BCryptPasswordEncoder passwords=new BCryptPasswordEncoder(4);for(int i=1;i<=4;i++)db.update("INSERT INTO sys_user VALUES(?,?,?,?,?,?,1,0)",i,i==4?"another-tenant":"app-test","account"+i,"用户"+i,passwords.encode("correct-password"),"1380000000"+i);
   time.set(1800000000000L);http=MockMvcBuilders.standaloneSetup(new FlymindController(service)).setControllerAdvice(new FlymindErrors()).build();
  }
@@ -54,7 +54,7 @@ class FlymindIdentityTest {
   String a=login(1),tid=team(a);http.perform(post("/app/flymind/session/introspect").header("Authorization",a).contentType("application/json").content("{\"teamId\":\""+tid+"\"}")).andExpect(status().isOk()).andExpect(header().string("Cache-Control","no-store")).andExpect(jsonPath("$.data.user.id").value("1")).andExpect(jsonPath("$.data.team.role").value("owner")).andExpect(jsonPath("$.data.session.id").isString()).andExpect(jsonPath("$.data.sessionToken").doesNotExist());
   http.perform(post("/app/flymind/session/introspect").header("Authorization",login(2)).contentType("application/json").content("{\"teamId\":\""+tid+"\"}")).andExpect(status().isForbidden());
  }
- @Test void infrastructureFailureIs503NotStaleAuthorization()throws Exception {String a=login(1);db.execute("DROP TABLE app_flymind_session");http.perform(get("/app/flymind/auth/me").header("Authorization",a)).andExpect(status().isServiceUnavailable());}
+ @Test void infrastructureFailureIs503NotStaleAuthorization()throws Exception {String a=login(1);db.execute("DROP TABLE app_flymind_session CASCADE");http.perform(get("/app/flymind/auth/me").header("Authorization",a)).andExpect(status().isServiceUnavailable());}
  @Test void parallelAcceptIsAtomicAndRemovedInviterCannotGrant(){
   String a=login(1),b=login(2),tid=team(a);var invite=service.invite(a,tid,"13800000002","editor");
   var pool=java.util.concurrent.Executors.newFixedThreadPool(2);

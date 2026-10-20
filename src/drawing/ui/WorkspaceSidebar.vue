@@ -1,5 +1,5 @@
 <template>
-  <aside class="studio-sidebar workspace-sidebar" :style="{width:width+'px'}">
+  <aside class="studio-sidebar workspace-sidebar" :style="{width:width+'px'}" @dragover.prevent @drop.prevent="drop($event,null)">
     <header class="workspace-header"><button class="workspace-brand workspace-menu-trigger" aria-label="工作区菜单：新建分组、导入、排序" title="工作区菜单 · 新建分组、导入、排序" @click.stop="openMenu('workspace','',$event)"><strong>FlyMind</strong><Icon name="chevron" :size="11"/></button><button class="studio-icon" aria-label="搜索图形" title="搜索（Ctrl+K）" @click="showSearch"><Icon name="search" :size="16"/></button><button class="studio-icon" aria-label="新建图形" title="新建图形" :disabled="props.readOnly" @click="emit('new',currentGroup)"><Icon name="plus" :size="18"/></button></header>
     <div v-if="searchOpen" class="workspace-search"><Icon name="search" :size="14"/><input ref="searchField" v-model="search" placeholder="搜索图形" aria-label="搜索图形"/><button class="studio-icon" aria-label="关闭搜索" @click="closeSearch"><Icon name="close" :size="13"/></button></div>
     <div v-if="props.showGroupCreation&&!props.readOnly" class="workspace-section-heading"><span>图形</span><button class="studio-icon" aria-label="新建分组" title="新建分组" :disabled="!studio.shared||!!studio.pending||newGroup" @click="beginGroup"><Icon name="folder-plus" :size="16"/></button></div>

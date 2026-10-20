@@ -13,7 +13,7 @@ export class CloudOAuthMcpHost {
  private readonly entries=new Map<string,Entry>()
  private creating=0;private closed=false;private readonly timer:NodeJS.Timeout
  private readonly max:number;private readonly ttl:number
- constructor(private readonly provider:CloudOAuthProvider,private readonly options:{maxSessions?:number;idleMs?:number}={}){
+ constructor(private readonly provider:CloudOAuthProvider,private readonly options:{maxSessions?:number;idleMs?:number;applicationOrigin?:string}={}){
   this.max=options.maxSessions??64;this.ttl=options.idleMs??600000
   if(!Number.isInteger(this.max)||this.max<1||this.max>1024||!Number.isInteger(this.ttl)||this.ttl<50||this.ttl>3600000)throw Error('Invalid MCP session budget')
   this.timer=setInterval(()=>{void this.sweep()},Math.min(this.ttl,30000));this.timer.unref()
@@ -40,7 +40,7 @@ export class CloudOAuthMcpHost {
      await this.sweep()
      if(this.entries.size+this.creating>=this.max)throw new CloudAccessError(503,'MCP_SESSION_CAPACITY','会话容量已满，请稍后重试')
      this.creating++;reserved=true
-      const session=await createCloudMcpSession({cloudOrigin:this.provider.options.publicOrigin,teamId:principal.team.id,token,identity:this.provider.identity,fetch:this.provider.options.fetch,allowInsecureLoopback:this.provider.options.allowInsecureLoopback,requestToken:()=>{
+      const session=await createCloudMcpSession({cloudOrigin:this.provider.options.publicOrigin,applicationOrigin:this.options.applicationOrigin,teamId:principal.team.id,token,identity:this.provider.identity,fetch:this.provider.options.fetch,allowInsecureLoopback:this.provider.options.allowInsecureLoopback,requestToken:()=>{
        const value=this.context.getStore()?.token;if(!value)throw new CloudAccessError(401,'MCP_REQUEST_CONTEXT_REQUIRED','请求上下文已结束');return value
       }})
       if(this.closed){await session.close();throw new CloudAccessError(503,'MCP_CLOSED','服务已关闭')}

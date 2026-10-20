@@ -6,13 +6,23 @@ import {applyDrawioAppearance,type DrawioAppearance} from '../engine/drawio-host
 import {hasUncommittedNativeText} from '../engine/drawio-host/editing'
 
 const props=defineProps<{sessionKey:string;initialXML:string;title?:string;appearance?:DrawioAppearance;collaboration?:boolean}>()
-const emit=defineEmits<{ready:[event:HostReady];xml:[event:HostXML];error:[event:HostError];saveRequested:[event:HostSaveRequested]}>()
+const emit=defineEmits<{ready:[event:HostReady];xml:[event:HostXML];error:[event:HostError];saveRequested:[event:HostSaveRequested];historyRequested:[action:'undo'|'redo']}>()
 // Initial document is immutable for this mounted session. Saving never reloads it.
 const initial={sessionKey:props.sessionKey,initialXML:props.initialXML,title:props.title}
 const iframe=ref<HTMLIFrameElement>(),src=ref<string>(),visible=ref(false),loadFailed=ref(false),attempt=ref(0)
 let disposed=false,paintFrame:number|undefined,paintGeneration=0
 function cancelReveal(){paintGeneration++;if(paintFrame!==undefined)cancelAnimationFrame(paintFrame);paintFrame=undefined}
 function applyAppearance(){const document=iframe.value?.contentDocument;if(document?.head)applyDrawioAppearance(document,props.appearance??'light')}
+let historyDocument:Document|undefined
+let interactionUntil=0,pointerStarted=0
+function pointerDown(){pointerStarted=Date.now();interactionUntil=Date.now()+300}
+function pointerMove(event:PointerEvent){if(event.buttons)interactionUntil=Date.now()+300}
+function pointerUp(){pointerStarted=0;interactionUntil=Date.now()+150}
+function isInteracting(){return Date.now()<interactionUntil||!!pointerStarted&&Date.now()-pointerStarted<30000||hasUncommittedNativeText(()=>iframe.value?.contentDocument??null)}
+function historyKey(event:KeyboardEvent){if(!props.collaboration||!visible.value||!(event.ctrlKey||event.metaKey)||event.altKey)return;const target=event.target as Element|null;if(target?.closest('input,textarea,[contenteditable="true"]'))return;const key=event.key.toLowerCase(),action=key==='z'?(event.shiftKey?'redo':'undo'):key==='y'?'redo':undefined;if(action){event.preventDefault();event.stopImmediatePropagation();emit('historyRequested',action)}}
+function historyClick(event:MouseEvent){if(!props.collaboration||!visible.value)return;const target=(event.target as Element|null)?.closest('[title]'),title=target?.getAttribute('title')??'',action=/^(撤销|Undo)(?:\s|\(|$)/.test(title)?'undo':/^(重做|Redo)(?:\s|\(|$)/.test(title)?'redo':undefined;if(action){event.preventDefault();event.stopImmediatePropagation();emit('historyRequested',action)}}
+function detachDocument(){historyDocument?.removeEventListener('keydown',historyKey,true);historyDocument?.removeEventListener('click',historyClick,true);historyDocument?.removeEventListener('pointerdown',pointerDown,true);historyDocument?.removeEventListener('pointermove',pointerMove,true);historyDocument?.removeEventListener('pointerup',pointerUp,true);historyDocument?.removeEventListener('pointercancel',pointerUp,true)}
+function loaded(){applyAppearance();detachDocument();historyDocument=iframe.value?.contentDocument??undefined;historyDocument?.addEventListener('keydown',historyKey,true);historyDocument?.addEventListener('click',historyClick,true);historyDocument?.addEventListener('pointerdown',pointerDown,true);historyDocument?.addEventListener('pointermove',pointerMove,true);historyDocument?.addEventListener('pointerup',pointerUp,true);historyDocument?.addEventListener('pointercancel',pointerUp,true)}
 function reveal(event:HostReady){
   applyAppearance()
   const generation=++paintGeneration
@@ -32,22 +42,23 @@ function boot(){
     window.addEventListener('message',receive);const url=new URL(drawioHostURL(window.location.origin));url.searchParams.set('tooltips','0');url.searchParams.set('dark','0');src.value=url.href
   }catch(error){report(error)}
 }
-onMounted(boot)
+onMounted(()=>{window.addEventListener('pointerup',pointerUp,true);boot()})
 async function retryLoad(){if(disposed)return;cancelReveal();controller?.dispose();controller=undefined;visible.value=false;loadFailed.value=false;src.value=undefined;attempt.value++;await nextTick();boot()}
 watch(()=>props.appearance,applyAppearance)
 watch(()=>props.sessionKey,key=>{if(key!==initial.sessionKey){cancelReveal();visible.value=false;controller?.dispose();report(new DrawioHostProtocolError('SESSION_CHANGED','切图须以 sessionKey 作为组件 key 重新挂载'))}})
-onBeforeUnmount(()=>{disposed=true;cancelReveal();window.removeEventListener('message',receive);controller?.dispose();controller=undefined})
+onBeforeUnmount(()=>{disposed=true;detachDocument();window.removeEventListener('pointerup',pointerUp,true);cancelReveal();window.removeEventListener('message',receive);controller?.dispose();controller=undefined})
 const requireController=()=>{if(!controller)throw new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪');return controller}
 defineExpose({groupSelection:(ungroup=false)=>requireController().groupSelection(ungroup),getSelection:()=>requireController().getSelection(),mergeXML:(xml:string)=>requireController().mergeXML(xml),undo:()=>requireController().undo(),redo:()=>requireController().redo(),deleteSelectedBranch:()=>controller?controller.deleteSelectedBranch():Promise.reject(new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪')),captureXML:()=>controller?.captureXML()??Promise.reject(new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪')),
   applyRemoteXML:(fromXML:string,toXML:string)=>requireController().applyRemoteXML(fromXML,toXML),
   commitAndCaptureXML:()=>controller?.commitAndCaptureXML()??Promise.reject(new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪')),
   hasUncommittedText:()=>hasUncommittedNativeText(()=>iframe.value?.contentDocument??null),
+  isInteracting,
   fit:()=>{try{if(!controller)throw new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪');controller.fit()}catch(error){report(error)}}})
 </script>
 
 <template>
   <div class="drawio-host-surface" :data-appearance="appearance??'light'" :aria-busy="!visible&&!loadFailed">
-    <iframe :key="attempt" ref="iframe" :src="src" @load="applyAppearance" class="drawio-host" :class="{'drawio-host-pending':!visible}" :aria-hidden="!visible" :inert="!visible" :tabindex="visible?undefined:-1" title="FlyMind 原生图形编辑器" referrerpolicy="same-origin" />
+    <iframe :key="attempt" ref="iframe" :src="src" @load="loaded" class="drawio-host" :class="{'drawio-host-pending':!visible}" :aria-hidden="!visible" :inert="!visible" :tabindex="visible?undefined:-1" title="FlyMind 原生图形编辑器" referrerpolicy="same-origin" />
     <button v-if="loadFailed&&!visible" class="drawio-host-retry" @click="retryLoad">重新加载画布</button>
   </div>
 </template>

@@ -36,6 +36,7 @@ export class NativeDrawioRenderer {
  private browser?:Promise<Browser>;private server?:Server;private startup?:Promise<string>;private closed=false
  private jobs=new Set<AbortController>()
  constructor(options:{assets?:RuntimeAssetPaths}={}){this.assets=options.assets??resolveRuntimeAssets()}
+ async ready(){await this.start();await this.getBrowser()}
  private async start(){
   if(!this.startup)this.startup=(async()=>{
    await checkRuntimeAssets(this.assets);if(this.closed)throw new NativeRenderError('RENDERER_CLOSED','renderer 已关闭')
@@ -50,7 +51,7 @@ export class NativeDrawioRenderer {
   if(this.browser)return this.browser
   let owned:HiddenBrowser|undefined
   const launching=(async()=>{
-   const browser=process.platform==='win32'?(owned=await launchHiddenBrowser(this.assets.browserExecutable)).browser:await chromium.launch({executablePath:this.assets.browserExecutable,headless:true,args:['--disable-background-networking','--disable-component-update']})
+   const browser=process.platform==='win32'?(owned=await launchHiddenBrowser(this.assets.browserExecutable)).browser:await chromium.launch({executablePath:this.assets.browserExecutable,headless:true,chromiumSandbox:true,args:['--disable-background-networking','--disable-component-update']})
    if(owned)this.ownedBrowser=owned
    if(this.closed||browser.version()!==RUNTIME_BROWSER_VERSION){if(owned)await owned.close();else await browser.close();throw new NativeRenderError(this.closed?'RENDERER_CLOSED':'BROWSER_VERSION_MISMATCH',this.closed?'renderer 已关闭':`需要 ${RUNTIME_BROWSER_VERSION}，实际 ${browser.version()}`)}
    browser.on('disconnected',()=>{if(this.browser===launching)this.browser=undefined})

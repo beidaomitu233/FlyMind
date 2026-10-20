@@ -26,6 +26,7 @@ async function setup(options:{maxSessions?:number;idleMs?:number}={}){
   const success=(data:any)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({code:200,message:'ok',data}))}
   const fail=(error='invalid_grant',status=400)=>{res.statusCode=status;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({code:status,data:{error},message:'internal path must not leak'}))}
   if(req.url==='/app/flymind/auth/login')return success({sessionToken:appToken,expiresAt:Date.now()+600000,user:{id:'alice',name:'Alice'}})
+  if(req.url==='/app/flymind/auth/me')return req.headers.authorization==='Bearer '+appToken?success({user:{id:'alice',name:'Alice'},expiresAt:Date.now()+600000,teams:[{id:'team-a',name:'A',role:'editor'}]}):fail('access_denied',401)
   if(req.url?.startsWith('/app/flymind/oauth/')){if(req.headers['x-flymind-gateway-key']!==gateway)return fail('access_denied',403);gatewayCalls++}
   const path=req.url?.replace('/app/flymind/oauth','')
   if(path?.startsWith('/clients/')&&req.method==='GET'){const c=clients.get(path.slice(9));return c?success(c):fail('invalid_client',404)}
@@ -59,7 +60,7 @@ async function setup(options:{maxSessions?:number;idleMs?:number}={}){
  const authorityURL=await listen(authority),http=createServer();base=await listen(http)
  const cloud=createCloudHTTP({controlPlaneURL:authorityURL,publicOrigin:base,cloudDataRoot:join(root,'data'),gatewayKey:gateway,allowInsecureLoopback:true,renderer:new NativeDrawioRenderer(),serveAssets:false,maxMcpSessions:options.maxSessions??2,mcpSessionIdleMs:options.idleMs??60000})
  http.on('request',cloud.app)
- const post=(path:string,body:any,headers:Record<string,string>={})=>fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',Origin:base,...headers},body:JSON.stringify(body),redirect:'manual'})
+ const post=(path:string,body:any,headers:Record<string,string>={})=>fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',Origin:base,...(headers.Cookie?{'X-FlyMind-User-Id':'alice'}:{}),...headers},body:JSON.stringify(body),redirect:'manual'})
  const form=(path:string,body:Record<string,string>)=>fetch(base+path,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(body),redirect:'manual'})
  const login=await post('/cloud-api/auth/login',{phone:'test-account',password:'test-password'});assert.equal(login.status,200,await login.clone().text());const cookie=login.headers.get('set-cookie')!.split(';')[0]
  async function oauthClient(scope='flymind:read flymind:write'){

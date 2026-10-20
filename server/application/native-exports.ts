@@ -4,6 +4,7 @@ import {validateNativeProject,nativeIdentity,isCanvasRecord} from '../document-r
 import {isNativeCanvasProject} from '../../src/drawing/engine/native-canvas'
 import {exportSnapshotHash,readNativeArtifact,sha256} from '../exports/artifacts'
 import {EXPORT_FORMATS,nativeExportFormats,type NativeExportJob,type NativeExportOptions,type NativeExportFormat,type StoredNativeExport} from '../exports/types'
+import type {CloudReleaseManifest} from '../cloud/mcp-compat'
 
 function exact(input:unknown,allowed:string[],required:string[]){
   if(!input||typeof input!=='object'||Array.isArray(input))throw new StoreError('导出请求应为 JSON 对象')
@@ -21,11 +22,11 @@ export function validateNativeExportOptions(input:unknown):NativeExportOptions{
   return value
 }
 export class NativeExportService {
-  constructor(readonly store:DiagramStore,readonly enabled=false){}
+  constructor(readonly store:DiagramStore,readonly enabled=false,private readonly release?:Promise<CloudReleaseManifest>){}
   private available(){if(!this.enabled)throw new StoreError('Native pilot 未启用',404,undefined,'NATIVE_PILOT_DISABLED')}
   private public(job:StoredNativeExport,currentRevision:number):NativeExportJob{
     const manifest=job.manifest
-    return {id:job.id,diagramId:job.diagramId,dataRootId:job.dataRootId,revision:job.revision,status:job.status,createdAt:job.createdAt,updatedAt:job.updatedAt,attempts:job.attempts,...(job.sourceJobId?{sourceJobId:job.sourceJobId}:{}),isCurrentRevision:currentRevision===job.revision,snapshotSha256:job.snapshotSha256,...(isNativeCanvasProject(job.snapshot)?{mode:'canvas-only' as const,xmlHash:job.snapshot.rendering.engine.xmlHash}:{contentHash:job.snapshot.rendering.engine.contentHash}),documentCreatedAt:job.snapshot.createdAt,documentUpdatedAt:job.snapshot.updatedAt,options:job.options,...(job.error?{error:job.error}:{}),...(manifest&&job.status==='succeeded'?{exportedAt:manifest.exportedAt,width:manifest.width,height:manifest.height,scale:manifest.scale,files:Object.fromEntries(nativeExportFormats(job.snapshot).map(format=>[format,{...manifest.files[format],url:`/studio-api/native/exports/${job.id}/files/${format}`}])) as NonNullable<NativeExportJob['files']>}:{})}
+    return {id:job.id,diagramId:job.diagramId,dataRootId:job.dataRootId,revision:job.revision,status:job.status,createdAt:job.createdAt,updatedAt:job.updatedAt,attempts:job.attempts,...(job.sourceJobId?{sourceJobId:job.sourceJobId}:{}),isCurrentRevision:currentRevision===job.revision,snapshotSha256:job.snapshotSha256,...(isNativeCanvasProject(job.snapshot)?{mode:'canvas-only' as const,xmlHash:job.snapshot.rendering.engine.xmlHash}:{contentHash:job.snapshot.rendering.engine.contentHash}),documentCreatedAt:job.snapshot.createdAt,documentUpdatedAt:job.snapshot.updatedAt,options:job.options,...(job.release?{release:job.release}:{}),...(job.error?{error:job.error}:{}),...(manifest&&job.status==='succeeded'?{exportedAt:manifest.exportedAt,width:manifest.width,height:manifest.height,scale:manifest.scale,files:Object.fromEntries(nativeExportFormats(job.snapshot).map(format=>[format,{...manifest.files[format],url:`/studio-api/native/exports/${job.id}/files/${format}`}])) as NonNullable<NativeExportJob['files']>}:{})}
   }
   async get(jobId:string){this.available();const {job,currentRevision}=await this.store.getNativeExport(jobId);return this.public(job,currentRevision)}
   async create(diagramId:string,input:unknown,expectedDataRootId:string|undefined){
@@ -39,7 +40,7 @@ export class NativeExportService {
     const base=await this.store.getNativeDrawing(diagramId)
     if(base.revision!==value.expectedRevision)throw new StoreError('图形已有新的修改，请先保存',409,base.revision,'REVISION_CONFLICT')
     const snapshot=await validateNativeProject(base.document)
-    const job=await this.store.enqueueNativeExport({diagramId,expectedRevision:value.expectedRevision,expectedDataRootId,requestId:key,requestHash:hash,options,snapshot,snapshotSha256:exportSnapshotHash(snapshot)})
+    const job=await this.store.enqueueNativeExport({diagramId,expectedRevision:value.expectedRevision,expectedDataRootId,requestId:key,requestHash:hash,options,snapshot,snapshotSha256:exportSnapshotHash(snapshot),...(this.release?{release:await this.release}:{})})
     return this.get(job.id)
   }
   async retry(jobId:string,input:unknown,expectedDataRootId:string|undefined){
@@ -49,10 +50,11 @@ export class NativeExportService {
     const replay=await this.store.findNativeExportRequest(key,hash,expectedDataRootId)
     if(replay)return this.get(replay.id)
     const {job:source}=await this.store.getNativeExport(jobId)
+    if(this.release&&!source.release)throw new StoreError('旧任务没有固定供应标识，请为当前图形创建新导出',503,undefined,'EXPORT_RELEASE_UNKNOWN')
     if(source.dataRootId!==expectedDataRootId)throw new StoreError('工作区身份已改变',409,undefined,'WORKSPACE_MISMATCH')
     if(source.status!=='failed')throw new StoreError('仅失败任务可显式重试',409,undefined,'EXPORT_RETRY_INVALID')
     const snapshot=await validateNativeProject(source.snapshot)
-    const job=await this.store.enqueueNativeExport({diagramId:source.diagramId,expectedRevision:source.revision,expectedDataRootId,requestId:key,requestHash:hash,options:source.options,snapshot,snapshotSha256:source.snapshotSha256,sourceJobId:source.id})
+    const job=await this.store.enqueueNativeExport({diagramId:source.diagramId,expectedRevision:source.revision,expectedDataRootId,requestId:key,requestHash:hash,options:source.options,snapshot,snapshotSha256:source.snapshotSha256,sourceJobId:source.id,...(source.release?{release:source.release}:{})})
     return this.get(job.id)
   }
   async createSnapshot(diagramId:string,input:unknown,expectedDataRootId:string|undefined){
@@ -63,7 +65,7 @@ export class NativeExportService {
     const key=requestId(value.requestId),options=validateNativeExportOptions(value.options),hash=sha256(canonicalContentJson({operation:'native-export-snapshot',diagramId,input:value} as any)),replay=await this.store.findNativeExportRequest(key,hash,expectedDataRootId)
     if(replay)return this.get(replay.id)
     const history=await this.store.getNativeDrawingRevision(diagramId,value.revision),snapshot=await validateNativeProject(history.document)
-    const job=await this.store.enqueueNativeExport({diagramId,expectedRevision:value.revision,expectedDataRootId,requestId:key,requestHash:hash,options,snapshot,snapshotSha256:exportSnapshotHash(snapshot),historical:true})
+    const job=await this.store.enqueueNativeExport({diagramId,expectedRevision:value.revision,expectedDataRootId,requestId:key,requestHash:hash,options,snapshot,snapshotSha256:exportSnapshotHash(snapshot),historical:true,...(this.release?{release:await this.release}:{})})
     return this.get(job.id)
   }
   async file(jobId:string,format:string){

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Administrator installs audited files; never execute uploaded candidate ops as root.
+# Verify the fixed Node location on the actual server before installation.
+exec /usr/bin/node /usr/local/libexec/flymind-promote.mjs "$@"

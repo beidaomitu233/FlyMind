@@ -20,6 +20,11 @@ async function reconnectHarness(connect:()=>Promise<any>){
  return {client,async close(){await client.close();await facade.close()}}
 }
 const response=(value:unknown,status=200)=>new Response(JSON.stringify(value),{status})
+test('local account denial keeps MCP transport and guides browser login without accepting passwords',async()=>{
+ let connects=0,authorized=false
+ const h=await reconnectHarness(async()=>{connects++;return fakeConnection('root',async()=>authorized?response(pure):response({code:'LOCAL_LOGIN_REQUIRED',error:'login needed'},401))})
+ try{const denied=await h.client.callTool({name:'get_diagram',arguments:{id:content.id}});assert.equal(denied.isError,true);assert.match(JSON.stringify(denied),/LOCAL_LOGIN_REQUIRED/);assert.match(JSON.stringify(denied),/flymind login/);authorized=true;assert.equal((await h.client.callTool({name:'get_diagram',arguments:{id:content.id}})).isError,undefined);assert.equal(connects,1)}finally{await h.close()}
+})
 function fakeConnection(root:string,fetch:(path:string,init?:RequestInit)=>Promise<Response>){return {baseURL:'http://127.0.0.1:5179',dataRootId:root,instanceId:'instance',sessionToken:'secret',capabilities:runtimeCapabilities(),headers:()=>({}),authenticatedFetch:fetch,close:async()=>{}}}
 test('native SDK exposes original names, stable requestId schemas and truthful guide/configuration',async()=>{
  const h=await harness(path=>path.endsWith('/rendering')?response({error:'此profile未开放配置',code:'NATIVE_RENDERING_EDIT_UNSUPPORTED'},422):path.endsWith('/records/'+content.id)?pure:record)

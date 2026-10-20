@@ -5,6 +5,7 @@ import type {OAuthClientInformationFull,OAuthTokenRevocationRequest,OAuthTokens}
 import {OAuthClientInformationFullSchema,OAuthTokensSchema} from '@modelcontextprotocol/sdk/shared/auth.js'
 import {InvalidClientMetadataError,InvalidRequestError,InvalidScopeError,InvalidTargetError,InvalidTokenError,ServerError,OAUTH_ERRORS} from '@modelcontextprotocol/sdk/server/auth/errors.js'
 import {CloudControlPlane,type CloudPrincipal} from './identity'
+import {wirePositiveInteger} from './wire'
 
 export const MCP_SCOPES=['flymind:read','flymind:write']
 export interface CloudOAuthOptions {controlPlaneURL:string;publicOrigin:string;gatewayKey:string;fetch?:typeof fetch;allowInsecureLoopback?:boolean}
@@ -46,6 +47,13 @@ export class CloudOAuthProvider implements OAuthServerProvider {
   let payload:any
   try{const reader=response.body!.getReader(),chunks:Uint8Array[]=[];let size=0;try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>262144){await reader.cancel();throw Error('budget')}chunks.push(value)}payload=JSON.parse(Buffer.concat(chunks).toString('utf8'))}finally{reader.releaseLock()}}catch{throw new ServerError('授权服务响应无效')}
   if(!response.ok||payload?.code!==200){const code=payload?.data?.error;const ErrorType=typeof code==='string'&&Object.hasOwn(OAUTH_ERRORS,code)?OAUTH_ERRORS[code as keyof typeof OAUTH_ERRORS]:undefined;throw ErrorType?new ErrorType('授权请求未获批准'):new ServerError('授权服务暂时不可用')}
+  // Normalize only documented numeric authority fields before SDK strict schemas.
+  // Session introspection is normalized independently by CloudControlPlane.
+  if(payload.data&&typeof payload.data==='object'&&!Array.isArray(payload.data)){
+   for(const key of ['expiresAt','client_id_issued_at','expires_in'])if(Object.hasOwn(payload.data,key)){
+    try{payload.data[key]=wirePositiveInteger(payload.data[key])}catch{throw new ServerError('授权服务数值响应无效')}
+   }
+  }
   return payload.data
  }
  async authorize(client:OAuthClientInformationFull,params:AuthorizationParams,res:Response){

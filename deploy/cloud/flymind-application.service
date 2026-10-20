@@ -1,0 +1,29 @@
+[Unit]
+Description=FlyMind drawing application (one active writer)
+After=network-online.target flymind-control-plane.service
+
+[Service]
+Type=simple
+User=flymind
+Group=flymind
+WorkingDirectory=/opt/flymind/current/application
+EnvironmentFile=/etc/flymind/production/application.env
+Environment=NODE_ENV=production
+Environment=FLYMIND_CLOUD_REQUIRE_PREPARED_BUNDLE=1
+ExecStart=/usr/bin/node lib/server/cloud/start.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=250
+KillSignal=SIGTERM
+# Main process drains worker before it closes its owned Chromium children.
+KillMode=mixed
+SendSIGKILL=no
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/flymind/production
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

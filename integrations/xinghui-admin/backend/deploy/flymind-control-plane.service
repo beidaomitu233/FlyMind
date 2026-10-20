@@ -1,0 +1,24 @@
+[Unit]
+Description=FlyMind Java control plane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=flymind
+Group=flymind
+WorkingDirectory=/opt/flymind/control-plane
+EnvironmentFile=/etc/flymind/control-plane.env
+ExecStart=/usr/bin/java -Dfile.encoding=UTF-8 -jar /opt/flymind/control-plane/system-admin.jar
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+SuccessExitStatus=143
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

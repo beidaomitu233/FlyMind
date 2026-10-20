@@ -1,0 +1,11 @@
+{
+  "releaseRoot": "/opt/flymind/releases",
+  "currentLink": "/opt/flymind/current",
+  "incomingDirectory": "/var/lib/flymind/incoming",
+  "dataRoot": "/var/lib/flymind/production/diagrams",
+  "backupDirectory": "/var/backups/flymind/production",
+  "stateDirectory": "/var/lib/flymind/production/deployments",
+  "applicationService": "flymind-application.service",
+  "publicOrigin": "https://draw.example.com",
+  "applicationOrigin": "http://127.0.0.1:5192"
+}

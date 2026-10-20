@@ -5,9 +5,9 @@ import {currentActivityActor,type ActivityActor} from './context'
 export interface ActivityDelta {added:number;removed:number;updated:number;changed:Array<{id:string;fields:string[]}>;truncated?:boolean;orderChanged?:boolean}
 export interface ActivitySummary {contentFields?:string[];nodes?:ActivityDelta;edges?:ActivityDelta;lanes?:ActivityDelta;phases?:ActivityDelta;groups?:ActivityDelta;renderingChanged?:boolean;affectedDiagrams?:number}
 export interface ActivityEvent {
- eventVersion:1;eventId:string;commitSequence:number;occurredAt:number;dataRootId:string|null;actor:Omit<ActivityActor,'requestId'|'dataRootId'>;action:string;diagramId?:string;groupId?:string|null;fromGroupId?:string|null;source?:{format:string;sha256:string;bytes:number};fromRevision?:number;toRevision?:number;requestIdDigest?:string;batchId?:string;itemId?:string;summary:ActivitySummary
+ eventVersion:1;eventId:string;commitSequence:number;occurredAt:number;dataRootId:string|null;actor:Omit<ActivityActor,'requestId'|'dataRootId'>;action:string;exportId?:string;diagramId?:string;groupId?:string|null;fromGroupId?:string|null;source?:{format:string;sha256:string;bytes:number};fromRevision?:number;toRevision?:number;requestIdDigest?:string;batchId?:string;itemId?:string;summary:ActivitySummary
 }
-export interface ActivityInput {action:string;diagramId?:string;groupId?:string|null;fromGroupId?:string|null;source?:{format:string;sha256:string;bytes:number};fromRevision?:number;toRevision?:number;requestId?:string;batchId?:string;itemId?:string;summary?:ActivitySummary}
+export interface ActivityInput {action:string;exportId?:string;diagramId?:string;groupId?:string|null;fromGroupId?:string|null;source?:{format:string;sha256:string;bytes:number};fromRevision?:number;toRevision?:number;requestId?:string;batchId?:string;itemId?:string;summary?:ActivitySummary}
 export interface ActivityQuery {diagramId?:string;groupId?:string;cursor?:string;limit?:number;actorUserId?:string;channel?:ActivityActor['channel'];action?:string}
 export interface ActivityPage {items:ActivityEvent[];nextCursor?:string}
 const digest=(v:string)=>createHash('sha256').update(v).digest('hex')

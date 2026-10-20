@@ -1,5 +1,11 @@
 import {DRAWING_STANDARD_VERSION} from '../../src/drawing/core/drawing-quality'
 import {nativeDocumentCapabilities} from '../../src/drawing/services/native-capabilities'
+import {nativeGuideOutput,diagramKind} from './contracts'
+import {drawingStandard} from '../drawing-guide'
+import {sampleFor} from '../../src/drawing/core/samples'
+import {extractContent} from '../../src/drawing/core/layers'
+import {cloudMcpHandshake,type CloudReleaseManifest} from '../cloud/mcp-compat'
+import type {z} from 'zod'
 const capabilities=nativeDocumentCapabilities()
 export const nativeGuide=`# FlyMind native pilot
 实际可用类型：${capabilities.supportedKinds.join('、')}。各profile及compile/project/patch/configure/migrate能力：${JSON.stringify(capabilities.profiles)}。未启用能力明确拒绝，不以profile名称冒充已适配。
@@ -14,3 +20,11 @@ Web业务文件导入只接纯content JSON与单图完整v2/v3 project JSON，�
 原生普通Delete可能保留关联悬空线，保存返回NATIVE_DELETE_INCOMPLETE并保留草稿；先原生撤销，再用Ctrl+Delete删除节点及全部关联线。脑图更多菜单的删除当前分支会确认所选主题及全部后代，可在当前原生会话撤销；服务器不静默级联。
 mixed v2 只读，未迁移不提供原生预览或虚假编辑链接。组织操作使用同库分组与回收站；永久删除必须获得用户明确授权。`
 export const guideData={guide:nativeGuide,standardVersion:DRAWING_STANDARD_VERSION,capabilities}
+export type NativeApplicationGuide=z.infer<typeof nativeGuideOutput>
+/** HTTP application authority; old contract shape is unchanged. Release metadata
+ * lives in guide text so cached strict output schemas remain compatible. */
+export async function applicationDrawingGuide(kind?:unknown,release?:CloudReleaseManifest):Promise<NativeApplicationGuide>{
+ const parsed=kind===undefined?undefined:diagramKind.parse(kind),manifest=release??(await cloudMcpHandshake()).release
+ const guide=nativeGuide.replace('files 是 Runtime 验证后的本机绝对路径；','云端 files 是经鉴权的下载链接，不返回服务器文件路径；')
+ return nativeGuideOutput.parse({...guideData,guide:guide+'\n\n'+await drawingStandard()+'\n\n## 应用发布标识\n'+JSON.stringify({contractVersion:1,...manifest}),...(parsed?{sample:extractContent(sampleFor(parsed))}:{})})
+}

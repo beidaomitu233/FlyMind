@@ -1,0 +1,26 @@
+[Unit]
+Description=FlyMind stable MCP ingress
+After=network-online.target flymind-control-plane.service
+
+[Service]
+Type=simple
+User=flymind
+Group=flymind
+WorkingDirectory=/opt/flymind/gateway/application
+EnvironmentFile=/etc/flymind/production/gateway.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node lib/server/cloud/mcp-gateway-start.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=160
+KillSignal=SIGTERM
+KillMode=mixed
+SendSIGKILL=no
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

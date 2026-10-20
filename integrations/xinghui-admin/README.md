@@ -4,7 +4,7 @@
 
 - `frontend/`：Vben Vue管理端，正式UI/apps/web-ele及workspace依赖闭包。来源HEAD `e313de8bd9c92924efdba64b99452917e72b24b0`。
 - `backend/`：Java17/Spring Boot管理后台，保留common/system-framework/system-admin/web-admin/web-app。来源HEAD `ff68475be7aeaa941fe62c78aa66272f075178fb`。
-- 逐文件来源、字节数、SHA256及排除原因见 `../flyMind/docs/cloud/ADMIN_COPY_MANIFEST.json`；复用审计见 `../flyMind/docs/cloud/ADMIN_REUSE_AUDIT.md`。
+- 逐文件来源、字节数、SHA256及排除原因见 `../../docs/cloud/ADMIN_COPY_MANIFEST.json`；复用审计见 `../../docs/cloud/ADMIN_REUSE_AUDIT.md`。
 
 ## 当前边界
 
@@ -13,3 +13,10 @@
 保留Java控制面和Vben `/admin`，FlyMind继续保留原绘图UI。团队将作为独立业务对象：统一受控tenant下的账号通过membership加入多个团队，不能把原SysUser单tenantId直接命名为团队。账号授权、本地授权、多人协同与远程MCP尚未实现，复制后的C01第一切片已新增Java应用会话、团队与Vben管理API接线；其他能力尚未实施，详见backend/DEVELOPMENT.md。
 
 前端原MIT及Vben版权已保留。后端未发现明确许可证文件，公开分发前须确认权利与第三方声明；FlyMind的MIT不自动覆盖该源码。后续修改先按PM冻结计划分批实施，不改源仓库，不自动迁移任何用户数据。
+
+
+## 当前发布源（2026-10-20）
+
+此仓库内integrations/xinghui-admin是唯一后续构建与发布源。D:/AIBuilder/PM/xinghui-admin仅为历史受控副本；不再双向同步或从它发包。两者源码已核对（排除依赖/构建/秘密环境，换行规范化），本切片仅在本目录新增部署/真实HTTP验证；未动用户原星辉仓库。
+
+Java部署包见backend/deploy/README.md；实际验证边界见../../docs/cloud/CONTROL_PLANE_DELIVERY.md。上面的“尚未实现”是复制阶段历史说明，当前OAuth/账号团队接口已有实现；本地授权、真实MySQL/Redis与公网仍待，不据此宣称线上交付完成。

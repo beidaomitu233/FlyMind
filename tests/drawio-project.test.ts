@@ -72,13 +72,16 @@ test('v3 project roundtrip retains swimlane content, metadata times and visual s
 
 test('PBS existing quality failures remain structurally valid manual draft content',async()=>{
   const content=await fixture('pbs-main')
-  assert.equal(inspectDrawing(content).passed,false)
+  const sourceQuality=inspectDrawing(content)
+  assert.equal(sourceQuality.passed,false)
+  assert.ok(sourceQuality.issues.some(i=>i.code==='decision_conditions'&&i.nodeId==='n12'))
+  assert.ok(sourceQuality.issues.some(i=>i.code==='isolated_node'&&i.nodeId==='n23'))
   const engine=await compileDrawio(content)
   const project=await createDrawingProject(content,engine,fixedTime)
   assert.deepEqual(project.content,content)
   assert.equal(project.content.nodes.length,23)
   assert.equal(project.content.edges.length,26)
-  assert.equal(inspectDrawing(project.content).score,38)
+  assert.deepEqual(inspectDrawing(project.content),sourceQuality)
   assert.deepEqual(await validateDrawingProject(project),project)
 })
 

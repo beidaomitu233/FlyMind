@@ -15,6 +15,7 @@ import {sha256,exportSnapshotHash,prepareNativeArtifacts} from '../server/export
 import {exportBasename} from '../src/drawing/core/export-metadata'
 import type {DrawingProjectV3} from '../src/drawing/engine/types'
 import type {DiagramContent} from '../src/drawing/core/model'
+import type {CloudReleaseManifest} from '../server/cloud/mcp-compat'
 
 const content:DiagramContent={schemaVersion:1,id:'export-test',title:'导出隔离测试',kind:'swimlane',nodes:[{id:'a',kind:'start',label:'开始',laneId:'owner',phaseId:'work'},{id:'b',kind:'end',label:'完成',laneId:'owner',phaseId:'work'}],edges:[{id:'ab',source:'a',target:'b'}],lanes:[{id:'owner',label:'办理人员'}],phases:[{id:'work',label:'办理'}],groups:[]}
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms))
@@ -31,6 +32,22 @@ async function setup(){const root=await mkdtemp(join(tmpdir(),'flymind-export-')
 async function cleanup(root:string){assert.ok(resolve(root).startsWith(resolve(tmpdir())+sep)&&root.includes('flymind-export-'));await rm(root,{recursive:true,force:true})}
 function sql<T>(store:DiagramStore,fn:(db:Database.Database)=>T){const db=new Database(store.databasePath);try{return fn(db)}finally{db.close()}}
 const create=(s:Awaited<ReturnType<typeof setup>>,requestId='export-request')=>s.exports.create(content.id,{expectedRevision:1,requestId},s.identity)
+
+test('cloud jobs persist their release across restart and reject a changed renderer before executing',async()=>{
+ const s=await setup(),bound:CloudReleaseManifest={releaseId:'release-a',appVersion:'1.1.0',policyBundleHash:'a'.repeat(64),standardVersion:'1.1',engineResourceKey:'b'.repeat(64),adapterVersion:'1',migrationLevel:1},exports=new NativeExportService(s.store,true,Promise.resolve(bound)),renderer=new Renderer()
+ try{
+  const job=await exports.create(content.id,{expectedRevision:1,requestId:'cloud-bound'},s.identity);assert.deepEqual(job.release,bound)
+  const restarted=new DiagramStore(s.root),stored=await restarted.getNativeExport(job.id);assert.deepEqual(stored.job.release,bound)
+  const changed={...bound,releaseId:'release-b',engineResourceKey:'c'.repeat(64)},worker=new NativeExportWorker(restarted,renderer,{release:Promise.resolve(changed)})
+  const failed=await worker.runOnce();assert.equal(failed?.status,'failed');assert.equal(failed?.error?.code,'EXPORT_SUPPLY_UNAVAILABLE');assert.equal(renderer.calls.length,0);await worker.close()
+  const retry=await exports.retry(job.id,{requestId:'bound-retry'},s.identity);assert.deepEqual(retry.release,bound)
+  const matching=new Renderer(),compatible=new NativeExportWorker(restarted,matching,{release:Promise.resolve({...bound,releaseId:'policy-update',policyBundleHash:'d'.repeat(64)})})
+  const succeeded=await compatible.runOnce();assert.equal(succeeded?.status,'succeeded');assert.deepEqual(succeeded?.manifest?.release,bound);assert.equal(matching.calls.length,1);await compatible.close()
+  const legacy=await create(s,'old-job'),blocked=new NativeExportWorker(restarted,new Renderer(),{release:Promise.resolve(bound)})
+  const unknown=await blocked.runOnce();assert.equal(unknown?.id,legacy.id);assert.equal(unknown?.error?.code,'EXPORT_RELEASE_UNKNOWN');await blocked.close()
+  await assert.rejects(exports.retry(legacy.id,{requestId:'unknown-retry'},s.identity),(e:any)=>e.code==='EXPORT_RELEASE_UNKNOWN')
+ }finally{await cleanup(s.root)}
+})
 
 test('export enqueue uses immutable same-SQLite snapshots, strict options, CAS and payload idempotence',async()=>{
   const s=await setup()

@@ -21,9 +21,9 @@ function run(file,args,env,{timeout=600000}={}){return new Promise((yes,no)=>{
  child.once('error',e=>{cleanup();no(e)});child.once('close',code=>{cleanup();failure?no(failure):code===0?yes():no(Error(`SETUP_FAILED (${code}); rerun flymind setup`))})
 })}
 export async function main(args=process.argv.slice(2)){
- if(args[0]==='--help'||args[0]==='-h'){console.log('flymind [mcp|setup|doctor|studio]\nWindows only. mcp is the default. Persistent data and resources use LOCALAPPDATA/FlyMind.');return}
+ if(args[0]==='--help'||args[0]==='-h'){console.log('flymind [mcp|setup|doctor|studio|login|logout]\nWindows only. mcp is the default. Login requires configured FLYMIND_CONTROL_PLANE_ORIGIN; passwords are entered only in the local browser.');return}
  if(args[0]==='--version'){console.log(JSON.parse(await readFile(join(packageRoot,'package.json'),'utf8')).version);return}
- const command=args[0]||'mcp';if(!['mcp','setup','doctor','studio'].includes(command))throw Error('Unknown command; use flymind --help')
+ const command=args[0]||'mcp';if(!['mcp','setup','doctor','studio','login','logout'].includes(command))throw Error('Unknown command; use flymind --help')
  if(process.platform!=='win32')throw Error('UNSUPPORTED_PLATFORM: this release supports Windows only')
  if(args.slice(1).some(a=>!a.startsWith('--archive=')&&!a.startsWith('--license=')))throw Error('Unsupported CLI option')
  const env=cliEnvironment();Object.assign(process.env,env)
@@ -31,10 +31,11 @@ export async function main(args=process.argv.slice(2)){
  const setup=()=>run(join(packageRoot,'scripts/setup-drawio-runtime.mjs'),[`--resources-root=${env.FLYMIND_RESOURCES_DIR}`,...args.slice(1)],env)
  if(command==='setup'){await setup();return}
  if(command==='doctor'){await compiled.checkRuntimeAssets();console.error(JSON.stringify({ok:true,platform:process.platform,node:process.version,packageRoot,dataRoot:env.FLYMIND_DATA_DIR,resourcesRoot:env.FLYMIND_RESOURCES_DIR,browser:compiled.resolveRuntimeAssets().browserExecutable}));return}
- try{await compiled.checkRuntimeAssets()}catch(error){if(!['DRAWIO_MISSING','FONT_MISSING','FONT_LICENSE_MISSING','BROWSER_MISSING'].includes(error.code))throw error;throw Error('RUNTIME_SETUP_REQUIRED: 请先运行 npx -y flymind-drawing-studio@1 setup，再启动 '+command+'。'+error.message)}
+ const {localRuntimeAuthorization}=await import(pathToFileURL(join(packageRoot,'lib/server/local-auth/runtime.js')).href);localRuntimeAuthorization(env)
+ if(command==='mcp'||command==='studio')try{await compiled.checkRuntimeAssets()}catch(error){if(!['DRAWIO_MISSING','FONT_MISSING','FONT_LICENSE_MISSING','BROWSER_MISSING'].includes(error.code))throw error;throw Error('RUNTIME_SETUP_REQUIRED: 请先运行 npx -y flymind-drawing-studio@1 setup，再启动 '+command+'。'+error.message)}
  if(command==='mcp'){await import(pathToFileURL(join(packageRoot,'lib/server/mcp.js')).href);return}
  const {ensureNativeRuntime}=await import(pathToFileURL(join(packageRoot,'lib/server/runtime-instance/client.js')).href),connection=await ensureNativeRuntime()
  // explorer.exe opens the authenticated same-origin bootstrap UI, without a shell.
- const url=connection.baseURL+'/#/native',opener=spawn('explorer.exe',[url],{stdio:'ignore',windowsHide:true,shell:false});opener.on('error',e=>console.error('Open this URL in your browser: '+url+' ('+e.message+')'));opener.unref();console.error('FlyMind Studio: '+url);await connection.close()
+ const url=connection.baseURL+'/#/native'+(command==='logout'?'?authorization=logout':''),opener=spawn('explorer.exe',[url],{stdio:'ignore',windowsHide:true,shell:false});opener.on('error',e=>console.error('Open this URL in your browser: '+url+' ('+e.message+')'));opener.unref();console.error('FlyMind '+(command==='logout'?'logout':'login/studio')+': '+url);await connection.close()
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))await main().catch(error=>{console.error(error instanceof Error?error.message:String(error));process.exitCode=1})

@@ -5,8 +5,9 @@ import {isNativeCanvasProject,nativeCanvasRenderSignature} from '../../src/drawi
 import {projectDrawio,drawioRenderSignature} from '../../src/drawing/engine/drawio'
 import {prepareNativeArtifacts} from './artifacts'
 import type {NativeExportRenderer,StoredNativeExport} from './types'
+import {assertExecutionReleaseAvailable,type CloudReleaseManifest} from '../cloud/mcp-compat'
 
-export interface NativeExportWorkerOptions {leaseMs?:number;timeoutMs?:number;pollMs?:number;maxAttempts?:number;heartbeat?:boolean;onError?:(error:unknown,jobId:string)=>void;prepareArtifacts?:typeof prepareNativeArtifacts}
+export interface NativeExportWorkerOptions {release?:Promise<CloudReleaseManifest>;leaseMs?:number;timeoutMs?:number;pollMs?:number;maxAttempts?:number;heartbeat?:boolean;onError?:(error:unknown,jobId:string)=>void;prepareArtifacts?:typeof prepareNativeArtifacts}
 export class NativeExportWorker {
   readonly owner=randomUUID()
   private active:Promise<StoredNativeExport|undefined>|undefined
@@ -33,6 +34,7 @@ export class NativeExportWorker {
       const aborted=new Promise<never>((_resolve,reject)=>{controller.signal.addEventListener('abort',()=>reject(controller.signal.reason??new StoreError('导出已取消',503,undefined,'EXPORT_CANCELLED')),{once:true})})
       timeout=setTimeout(()=>controller.abort(new StoreError('后台渲染超时，请显式重试',504,undefined,'EXPORT_TIMEOUT')),timeoutMs)
       const pipeline=(async()=>{
+        if(this.options.release){const available=await this.options.release;if(!job.release)throw new StoreError('此旧导出任务缺少固定供应标识，请针对图形新建导出',503,undefined,'EXPORT_RELEASE_UNKNOWN');assertExecutionReleaseAvailable(job.release,available)}
         check();await validateNativeProject(job.snapshot);check()
         const rendered=await this.renderer.render(structuredClone(job.snapshot),{...job.options,timeoutMs,signal:controller.signal});check()
         const projected=isNativeCanvasProject(job.snapshot)?undefined:await projectDrawio(rendered.nativeXML,job.snapshot.content);check()

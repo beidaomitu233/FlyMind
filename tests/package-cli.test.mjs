@@ -18,7 +18,7 @@ test('installed CLI paths are persistent user scope and independent of cwd and p
 test('CLI help/version need no resources, stdout is empty for missing-resource MCP errors',async()=>{
  const version=node('bin/flymind.mjs',['--version']);assert.equal(version.status,0);assert.equal(version.stdout.trim(),'1.0.0')
  const root=await mkdtemp(join(tmpdir(),'flymind-cli-test-'))
- try{const result=node('bin/flymind.mjs',['mcp'],{...process.env,LOCALAPPDATA:root,FLYMIND_RESOURCES_DIR:join(root,'missing')});assert.equal(result.status,1);assert.equal(result.stdout,'');assert.match(result.stderr,/RUNTIME_SETUP_REQUIRED|UNSUPPORTED_PLATFORM/);assert.doesNotMatch(result.stderr,/Cannot find package 'tsx'/)}finally{await rm(root,{recursive:true,force:true,maxRetries:4,retryDelay:100})}
+ try{const result=node('bin/flymind.mjs',['mcp'],{...process.env,LOCALAPPDATA:root,FLYMIND_RESOURCES_DIR:join(root,'missing')});assert.equal(result.status,1);assert.equal(result.stdout,'');assert.match(result.stderr,/LOCAL_AUTH_CONFIGURATION_REQUIRED|v1.1必须配置可信授权控制面|UNSUPPORTED_PLATFORM/);assert.doesNotMatch(result.stderr,/Cannot find package 'tsx'/)}finally{await rm(root,{recursive:true,force:true,maxRetries:4,retryDelay:100})}
 })
 test('fixed bundled font install is repeatable outside the package and leaves no installer lock',async()=>{
  const root=await mkdtemp(join(tmpdir(),'flymind-font-install-'))

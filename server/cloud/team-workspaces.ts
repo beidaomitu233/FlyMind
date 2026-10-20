@@ -5,6 +5,7 @@ import {DiagramStore} from '../store'
 import {NativeDiagramService} from '../application/native-diagrams'
 import {NativeExportService} from '../application/native-exports'
 import {assertIsolatedNativeRoot} from '../native-pilot'
+import type {CloudReleaseManifest} from './mcp-compat'
 import {PACKAGE_ROOT} from '../package-paths'
 import {CloudAccessError,assertCloudPermission,teamIdSchema,type CloudIdentityProvider,type CloudPermission,type CloudPrincipal} from './identity'
 
@@ -21,7 +22,7 @@ export class CloudTeamWorkspaces {
   private readonly entries=new Map<string,Entry>()
   readonly root:string
   private closed=false
-  constructor(root:string,private readonly identity:CloudIdentityProvider,private readonly options:{maxOpenTeams?:number;idleMs?:number;now?:()=>number}={}){
+  constructor(root:string,private readonly identity:CloudIdentityProvider,private readonly options:{release?:Promise<CloudReleaseManifest>;maxOpenTeams?:number;idleMs?:number;now?:()=>number}={}){
     this.root=resolve(root)
     assertIsolatedNativeRoot(this.root,PACKAGE_ROOT)
     if(!Number.isSafeInteger(options.maxOpenTeams??32)||(options.maxOpenTeams??32)<1)throw new Error('maxOpenTeams must be a positive integer')
@@ -64,7 +65,7 @@ export class CloudTeamWorkspaces {
     if((await lstat(path)).isSymbolicLink()||await realpath(path)!==path)throw new CloudAccessError(503,'WORKSPACE_PATH_INVALID','团队存储路径配置无效')
     const store=new DiagramStore(path)
     await store.init({seedExamples:false})
-    const diagrams=new NativeDiagramService(store,true),exports=new NativeExportService(store,true)
+    const diagrams=new NativeDiagramService(store,true),exports=new NativeExportService(store,true,this.options.release)
     return {store,diagrams,exports,dataRootId:diagrams.dataRootId!}
   }
   close(){this.closed=true;this.entries.clear()}

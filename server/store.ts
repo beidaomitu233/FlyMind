@@ -14,6 +14,7 @@ import {decodeDiagramRow,diagramMetadata,nativeIdentity,isCanvasRecord,validateN
 import type {DrawingProjectV3} from '../src/drawing/engine/types'
 import {validateDrawingProject} from '../src/drawing/engine/project'
 import {nativeStateSignature} from '../src/drawing/engine/collaboration/state'
+import {cloudReleaseSchema} from './cloud/mcp-compat'
 import {nativeCanvasRenderSignature} from '../src/drawing/engine/native-canvas'
 import {canonicalContentJson} from '../src/drawing/engine/content-hash'
 import {workspaceDataRootId} from './native-pilot'
@@ -265,6 +266,7 @@ export class DiagramStore {
       status TEXT NOT NULL CHECK(status IN ('queued','running','succeeded','failed')),created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,
       attempts INTEGER NOT NULL DEFAULT 0,lease_owner TEXT,lease_token TEXT,lease_until INTEGER,manifest TEXT,error TEXT);
       CREATE INDEX native_export_queue ON native_export_jobs(status,created_at);`)
+    if(create&&!(db.prepare('PRAGMA table_info(native_export_jobs)').all() as {name:string}[]).some(column=>column.name==='release'))db.exec('ALTER TABLE native_export_jobs ADD COLUMN release TEXT CHECK(release IS NULL OR json_valid(release))')
     return exists||create
   }
   private assertNativeIdentity(db:DB,expected:string){
@@ -272,7 +274,7 @@ export class DiagramStore {
     if(!expected||!workspace||workspaceDataRootId(workspace.value)!==expected)throw new StoreError('工作区身份缺失或已改变，请保留本机草稿',409,undefined,'WORKSPACE_MISMATCH')
   }
   private exportRecord(row:any):StoredNativeExport{
-    return {id:row.id,diagramId:row.diagram_id,dataRootId:row.data_root_id,revision:row.revision,requestId:row.request_id,requestHash:row.request_hash,snapshot:JSON.parse(row.snapshot),snapshotSha256:row.snapshot_hash,options:JSON.parse(row.options),status:row.status,createdAt:row.created_at,updatedAt:row.updated_at,attempts:row.attempts,...(row.source_job_id?{sourceJobId:row.source_job_id}:{}),...(row.lease_owner?{leaseOwner:row.lease_owner}:{}),...(row.lease_token?{leaseToken:row.lease_token}:{}),...(row.lease_until?{leaseUntil:row.lease_until}:{}),...(row.manifest?{manifest:JSON.parse(row.manifest)}:{}),...(row.error?{error:JSON.parse(row.error)}:{})}
+    return {id:row.id,diagramId:row.diagram_id,dataRootId:row.data_root_id,revision:row.revision,requestId:row.request_id,requestHash:row.request_hash,snapshot:JSON.parse(row.snapshot),snapshotSha256:row.snapshot_hash,options:JSON.parse(row.options),...(row.release?{release:cloudReleaseSchema.parse(JSON.parse(row.release))}:{}),status:row.status,createdAt:row.created_at,updatedAt:row.updated_at,attempts:row.attempts,...(row.source_job_id?{sourceJobId:row.source_job_id}:{}),...(row.lease_owner?{leaseOwner:row.lease_owner}:{}),...(row.lease_token?{leaseToken:row.lease_token}:{}),...(row.lease_until?{leaseUntil:row.lease_until}:{}),...(row.manifest?{manifest:JSON.parse(row.manifest)}:{}),...(row.error?{error:JSON.parse(row.error)}:{})}
   }
   private exportRow(db:DB,id:string):StoredNativeExport{
     this.id(id)
@@ -304,6 +306,7 @@ export class DiagramStore {
   }
   async enqueueNativeExport(input:EnqueueNativeExport):Promise<StoredNativeExport>{
     const value=structuredClone(input),canonical=canonicalContentJson(value.snapshot as any)
+    if(value.release)value.release=cloudReleaseSchema.parse(value.release)
     if(createHash('sha256').update(canonical).digest('hex')!==value.snapshotSha256)throw new StoreError('导出快照摘要不一致',400,undefined,'SNAPSHOT_MISMATCH')
     return this.transaction(db=>{
       this.assertNativeIdentity(db,value.expectedDataRootId);this.requestEpoch(db,'export',value.requestId);this.exportSchema(db,true)
@@ -316,7 +319,8 @@ export class DiagramStore {
       else if(current.revision!==value.expectedRevision)throw new StoreError('图形已有新的修订，请先保存当前编辑',409,current.revision,'REVISION_CONFLICT')
       else if(canonicalContentJson(current.document as any)!==canonical)throw new StoreError('导出快照与事务中的图形不一致',409,current.revision,'SNAPSHOT_MISMATCH')
       const now=Date.now(),jobId=randomUUID()
-      db.prepare("INSERT INTO native_export_jobs(id,diagram_id,data_root_id,revision,request_id,request_hash,snapshot,snapshot_hash,options,source_job_id,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,'queued',?,?)").run(jobId,value.diagramId,value.expectedDataRootId,value.expectedRevision,value.requestId,value.requestHash,JSON.stringify(value.snapshot),value.snapshotSha256,JSON.stringify(value.options),value.sourceJobId??null,now,now)
+      db.prepare("INSERT INTO native_export_jobs(id,diagram_id,data_root_id,revision,request_id,request_hash,snapshot,snapshot_hash,options,source_job_id,status,created_at,updated_at,release) VALUES(?,?,?,?,?,?,?,?,?,?,'queued',?,?,?)").run(jobId,value.diagramId,value.expectedDataRootId,value.expectedRevision,value.requestId,value.requestHash,JSON.stringify(value.snapshot),value.snapshotSha256,JSON.stringify(value.options),value.sourceJobId??null,now,now,value.release?JSON.stringify(value.release):null)
+      this.activity(db,{action:'export-request',diagramId:value.diagramId,exportId:jobId,toRevision:value.expectedRevision,requestId:value.requestId})
       return this.exportRow(db,jobId)
     })
   }
@@ -366,13 +370,15 @@ export class DiagramStore {
       if(deadline!==undefined&&Date.now()>=deadline)throw new StoreError('导出尝试已超过硬截止时间',504,undefined,'EXPORT_TIMEOUT')
       const completedAt=now??Date.now(),job=this.exportLease(db,id,owner,token,completedAt)
       if(manifest.exportId!==id||manifest.diagramId!==job.diagramId||manifest.revision!==job.revision||manifest.dataRootId!==job.dataRootId||manifest.snapshotSha256!==job.snapshotSha256)throw new StoreError('导出清单与任务快照不符',400,undefined,'EXPORT_MANIFEST_INVALID')
+      if(canonicalContentJson((manifest.release??null) as any)!==canonicalContentJson((job.release??null) as any))throw new StoreError('导出清单的固定供应与任务不符',400,undefined,'EXPORT_MANIFEST_INVALID')
       const result=db.prepare("UPDATE native_export_jobs SET status='succeeded',manifest=?,updated_at=?,lease_owner=NULL,lease_until=NULL,error=NULL WHERE id=? AND status='running' AND lease_owner=? AND lease_token=?").run(JSON.stringify(manifest),completedAt,id,owner,token)
       if(result.changes!==1)throw new StoreError('导出租约已改变',409,undefined,'EXPORT_LEASE_LOST')
+      this.activity(db,{action:'export-complete',diagramId:job.diagramId,exportId:id,toRevision:job.revision})
       return this.exportRow(db,id)
     })
   }
   async failNativeExport(id:string,owner:string,token:string,error:{code:string;message:string},now=Date.now()){
-    return this.transaction(db=>{this.exportLease(db,id,owner,token,now,error.code==='EXPORT_TIMEOUT');db.prepare("UPDATE native_export_jobs SET status='failed',error=?,updated_at=?,lease_owner=NULL,lease_until=NULL WHERE id=? AND status='running' AND lease_owner=? AND lease_token=?").run(JSON.stringify(error),now,id,owner,token);return this.exportRow(db,id)})
+    return this.transaction(db=>{const job=this.exportLease(db,id,owner,token,now,error.code==='EXPORT_TIMEOUT');db.prepare("UPDATE native_export_jobs SET status='failed',error=?,updated_at=?,lease_owner=NULL,lease_until=NULL WHERE id=? AND status='running' AND lease_owner=? AND lease_token=?").run(JSON.stringify(error),now,id,owner,token);this.activity(db,{action:'export-failed',diagramId:job.diagramId,exportId:id,toRevision:job.revision});return this.exportRow(db,id)})
   }
   async backup(){await mkdir(join(this.root,'backups'),{recursive:true});const destination=join(this.root,'backups','flymind-'+Date.now()+'-'+randomUUID().slice(0,8)+'.sqlite'),db=this.connect();try{await db.backup(destination);return destination}finally{db.close()}}
   async nativeImportSource(id:string):Promise<NativeImportSource>{return this.use(db=>{this.row(db,id);const exists=db.prepare("SELECT 1 FROM sqlite_master WHERE name='native_import_sources'").get(),row=exists?db.prepare('SELECT source FROM native_import_sources WHERE diagram_id=?').get(id) as {source:string}|undefined:undefined;if(!row)throw new StoreError('此图没有文件导入来源',404,undefined,'IMPORT_SOURCE_NOT_FOUND');return JSON.parse(row.source)})}

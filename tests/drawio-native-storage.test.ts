@@ -1,3 +1,4 @@
+import {localAuthorityFixture} from './helpers/local-authority'
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import Database from 'better-sqlite3'
@@ -91,7 +92,7 @@ test('native save normalization and view/serialization differences are no-ops wh
     const saved=await service.saveEditor(basic.id,{xml,expectedRevision:1,requestId:'noop-first'})
     assert.deepEqual(saved,first)
     assert.deepEqual(await service.saveEditor(basic.id,{xml:saved.document.rendering.engine.xml,expectedRevision:1,requestId:'noop-again'}),first)
-    const view=edit(xml,doc=>{const model=doc.getElementsByTagName('mxGraphModel')[0];model.setAttribute('dx','1800');model.setAttribute('dy','900');model.setAttribute('grid','0');model.setAttribute('page','0');model.setAttribute('pageWidth','900');doc.documentElement.setAttribute('modified','2026-10-16');const geometry=doc.getElementsByTagName('mxGeometry')[0];if(geometry.getAttribute('x')==='0')geometry.removeAttribute('x')})
+    const view=edit(xml,doc=>{const model=doc.getElementsByTagName('mxGraphModel')[0];model.setAttribute('dx','1800');model.setAttribute('dy','900');model.setAttribute('grid','0');model.setAttribute('page','0');doc.documentElement.setAttribute('modified','2026-10-16');const geometry=doc.getElementsByTagName('mxGeometry')[0];if(geometry.getAttribute('x')==='0')geometry.removeAttribute('x')})
     assert.equal(drawioRenderSignature(view),drawioRenderSignature(xml))
     assert.deepEqual(await service.saveEditor(basic.id,{xml:view,expectedRevision:1,requestId:'noop-view'}),first)
     const geometry=edit(xml,doc=>{const e=Array.from(doc.getElementsByTagName('*')).find(e=>e.getAttribute('fmId')==='n1'&&e.getAttribute('fmRole')==='main')!;e.getElementsByTagName('mxGeometry')[0].setAttribute('x','777')})
@@ -223,9 +224,9 @@ test('workspace guard rechecks after asynchronous normalization and before recei
 })
 
 async function freePort(){const server=createServer();server.listen(0,'127.0.0.1');await once(server,'listening');const port=(server.address() as any).port;await new Promise<void>(r=>server.close(()=>r()));return port}
-async function runtime(root:string,enabled:boolean){
+async function runtime(root:string,enabled:boolean,authority:Awaited<ReturnType<typeof localAuthorityFixture>>){
   const port=await freePort(),base=`http://127.0.0.1:${port}`
-  const child=spawn(process.execPath,['server/start.mjs','--runtime'],{cwd:PROJECT_ROOT,env:{...process.env,FLYMIND_DATA_DIR:root,FLYMIND_PORT:String(port),FLYMIND_NATIVE_PILOT:enabled?'1':'0',FLYMIND_PRIVATE_RUNTIME_DIR:join(root,'.private-runtime')},stdio:['ignore','pipe','pipe'],windowsHide:true})
+  const child=spawn(process.execPath,['server/start.mjs','--runtime'],{cwd:PROJECT_ROOT,env:{...process.env,FLYMIND_CONTROL_PLANE_ORIGIN:authority.origin,FLYMIND_DATA_DIR:root,FLYMIND_PORT:String(port),FLYMIND_NATIVE_PILOT:enabled?'1':'0',FLYMIND_PRIVATE_RUNTIME_DIR:join(root,'.private-runtime')},stdio:['ignore','pipe','pipe'],windowsHide:true})
   let stderr='',healthError='';child.stderr.on('data',b=>{stderr+=b.toString()})
   for(let i=0;i<80;i++){if(child.exitCode!==null)throw new Error('Runtime failed: '+stderr);try{const response=await fetch(base+'/studio-api/health');if(response.ok){const connection=enabled?await ensureNativeRuntime({dataRoot:root,privateRuntimeRoot:join(root,'.private-runtime'),port,env:{FLYMIND_NATIVE_PILOT:'1'}}):undefined;return {child,base,connection}};healthError=`status=${response.status} body=${await response.text()}`}catch(e){healthError=String(e)}await new Promise(r=>setTimeout(r,100))}
   child.kill();throw new Error('Runtime health timeout: '+base+' '+healthError+' '+stderr)
@@ -233,9 +234,9 @@ async function runtime(root:string,enabled:boolean){
 async function stop(child:ChildProcess){if(child.exitCode===null&&child.signalCode===null){child.kill();await once(child,'exit')}}
 
 test('isolated HTTP pilot exposes shared workspace, structured errors and public local assets only',async()=>{
-  const root=await temporary();let child:ChildProcess|undefined
+  const root=await temporary(),authority=await localAuthorityFixture();let child:ChildProcess|undefined
   try{
-    const running=await runtime(root,true);child=running.child;const base=running.base
+    const running=await runtime(root,true,authority);child=running.child;const base=running.base;await authority.login(base)
     let boundIdentity=''
     async function api(path:string,method='GET',body?:unknown,headers:Record<string,string>={}){return fetch(base+path,{method,headers:{...running.connection?.headers(),...(body?{'Content-Type':'application/json'}:{}),...(method==='POST'?{'X-FlyMind-DataRoot-Id':boundIdentity}:{}),...headers},body:body?JSON.stringify(body):undefined})}
     const health=await (await api('/studio-api/health')).json();assert.equal(health.capabilities.nativePilot,true);assert.match(health.dataRootId,/^[a-f0-9]{64}$/);assert.ok(!JSON.stringify(health).includes(root))
@@ -253,8 +254,8 @@ test('isolated HTTP pilot exposes shared workspace, structured errors and public
     const asset=await api('/drawio/index.html');assert.equal(asset.status,200);assert.match(asset.headers.get('content-security-policy')||'',/connect-src 'self'/)
     for(const path of ['/drawio/WEB-INF/web.xml','/drawio/META-INF/MANIFEST.MF','/drawio/.secret','/drawio/%252e%252e/package.json'])assert.equal((await api(path)).status,404)
     await stop(child);child=undefined
-    const off=await runtime(root,false);child=off.child
+    const off=await runtime(root,false,authority);child=off.child;await authority.login(off.base)
     const offHealth=await (await fetch(off.base+'/studio-api/health')).json();assert.equal(offHealth.dataRootId,health.dataRootId);assert.equal(offHealth.capabilities.nativePilot,false)
     const blocked=await fetch(off.base+'/studio-api/native/diagrams');assert.equal(blocked.status,404);assert.equal((await blocked.json()).code,'NATIVE_PILOT_DISABLED')
-  }finally{if(child)await stop(child);await cleanup(root)}
+  }finally{if(child)await stop(child);await authority.close();await cleanup(root)}
 })

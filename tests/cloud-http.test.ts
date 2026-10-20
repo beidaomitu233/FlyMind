@@ -16,6 +16,7 @@ import {pathToFileURL} from 'node:url'
 import Database from 'better-sqlite3'
 import type {NativeExportRenderer} from '../server/exports/types'
 import {businessContent} from './fixtures/native-business'
+import {cloudMcpHandshake} from '../server/cloud/mcp-compat'
 
 const tokens={alice:'alice_session_abcdefghijklmnopqrstuvwxyz_0123456789',bob:'bob_session_abcdefghijklmnopqrstuvwxyz_0123456789',viewer:'viewer_session_abcdefghijklmnopqrstuvwxyz_0123456789'}
 async function listen(server:Server){await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));return 'http://127.0.0.1:'+(server.address() as {port:number}).port}
@@ -143,7 +144,7 @@ test('cloud sanitizes both inner nativeRouter filesystem errors and outer unknow
 test('a fresh process recovers persisted queued and live-lease jobs without any page or HTTP request',async()=>{
  const root=await mkdtemp(join(tmpdir(),'flymind-cloud-http-recovery-')),data=join(root,'data')
  const identity={authorize:async(_token:string,teamId:string)=>({user:{id:'alice',name:'Alice'},session:{id:'session-a',expiresAt:Date.now()+60000},team:{id:teamId,name:teamId,role:'editor' as const}})}
- const registry=new CloudTeamWorkspaces(data,identity);let child:ReturnType<typeof spawn>|undefined,childClosed:Promise<number|null>|undefined
+ const registry=new CloudTeamWorkspaces(data,identity,{release:cloudMcpHandshake().then(v=>v.release)});let child:ReturnType<typeof spawn>|undefined,childClosed:Promise<number|null>|undefined
  try{
   const prepared=await registry.run(tokens.alice,'team-a','export:create',async(workspace,principal)=>{
    await workspace.diagrams.create({content:businessContent('flowchart','restart-doc'),requestId:cloudRequestId(principal,'restart-source')},workspace.dataRootId)
@@ -166,4 +167,52 @@ test('a fresh process recovers persisted queued and live-lease jobs without any 
   const result=new Promise<any>(yes=>child!.on('message',(m:any)=>{if(m.type==='closed')yes(m)}));child.send('stop');const evidence=await within(result);assert.equal(await within(childClosed),0,stderr);child=undefined
   assert.equal(evidence.closed,1);assert.equal(evidence.attempted.length,2);assert.ok(evidence.attempted.every((at:number)=>at>=prepared.leaseUntil),'no task may run before the old lease expires');assert.deepEqual(await readFile(unknownFile),untouched);assert.deepEqual(await readdir(join(teams,'c'.repeat(64))),[]);assert.deepEqual(await readdir(join(teams,'not-a-team')),[])
  }finally{registry.close();if(child?.connected)child.send('stop');if(childClosed)try{await within(childClosed)}catch{child?.kill();await within(childClosed)}assert.ok(resolve(root).startsWith(resolve(tmpdir())+sep)&&root.includes('flymind-cloud-http-recovery-'));await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100})}
+})
+
+test('HTTP maintenance drains a disconnected delayed create, rejects new writes, and sends rooms reconnect not revocation',async()=>{
+ let entered!:()=>void,release!:()=>void
+ const entering=new Promise<void>(r=>entered=r),barrier=new Promise<void>(r=>release=r),original=NativeDiagramService.prototype.create
+ const s=await setup();let stream:ReturnType<typeof httpRequest>|undefined
+ try{
+  const h=await s.health();let response=await s.request(s.team('team-a','/native/diagrams'),{token:tokens.alice,rootId:h.dataRootId,method:'POST',body:{content:businessContent('flowchart','maintenance-room'),requestId:'maintenance-source'}});assert.equal(response.status,201)
+  let text='',snapshot!:()=>void;const snap=new Promise<void>(r=>snapshot=r),ended=new Promise<void>((yes,no)=>{
+   stream=httpRequest(s.base+s.team('team-a','/native/collaboration/maintenance-room/events'),{headers:{Host:'localhost',Origin:'http://localhost',Authorization:'Bearer '+tokens.alice,'X-FlyMind-DataRoot-Id':h.dataRootId}},res=>{assert.equal(res.statusCode,200);res.on('data',b=>{text+=b.toString();if(text.includes('event: snapshot'))snapshot()});res.on('end',yes);res.on('error',no)});stream.on('error',no);stream.end()
+  });await within(snap)
+  NativeDiagramService.prototype.create=async function(...args){entered();await barrier;return original.apply(this,args)}
+  const req=httpRequest(s.base+s.team('team-a','/native/diagrams'),{method:'POST',headers:{Host:'localhost',Origin:'http://localhost',Authorization:'Bearer '+tokens.alice,'X-FlyMind-DataRoot-Id':h.dataRootId,'Content-Type':'application/json'}});req.on('error',()=>{});req.end(JSON.stringify({content:businessContent('flowchart','maintenance-delayed'),requestId:'maintenance-delayed'}))
+  await within(entering);req.destroy()
+  await assert.rejects(s.cloud.quiesce({timeoutMs:25}),{code:'CLOUD_DRAIN_TIMEOUT'})
+  assert.equal(s.cloud.maintenance.snapshot().pendingWrites,1)
+  response=await s.request(s.team('team-a','/native/diagrams'),{token:tokens.alice,rootId:h.dataRootId,method:'POST',body:{content:businessContent('flowchart','must-not-write'),requestId:'denied'}});assert.equal(response.status,503);assert.equal((await response.json() as any).code,'CLOUD_UPDATING');assert.equal(response.headers.get('retry-after'),'2')
+  release();await s.cloud.quiesce({timeoutMs:3000});await within(ended)
+  assert.match(text,/event: reconnect/);assert.match(text,/CLOUD_UPDATING/);assert.doesNotMatch(text,/access-revoked/)
+  response=await s.request(s.team('team-a','/native/diagrams/maintenance-delayed'),{token:tokens.alice});assert.equal(response.status,200,'disconnected accepted write actually persisted')
+  response=await s.request('/readyz');assert.equal(response.status,503);assert.equal((await response.json() as any).ready,false)
+ }finally{release();NativeDiagramService.prototype.create=original;stream?.destroy();await s.close()}
+})
+
+test('export quiesce finishes only current job and fresh pool resumes untouched persistent queue',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'flymind-cloud-quiesce-')),data=join(root,'data')
+ const registry=new CloudTeamWorkspaces(data,{authorize:async(_t,teamId)=>({user:{id:'alice',name:'Alice'},session:{id:'a',expiresAt:Date.now()+60000},team:{id:teamId,name:teamId,role:'editor'}})},{release:cloudMcpHandshake().then(v=>v.release)})
+ let entered!:()=>void,release!:()=>void;const started=new Promise<void>(r=>entered=r),barrier=new Promise<void>(r=>release=r);let attempts=0,closed=0
+ // Deliberate renderer failure tests queue ownership only, not image rendering.
+ const pool=new CloudExportPool({render:async()=>{attempts++;entered();await barrier;throw Error('planned queue drain fixture')},close:async()=>{closed++}},1,{root:data,intervalMs:50})
+ let resumed:CloudExportPool|undefined
+ try{
+  const prepared=await registry.run(tokens.alice,'team-a','export:create',async workspace=>{
+   const reservation=pool.reserve(workspace)
+   try{await workspace.diagrams.create({content:businessContent('flowchart','drain-queue'),requestId:'create'},workspace.dataRootId)
+    const first=await workspace.exports.create('drain-queue',{expectedRevision:1,requestId:'first'},workspace.dataRootId),second=await workspace.exports.create('drain-queue',{expectedRevision:1,requestId:'second'},workspace.dataRootId);return {workspace,first,second}
+   }finally{reservation()}
+  });await within(started)
+  await assert.rejects(pool.quiesce({timeoutMs:20}),{code:'CLOUD_EXPORT_DRAIN_TIMEOUT'});assert.equal(closed,0)
+  assert.throws(()=>pool.reserve(prepared.workspace),{code:'CLOUD_UPDATING'})
+  release();await pool.quiesce({timeoutMs:2000});assert.equal(attempts,1)
+  assert.equal((await prepared.workspace.store.getNativeExport(prepared.first.id)).job.status,'failed')
+  let second=(await prepared.workspace.store.getNativeExport(prepared.second.id)).job;assert.equal(second.status,'queued');assert.equal(second.attempts,0)
+  await pool.close();assert.equal(closed,1)
+  resumed=new CloudExportPool({render:async()=>{throw Error('planned recovered queue fixture')},close:async()=>{}},1,{root:data,intervalMs:50})
+  const deadline=Date.now()+3000;do{second=(await prepared.workspace.store.getNativeExport(prepared.second.id)).job;if(second.status==='failed')break;await new Promise(r=>setTimeout(r,20))}while(Date.now()<deadline)
+  assert.equal(second.status,'failed');assert.equal(second.attempts,1,'recovered without request/reserve/poll kick')
+ }finally{release();await pool.close();await resumed?.close();registry.close();assert.ok(resolve(root).startsWith(resolve(tmpdir())+sep)&&root.includes('flymind-cloud-quiesce-'));await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100})}
 })

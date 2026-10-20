@@ -1,10 +1,11 @@
 import {z} from 'zod'
+import {wirePositiveInteger} from './wire'
 
 const identifier=z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/)
 export const teamIdSchema=identifier
 const contextSchema=z.strictObject({
   user:z.strictObject({id:identifier,name:z.string().min(1).max(200)}),
-  session:z.strictObject({id:identifier,expiresAt:z.number().int().positive()}),
+  session:z.strictObject({id:identifier,expiresAt:z.preprocess(value=>{try{return wirePositiveInteger(value)}catch{return null}},z.number().int().positive())}),
   team:z.strictObject({id:identifier,name:z.string().min(1).max(200),role:z.enum(['owner','admin','editor','viewer'])}),
   authorization:z.strictObject({purpose:z.literal('mcp'),resource:z.string().url(),scopes:z.array(z.enum(['flymind:read','flymind:write'])).min(1).max(2).refine(s=>new Set(s).size===s.length&&s.includes('flymind:read')),clientId:identifier}).optional()
 })

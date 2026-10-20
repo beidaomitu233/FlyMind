@@ -16,3 +16,8 @@ npx --yes pnpm@10.28.1 exec node scripts/build-flymind-admin.mjs
 已完成固定pnpm10.28.1 frozen-lockfile安装及web-ele类型检查；基线错误/最小修复详见TYPECHECK_BASELINE.md。构建需先运行工作区依赖图，不直接依赖源码目录已有dist。
 
 最终复现构建必须使用scripts/build-flymind-admin.mjs：源环境helper只读.env文件，脚本从无秘密模板以wx创建临时production.local，执行既有Turbo依赖图，finally仅删除本次原字节文件；操作者已有文件则拒绝并原样保留。已受控验证EEXIST保护。产物静态核对/admin/、/api、无hm.baidu.com，摘要见.validation/build-result.json（214文件、3,462,977字节，treeSHA256 ebe9d4b6a37f0fde500103e763fc954a3fa2240728751ef1fbf6add1faec15e2）。这不是实网登录验收。
+
+
+## integrations发布源说明（2026-10-20）
+
+本文件的C01依赖/构建结果来自迁移前受控副本；integrations为后续唯一发布源。当前本目录未复制node_modules/dist，源码核对985文件、规范换行后无差异。用户/团队管理API仍直接接Java `/admin/flymind/...`，管理登录为`/user/login`，API公开配置`/api`由同源网关去前缀转发。当前未运行本目录pnpm安装/浏览器登录，不能将旧静态构建或Java的H2 HTTP fixture说成生产Vben闭环已通过。

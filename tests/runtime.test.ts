@@ -55,7 +55,7 @@ test('共享文件存储：并发修改仅成功一次，非法增量修改不�
 test('真实 STDIO MCP：发现工具、读取规则、生成五类图片、读改与冲突保护', async()=>{
   const root=await mkdtemp(join(tmpdir(),'flymind-mcp-'))
   const env=Object.fromEntries(Object.entries(process.env).filter((v):v is [string,string]=>typeof v[1]==='string'))
-  const transport=new StdioClientTransport({command:process.execPath,args:[join(PROJECT_ROOT,'server/start.mjs')],cwd:PROJECT_ROOT,env:{...env,FLYMIND_DATA_DIR:root,FLYMIND_AUTO_WEB:'0'},stderr:'pipe'})
+  const transport=new StdioClientTransport({command:process.execPath,args:[join(PROJECT_ROOT,'lib/server/mcp-legacy.js')],cwd:PROJECT_ROOT,env:{...env,FLYMIND_DATA_DIR:root,FLYMIND_AUTO_WEB:'0'},stderr:'pipe'})
   const client=new Client({name:'flymind-integration-test',version:'1.0.0'})
   let diagnostics='';transport.stderr?.on('data',b=>diagnostics+=b.toString())
   const call=async(name:string,args:Record<string,unknown>)=>{
@@ -72,12 +72,12 @@ test('真实 STDIO MCP：发现工具、读取规则、生成五类图片、读�
     const schema=(create.inputSchema.properties as any).content
     assert.equal(schema.additionalProperties,false);assert.ok(schema.properties.nodes.items.properties.label);assert.ok(!schema.properties.nodes.items.properties.x)
     assert.match(schema.properties.edges.items.properties.kind.description,/feedback/)
-    assert.match(schema.properties.nodes.items.properties.description.description,/不用于步骤排序/)
+    assert.match(schema.properties.nodes.items.properties.description.description,/不塞参数预算或连续步骤/)
     const patch=(tools.find(t=>t.name==='patch_diagram')!.inputSchema.properties as any).operations
     assert.equal(patch.items.oneOf?.length||patch.items.anyOf?.length,11)
     const guide=await call('get_drawing_guide',{kind:'swimlane'})
-    assert.equal((guide.structuredContent as any).standardVersion,'1.0');assert.ok((guide.structuredContent as any).guide.includes('绘图内容标准 1.0'))
-    const standard=await client.readResource({uri:'flymind://drawing-standard'});assert.ok((standard.contents[0] as any).text.includes('修改原图的标准'))
+    assert.equal((guide.structuredContent as any).standardVersion,'1.1');assert.ok((guide.structuredContent as any).guide.includes('绘图内容标准 1.1'))
+    const standard=await client.readResource({uri:'flymind://drawing-standard'});assert.ok((standard.contents[0] as any).text.includes('每次绘制与修改'))
     const qualityDraft=sampleFor('flowchart');qualityDraft.id='quality-draft';qualityDraft.nodes[0].label='大段说明'.repeat(30)
     const validation=(await call('validate_diagram',{content:extractContent(qualityDraft)})).structuredContent as any;assert.equal(validation.valid,false);assert.ok(validation.quality.issues.some((i:any)=>i.code==='long_label'))
     const rejected=await client.callTool({name:'create_diagram',arguments:{content:extractContent(qualityDraft)}});assert.equal(rejected.isError,true);assert.equal(JSON.parse((rejected.content as any[])[0].text).error.code,'QUALITY_FAILED');await assert.rejects(new DiagramStore(root).get('quality-draft'))

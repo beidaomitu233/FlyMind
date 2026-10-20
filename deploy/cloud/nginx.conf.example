@@ -1,0 +1,45 @@
+# Install only after replacing the hostname and TLS paths for the actual server.
+server {
+    listen 443 ssl;
+    server_name draw.example.com;
+    ssl_certificate /etc/letsencrypt/live/draw.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/draw.example.com/privkey.pem;
+    client_max_body_size 4m;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy same-origin always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    location ~ ^/(mcp|authorize|register|token|revoke)$ {
+        proxy_pass http://127.0.0.1:5193;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_buffering off;
+        proxy_read_timeout 12m;
+    }
+    location /.well-known/ {
+        proxy_pass http://127.0.0.1:5193;
+        proxy_set_header Host $http_host;
+    }
+    location /admin/ { alias /opt/flymind/current/admin/; try_files $uri $uri/ /admin/index.html; }
+    location /api/ {
+        proxy_pass http://127.0.0.1:18080/;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+    # Public, authenticated account/device endpoints used by local installations.
+    location /app/flymind/ {
+        proxy_pass http://127.0.0.1:18080;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+    location /cloud-api/ {
+        proxy_pass http://127.0.0.1:5192;
+        proxy_set_header Host $http_host;
+        proxy_buffering off;
+        proxy_read_timeout 12m;
+    }
+    location / {
+        proxy_pass http://127.0.0.1:5192;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}

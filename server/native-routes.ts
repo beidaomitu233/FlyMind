@@ -6,19 +6,22 @@ import type {NativeExportService} from './application/native-exports'
 import {StoreError} from './store'
 import {NativeImportService} from './application/native-imports'
 import {nativeDocumentCapabilities} from '../src/drawing/services/native-capabilities'
+import {applicationDrawingGuide} from './mcp-native/guide'
+import type {CloudReleaseManifest} from './cloud/mcp-compat'
 
 export function nativeError(error:unknown){
   const e=error as {message?:string;status?:number;code?:string;currentRevision?:number;quality?:unknown}
   const code=e.code||e.message?.match(/^([A-Z][A-Z0-9_]+):/)?.[1]||'VALIDATION_FAILED'
   return {status:e.status&&e.status>=400&&e.status<=599?e.status:400,body:{error:e.message||'原生文档操作失败',code,...(e.currentRevision!==undefined?{currentRevision:e.currentRevision}:{}),...(e.quality?{quality:e.quality}:{})}}
 }
-export function nativeRouter(service:NativeDiagramService,exports?:NativeExportService){
+export function nativeRouter(service:NativeDiagramService,exports?:NativeExportService,options:{release?:CloudReleaseManifest}={}){
   const router=Router()
   const imports=new NativeImportService(service)
   router.use((_req,_res,next)=>{if(!service.enabled)next(new StoreError('Native pilot 未启用',404,undefined,'NATIVE_PILOT_DISABLED'));else next()})
   router.use((req,_res,next)=>{try{if(['POST','PUT','PATCH','DELETE'].includes(req.method))service.assertWorkspaceIdentity(req.get('X-FlyMind-DataRoot-Id'));next()}catch(error){next(error)}})
   router.get('/diagrams',async(_req,res)=>res.json(await service.list()))
   router.get('/capabilities',(_req,res)=>res.json(nativeDocumentCapabilities()))
+  router.get('/guide',async(req,res)=>{if(Object.keys(req.query).some(k=>k!=='kind')||req.query.kind!==undefined&&typeof req.query.kind!=='string')throw new StoreError('绘图规则参数无效');res.json(await applicationDrawingGuide(req.query.kind,options.release))})
   router.post('/imports',async(req,res)=>res.status(201).json(await imports.import(req.body,req.get('X-FlyMind-DataRoot-Id'))))
   router.post('/imports/preview',async(req,res)=>res.json(await imports.preview(req.body,req.get('X-FlyMind-DataRoot-Id'))))
   router.post('/imports/items/preview',async(req,res)=>res.json(await imports.previewItem(req.body,req.get('X-FlyMind-DataRoot-Id'))))

@@ -1,0 +1,132 @@
+name: Build cloud candidate
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    paths: ['server/**', 'src/**', 'scripts/**', 'integrations/**', 'deploy/**', 'package*.json', '.github/workflows/cloud-candidate.yml']
+permissions:
+  contents: read
+concurrency:
+  group: cloud-candidate-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  source:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, verified 2026-10-20
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.23.3
+          cache: npm
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: 17.0.19
+          cache: maven
+          cache-dependency-path: integrations/xinghui-admin/backend/**/pom.xml
+      - run: npm ci
+      - run: npm run setup:runtime
+      - run: npm run build
+      - name: Cloud and local contract gates
+        run: node --import tsx --test --test-concurrency=1 tests/cloud-wire.test.ts tests/cloud-client.test.ts tests/cloud-workspaces.test.ts tests/cloud-http.test.ts tests/cloud-collaboration.test.ts tests/cloud-merge.test.ts tests/cloud-mcp.test.ts tests/cloud-oauth.test.ts tests/cloud-mcp-updates.test.ts tests/cloud-maintenance.test.ts tests/local-auth.test.ts tests/local-auth-runtime.test.ts tests/native-session.test.ts tests/native-undo-guard.test.ts tests/native-import-batch.test.ts tests/native-activity.test.ts tests/native-exports.test.ts
+      - name: Java control plane
+        shell: pwsh
+        run: |
+          $env:JWT_SECRET=[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(48))
+          try {
+            mvn -f integrations/xinghui-admin/backend/pom.xml -s integrations/xinghui-admin/backend/build-settings.xml '-Dtest=Flymind*Test' '-Dsurefire.failIfNoSpecifiedTests=false' "-Dflymind.nodeExecutable=$((Get-Command node).Source)" package
+            if ($LASTEXITCODE -ne 0) { throw 'Java verification failed' }
+          } finally { Remove-Item Env:JWT_SECRET -ErrorAction SilentlyContinue }
+      - name: Two browsers, MCP and update recovery
+        run: node --import tsx scripts/cloud-ui-probe.mjs
+      - name: Local account browser and compiled Runtime
+        run: node --import tsx scripts/local-auth-ui-probe.mjs
+      - name: Build controlled admin UI
+        working-directory: integrations/xinghui-admin/frontend
+        run: |
+          npm exec --yes --package=pnpm@10.28.1 -- pnpm install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { throw 'Admin dependencies failed' }
+          npm exec --yes --package=pnpm@10.28.1 -- node scripts/build-flymind-admin.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Admin build failed' }
+      - name: Assemble source candidate
+        run: node scripts/build-cloud-bundle.mjs --output=output/cloud-source --release-id=run-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cloud-source
+          path: output/cloud-source/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+  platform:
+    needs: source
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x64
+          - os: windows-2022
+            platform: win32-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.23.3
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: cloud-source
+          path: candidate
+      - name: Install platform dependencies
+        working-directory: candidate/application
+        run: npm ci --omit=dev
+      - name: Linux browser libraries
+        if: runner.os == 'Linux'
+        run: node candidate/application/node_modules/playwright-core/cli.js install-deps chromium
+      - name: Fixed engine and browser supply
+        working-directory: candidate/application
+        run: npm run setup:runtime
+      - name: Five-kind real PNG and SQLite verification
+        working-directory: candidate/application
+        run: npm run smoke
+      - name: Freeze exact platform archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf flymind-${{ matrix.platform }}.tar.gz -C candidate .
+          sha256sum flymind-${{ matrix.platform }}.tar.gz > flymind-${{ matrix.platform }}.tar.gz.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: flymind-${{ matrix.platform }}
+          path: |
+            flymind-${{ matrix.platform }}.tar.gz
+            flymind-${{ matrix.platform }}.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+  staging:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.CLOUD_AUTO_STAGING == 'true'
+    needs: platform
+    runs-on: ubuntu-24.04
+    environment: staging
+    concurrency:
+      group: cloud-staging
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.23.3
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: flymind-linux-x64
+          path: download
+      - name: Deploy verified staging candidate
+        env:
+          DEPLOY_ENVIRONMENT: staging
+          DEPLOY_RELEASE_ID: run-${{ github.run_id }}-${{ github.run_attempt }}
+          DEPLOY_SSH_HOST: ${{ secrets.SSH_HOST }}
+          DEPLOY_SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_SSH_PORT: ${{ secrets.SSH_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: node scripts/upload-cloud-candidate.mjs

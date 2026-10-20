@@ -13,9 +13,13 @@ import {inspectDrawing} from '../src/drawing/core/drawing-quality'
 // @ts-expect-error Plain JS deterministic fixture shared with the native probe.
 import {migrationFixture} from '../scripts/probes/helpers/migration-fixtures.mjs'
 
-test('PBS v2 migration keeps 23/26/38 and exact source content/times, is deterministic and does not mutate its source',async()=>{
+test('PBS v2 migration keeps 23/26, current quality issues and exact source content/times without mutating its source',async()=>{
  const source=await migrationFixture(),before=JSON.stringify(source),preview=await previewLegacySwimlane(source)
- assert.equal(preview.status,'ready',JSON.stringify(preview.diagnostics));assert.ok(preview.project);assert.equal(preview.counts.nodes,23);assert.equal(preview.counts.edges,26);assert.equal(inspectDrawing(preview.project.content).score,38)
+ const sourceQuality=inspectDrawing(source.content)
+ // The archived standard-1.0 score was 38; compare the complete current result,
+ // retaining the known business defects instead of pinning that obsolete score.
+ assert.equal(sourceQuality.passed,false);assert.ok(sourceQuality.issues.some(i=>i.code==='decision_conditions'&&i.nodeId==='n12'));assert.ok(sourceQuality.issues.some(i=>i.code==='isolated_node'&&i.nodeId==='n23'))
+ assert.equal(preview.status,'ready',JSON.stringify(preview.diagnostics));assert.ok(preview.project);assert.equal(preview.counts.nodes,23);assert.equal(preview.counts.edges,26);assert.deepEqual(inspectDrawing(preview.project.content),sourceQuality)
  assert.deepEqual(preview.project.content,source.content);assert.deepEqual(inspectDrawing(preview.project.content),inspectDrawing(source.content));assert.equal(preview.project.createdAt,source.createdAt);assert.equal(preview.project.updatedAt,source.updatedAt)
  assert.equal(JSON.stringify(source),before);assert.deepEqual(await previewLegacySwimlane(source),preview);assert.deepEqual(await convertLegacySwimlane(source,{expectedSourceHash:preview.sourceHash}),preview)
  assert.deepEqual((await projectDrawio(preview.project.rendering.engine.xml)).content,source.content);await validateDrawingProject(preview.project)

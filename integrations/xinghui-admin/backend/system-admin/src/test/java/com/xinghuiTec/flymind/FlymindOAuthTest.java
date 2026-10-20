@@ -45,7 +45,7 @@ class FlymindOAuthTest {
     @BeforeEach void setup() throws Exception {
         db.execute("DROP ALL OBJECTS");
         db.execute("CREATE TABLE sys_user(user_id BIGINT PRIMARY KEY,tenant_id VARCHAR(20),username VARCHAR(50),nickname VARCHAR(50),password VARCHAR(100),mobile VARCHAR(20),status INT,is_deleted INT)");
-        try(var connection=source.getConnection()) { for(String sql:List.of("V20261019_01__flymind_identity.sql","V20261019_03__flymind_oauth.sql")) ScriptUtils.executeSqlScript(connection,new ClassPathResource("db/migration/"+sql)); }
+        try(var connection=source.getConnection()) { for(String sql:List.of("V20261019_01__flymind_identity.sql","V20261019_03__flymind_oauth.sql","V20261020_01__flymind_local_device.sql")) ScriptUtils.executeSqlScript(connection,new ClassPathResource("db/migration/"+sql)); }
         clock.set(1800000000000L);
         for(int i=1;i<=2;i++) db.update("INSERT INTO sys_user VALUES(?,'app-test',?,?,?, ?,1,0)",i,"account"+i,"User"+i,new BCryptPasswordEncoder(4).encode("correct-password"),"1380000000"+i);
         bearer="Bearer "+identity.login("13800000001","correct-password","ip").sessionToken();team=identity.createTeam(bearer,"OAuth team").id();

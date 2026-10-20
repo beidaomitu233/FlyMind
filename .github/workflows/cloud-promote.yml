@@ -1,0 +1,59 @@
+name: Promote verified cloud release
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful main cloud-candidate workflow run id
+        required: true
+      run_attempt:
+        description: Build attempt of that run
+        required: true
+        default: '1'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: cloud-production
+  cancel-in-progress: false
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.23.3
+      - name: Verify build provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN: ${{ inputs.run_id }}
+          BUILD_ATTEMPT: ${{ inputs.run_attempt }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          node --input-type=module <<'JS'
+          import {appendFile} from 'node:fs/promises';
+          const e=process.env;
+          if(!/^\d+$/.test(e.BUILD_RUN)||!/^\d+$/.test(e.BUILD_ATTEMPT))throw Error('Invalid run');
+          const r=await fetch('https://api.github.com/repos/'+e.REPOSITORY+'/actions/runs/'+e.BUILD_RUN,{headers:{Authorization:'Bearer '+e.GH_TOKEN,Accept:'application/vnd.github+json'}});
+          if(!r.ok)throw Error('Build not accessible');const b=await r.json();
+          if(b.conclusion!=='success'||b.head_branch!=='main'||b.event==='pull_request'||b.path!=='.github/workflows/cloud-candidate.yml'||b.run_attempt!==+e.BUILD_ATTEMPT)throw Error('Expected successful main candidate run/attempt');
+          const j=await fetch('https://api.github.com/repos/'+e.REPOSITORY+'/actions/runs/'+e.BUILD_RUN+'/attempts/'+e.BUILD_ATTEMPT+'/jobs?per_page=100',{headers:{Authorization:'Bearer '+e.GH_TOKEN,Accept:'application/vnd.github+json'}});
+          if(!j.ok||!(await j.json()).jobs?.some(job=>job.name==='staging'&&job.conclusion==='success'))throw Error('That exact candidate must pass staging before production');
+          await appendFile(e.GITHUB_ENV,'DEPLOY_RELEASE_ID=run-'+e.BUILD_RUN+'-'+e.BUILD_ATTEMPT+'\n');
+          JS
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: flymind-linux-x64
+          path: download
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Promote exact staging artifact
+        env:
+          DEPLOY_ENVIRONMENT: production
+          DEPLOY_SSH_HOST: ${{ secrets.SSH_HOST }}
+          DEPLOY_SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_SSH_PORT: ${{ secrets.SSH_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: node scripts/upload-cloud-candidate.mjs
