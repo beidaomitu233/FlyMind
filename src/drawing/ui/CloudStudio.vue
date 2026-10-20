@@ -1,24 +1,43 @@
 <script setup lang="ts">
-import {computed,onMounted,ref,shallowRef,watch} from 'vue'
+import {computed,onMounted,onBeforeUnmount,ref,shallowRef,watch} from 'vue'
 import {useRoute,useRouter,onBeforeRouteUpdate,type LocationQueryRaw} from 'vue-router'
 import NativeStudio from './NativeStudio.vue'
-import {CloudClient,cloudDraftDatabase,cloudTeamFetch,type CloudMe,type CloudTeam,type CloudMember,type CloudRole} from '../services/cloud-client'
+import {CloudClient,CloudIdentityGuard,cloudAuthorizationRedirect,cloudConsentTeams,cloudDraftDatabase,type CloudConsent,type CloudMe,type CloudTeam,type CloudMember,type CloudRole} from '../services/cloud-client'
 import {IndexedDbDraftRepository} from '../services/native-drafts'
 import {NativeApiError} from '../services/native-types'
 import './cloud-studio.css'
-const api=new CloudClient(),route=useRoute(),router=useRouter(),me=shallowRef<CloudMe>(),team=shallowRef<CloudTeam>(),studio=ref<InstanceType<typeof NativeStudio>>()
+const authApi=new CloudClient();let api=authApi;const identity=shallowRef<CloudIdentityGuard>(),suspended=ref(false),consent=shallowRef<CloudConsent>(),consentTeam=ref(''),now=ref(Date.now());const route=useRoute(),router=useRouter(),me=shallowRef<CloudMe>(),team=shallowRef<CloudTeam>(),studio=ref<InstanceType<typeof NativeStudio>>()
 const loading=ref(true),busy=ref(false),error=ref(''),phone=ref(''),password=ref(''),accountOpen=ref(false),membersOpen=ref(false),members=ref<CloudMember[]>([]),invitePhone=ref(''),inviteRole=ref<'admin'|'editor'|'viewer'>('editor'),inviteToken=ref(''),acceptToken=ref(''),teamName=ref('')
-const context=computed(()=>me.value&&team.value?{key:cloudDraftDatabase(me.value.user.id,team.value.id),repository:new IndexedDbDraftRepository(cloudDraftDatabase(me.value.user.id,team.value.id)),options:{bootstrapSession:false,fetch:cloudTeamFetch(team.value.role)}}:undefined)
+const context=computed(()=>me.value&&team.value&&identity.value?{key:cloudDraftDatabase(me.value.user.id,team.value.id),repository:new IndexedDbDraftRepository(cloudDraftDatabase(me.value.user.id,team.value.id)),options:{bootstrapSession:false,fetch:identity.value!.fetch(team.value.id)}}:undefined)
 const manage=computed(()=>team.value?.role==='owner'||team.value?.role==='admin')
-let internalNavigation=false
+const authorizationId=computed(()=>typeof route.query.authorize==='string'?route.query.authorize:'')
+const consentExpired=computed(()=>!consent.value||consent.value.expiresAt<=now.value)
+const eligibleTeams=computed(()=>consent.value?cloudConsentTeams(consent.value):[])
+let internalNavigation=false,disposed=false
+let channel:BroadcastChannel|undefined
+function announce(){channel?.postMessage('identity-changed')}
+async function loseIdentity(guard:CloudIdentityGuard,cause:Error){
+ if(identity.value!==guard||suspended.value)return
+ suspended.value=true;membersOpen.value=false;accountOpen.value=false;members.value=[];inviteToken.value='';consent.value=undefined;error.value=cause.message
+ try{await studio.value?.suspendForIdentityChange()}catch(e){error.value+='；本机草稿保存失败：'+(e instanceof Error?e.message:String(e))}
+ if(identity.value!==guard||disposed)return
+ team.value=undefined;me.value=undefined;identity.value=undefined;api=authApi;suspended.value=false
+}
+function bind(value:CloudMe){const guard=new CloudIdentityGuard(value.user.id,globalThis.fetch.bind(globalThis),e=>{void loseIdentity(guard,e)});identity.value=guard;api=new CloudClient(guard.fetch());me.value=value}
+async function inspectConsent(){consent.value=undefined;if(!authorizationId.value||!identity.value)return;const guard=identity.value,value=await api.inspectAuthorization(authorizationId.value);if(identity.value!==guard||suspended.value)return;consent.value=value;consentTeam.value=eligibleTeams.value[0]?.id??''}
+async function decide(approved:boolean){await guarded(async()=>{if(!consent.value||consent.value.expiresAt<=Date.now())throw Error('授权请求已过期，请回到客户端重新发起');if(approved&&!eligibleTeams.value.some(t=>t.id===consentTeam.value))throw Error('请选择有权限的团队');const result=await api.approveAuthorization(authorizationId.value,approved,consentTeam.value);window.location.assign(cloudAuthorizationRedirect(result.redirectUri,window.location.origin))})}
+async function recheck(){const guard=identity.value;if(!guard||suspended.value||document.visibilityState==='hidden')return;try{const value=await guard.check(team.value?.id);if(identity.value===guard&&!suspended.value){me.value=value;if(team.value)team.value=value.teams.find(t=>t.id===team.value!.id)}}catch(e){fail(e)}}
+const identityTimer=setInterval(()=>{now.value=Date.now();void recheck()},20000)
+function visibility(){void recheck()}
+onBeforeUnmount(()=>{disposed=true;clearInterval(identityTimer);channel?.close();window.removeEventListener('focus',visibility);document.removeEventListener('visibilitychange',visibility)})
 async function replaceQuery(query:LocationQueryRaw){internalNavigation=true;try{await router.replace({query})}finally{internalNavigation=false}}
 function fail(value:unknown){error.value=value instanceof Error?value.message:String(value)}
 async function guarded(action:()=>Promise<unknown>){if(busy.value)return;busy.value=true;error.value='';try{await action()}catch(e){fail(e)}finally{busy.value=false}}
-async function refreshIdentity(){const value=await api.me();me.value=value;const selected=value.teams.find(t=>t.id===team.value?.id);if(selected)team.value=selected;return value}
+async function refreshIdentity(){const guard=identity.value;if(!guard)throw Error('请重新登录');const value=await guard.check(team.value?.id);if(identity.value!==guard||suspended.value)throw Error('登录身份已改变');me.value=value;if(team.value)team.value=value.teams.find(t=>t.id===team.value!.id);return value}
 async function selectTeam(id:string){if(id===team.value?.id)return;await guarded(async()=>{const selected=me.value?.teams.find(t=>t.id===id);if(!selected)throw Error('无权访问该团队');if(studio.value&&!await studio.value.prepareLeave())return;team.value=selected;membersOpen.value=false;accountOpen.value=false;const query:LocationQueryRaw={...route.query,team:id};delete query.diagram;await replaceQuery(query)})}
 function teamChange(event:Event){const input=event.target as HTMLSelectElement,next=input.value;input.value=team.value?.id??'';void selectTeam(next)}
-async function login(){await guarded(async()=>{try{await api.login(phone.value,password.value)}finally{password.value=''}const value=await refreshIdentity();const requested=typeof route.query.team==='string'?route.query.team:undefined;team.value=value.teams.find(t=>t.id===requested)??value.teams[0];if(team.value){const query:LocationQueryRaw={...route.query,team:team.value.id};if(requested&&requested!==team.value.id)delete query.diagram;await replaceQuery(query)}})}
-async function logout(){await guarded(async()=>{if(studio.value&&!await studio.value.prepareLeave())return;await api.logout();team.value=undefined;me.value=undefined;members.value=[];inviteToken.value='';accountOpen.value=false;await replaceQuery({})})}
+async function login(){await guarded(async()=>{try{await authApi.login(phone.value,password.value)}finally{password.value=''}const value=await authApi.me();bind(value);announce();if(authorizationId.value){await inspectConsent();return}const requested=typeof route.query.team==='string'?route.query.team:undefined;team.value=value.teams.find(t=>t.id===requested)??value.teams[0];if(team.value){const query:LocationQueryRaw={...route.query,team:team.value.id};if(requested&&requested!==team.value.id)delete query.diagram;await replaceQuery(query)}})}
+async function logout(){await guarded(async()=>{if(studio.value&&!await studio.value.prepareLeave())return;await api.logout();announce();team.value=undefined;me.value=undefined;identity.value=undefined;api=authApi;members.value=[];inviteToken.value='';accountOpen.value=false;await replaceQuery({})})}
 async function showMembers(){await guarded(async()=>{if(!team.value)return;members.value=await api.members(team.value.id);membersOpen.value=true;inviteToken.value='';accountOpen.value=false})}
 function canEdit(member:CloudMember){return member.userId!==me.value?.user.id&&manage.value&&member.role!=='owner'&&(team.value?.role==='owner'||member.role!=='admin')}
 async function changeRole(member:CloudMember,event:Event){const input=event.target as HTMLSelectElement,next=input.value as Exclude<CloudRole,'owner'>;input.value=member.role;await guarded(async()=>{await api.role(team.value!.id,member.userId,next);members.value=await api.members(team.value!.id)})}
@@ -28,15 +47,21 @@ async function invite(){await guarded(async()=>{const value=await api.invite(tea
 async function accept(){await guarded(async()=>{const value=await api.accept(acceptToken.value);acceptToken.value='';await refreshIdentity();if(studio.value&&!await studio.value.prepareLeave())return;team.value=value;await replaceQuery({team:value.id});accountOpen.value=false})}
 async function createTeam(){await guarded(async()=>{const value=await api.createTeam(teamName.value);teamName.value='';await refreshIdentity();if(studio.value&&!await studio.value.prepareLeave())return;team.value=value;await replaceQuery({team:value.id});accountOpen.value=false})}
 async function leaveTeam(){if(!confirm('退出当前团队？'))return;await guarded(async()=>{if(studio.value&&!await studio.value.prepareLeave())return;await api.leave(team.value!.id);team.value=undefined;membersOpen.value=false;const value=await refreshIdentity();team.value=value.teams[0];await replaceQuery(team.value?{team:team.value.id}:{})})}
-onBeforeRouteUpdate(async(to,from)=>{if(!me.value||to.query.team===from.query.team||internalNavigation)return true;if(busy.value)return false;return studio.value?studio.value.prepareLeave():true})
+onBeforeRouteUpdate(async(to,from)=>{if(!me.value||to.query.team===from.query.team&&to.query.authorize===from.query.authorize||internalNavigation)return true;if(busy.value)return false;return studio.value?studio.value.prepareLeave():true})
 watch(()=>route.query.team,id=>{if(!me.value||id===team.value?.id)return;const selected=me.value.teams.find(t=>t.id===id);if(selected)team.value=selected;else if(id){team.value=undefined;error.value='当前账号无权访问该团队'}})
-onMounted(async()=>{try{const value=await refreshIdentity(),requested=typeof route.query.team==='string'?route.query.team:undefined;team.value=value.teams.find(t=>t.id===requested)??(!requested?value.teams[0]:undefined);if(requested&&!team.value)error.value='当前账号无权访问该团队';if(team.value&&requested!==team.value.id)await replaceQuery({team:team.value.id})}catch(e){if(!(e instanceof NativeApiError&&e.status===401))fail(e)}finally{loading.value=false}})
+watch(authorizationId,()=>{if(identity.value)void guarded(inspectConsent)})
+onMounted(async()=>{
+ if(typeof BroadcastChannel!=='undefined'){channel=new BroadcastChannel('flymind-cloud-auth-v1');channel.onmessage=()=>{if(identity.value)identity.value.invalidate('其他页面已更换登录状态，请重新登录')}}
+ window.addEventListener('focus',visibility);document.addEventListener('visibilitychange',visibility)
+ try{const value=await authApi.me();bind(value);if(authorizationId.value){await inspectConsent();return}const requested=typeof route.query.team==='string'?route.query.team:undefined;team.value=value.teams.find(t=>t.id===requested)??(!requested?value.teams[0]:undefined);if(requested&&!team.value)error.value='当前账号无权访问该团队';if(team.value&&requested!==team.value.id)await replaceQuery({team:team.value.id})}catch(e){if(!(e instanceof NativeApiError&&e.status===401))fail(e)}finally{loading.value=false}
+})
 </script>
 <template>
 <div class="cloud-studio">
  <div v-if="loading" class="cloud-login" role="status">读取中</div>
  <form v-else-if="!me" class="cloud-login" @submit.prevent="login"><h1>FlyMind</h1><label>手机号<input v-model="phone" autocomplete="username" required maxlength="32"></label><label>密码<input v-model="password" type="password" autocomplete="current-password" required maxlength="200"></label><p v-if="error" role="alert">{{error}}</p><button class="studio-primary" :disabled="busy">登录</button></form>
- <NativeStudio v-else-if="team&&context" :key="context.key" ref="studio" :api-base="'/cloud-api/teams/'+encodeURIComponent(team.id)" :client-options="context.options" :draft-repository="context.repository" :interaction-locked="busy" :read-only="team.role==='viewer'">
+ <section v-else-if="authorizationId" class="cloud-login cloud-consent" aria-label="MCP授权"><h1>授权 FlyMind</h1><template v-if="consent"><p><strong>{{consent.client.name}}</strong> 请求访问您的团队</p><ul><li v-for="scope in consent.scopes" :key="scope">{{scope==='flymind:write'?'创建和修改图形':scope==='flymind:read'?'读取团队图形':scope}}</li></ul><label>授权团队<select v-model="consentTeam" :disabled="busy||consentExpired"><option v-for="item in eligibleTeams" :key="item.id" :value="item.id">{{item.name}}</option></select></label><p v-if="consentExpired" role="alert">请求已过期，请回到客户端重新发起</p><div class="cloud-consent-actions"><button :disabled="busy||consentExpired" @click="decide(false)">拒绝</button><button class="studio-primary" :disabled="busy||consentExpired||!consentTeam" @click="decide(true)">授权</button></div></template><p v-if="error" role="alert">{{error}}</p><button :disabled="busy" @click="logout">退出登录</button></section>
+ <NativeStudio v-else-if="team&&context" :style="suspended?{visibility:'hidden'}:undefined" :key="context.key" ref="studio" :api-base="'/cloud-api/teams/'+encodeURIComponent(team.id)" :client-options="context.options" :draft-repository="context.repository" :interaction-locked="busy||suspended"  :collaboration-user-id="me.user.id" :read-only="team.role==='viewer'">
  <template #account><div class="cloud-account"><select aria-label="当前团队" :value="team.id" :disabled="busy" @change="teamChange"><option v-for="item in me.teams" :key="item.id" :value="item.id">{{item.name}}</option></select><button class="studio-text-btn" :disabled="busy" @click="accountOpen=!accountOpen">{{me.user.name}}</button><div v-if="accountOpen" class="studio-menu cloud-account-menu"><button @click="showMembers">团队成员</button><form @submit.prevent="createTeam"><input v-model="teamName" aria-label="新团队名称" placeholder="团队名称" maxlength="80" required><button :disabled="busy">创建团队</button></form><form @submit.prevent="accept"><input v-model="acceptToken" aria-label="邀请令牌" placeholder="邀请令牌" required><button :disabled="busy">接受邀请</button></form><button :disabled="busy" @click="logout">退出登录</button></div></div></template>
  </NativeStudio>
  <div v-else class="cloud-login"><p>{{error||'暂无可用团队'}}</p><form @submit.prevent="createTeam"><input v-model="teamName" placeholder="团队名称" required maxlength="80"><button :disabled="busy">创建团队</button></form><form @submit.prevent="accept"><input v-model="acceptToken" placeholder="邀请令牌" required><button :disabled="busy">接受邀请</button></form><button @click="logout">退出登录</button></div>

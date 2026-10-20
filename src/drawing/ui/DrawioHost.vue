@@ -5,7 +5,7 @@ import {drawioHostURL} from '../engine/drawio-host/library'
 import {applyDrawioAppearance,type DrawioAppearance} from '../engine/drawio-host/appearance'
 import {hasUncommittedNativeText} from '../engine/drawio-host/editing'
 
-const props=defineProps<{sessionKey:string;initialXML:string;title?:string;appearance?:DrawioAppearance}>()
+const props=defineProps<{sessionKey:string;initialXML:string;title?:string;appearance?:DrawioAppearance;collaboration?:boolean}>()
 const emit=defineEmits<{ready:[event:HostReady];xml:[event:HostXML];error:[event:HostError];saveRequested:[event:HostSaveRequested]}>()
 // Initial document is immutable for this mounted session. Saving never reloads it.
 const initial={sessionKey:props.sessionKey,initialXML:props.initialXML,title:props.title}
@@ -25,7 +25,7 @@ function boot(){
   if(disposed)return
   visible.value=false;loadFailed.value=false;cancelReveal()
   try{
-    controller=new DrawioHostController({...initial,origin:window.location.origin,source:()=>iframe.value?.contentWindow,
+    controller=new DrawioHostController({...initial,collaboration:props.collaboration,origin:window.location.origin,source:()=>iframe.value?.contentWindow,
       post:(data,origin)=>{if(!iframe.value?.contentWindow)throw new Error('编辑器窗口不存在');iframe.value.contentWindow.postMessage(data,origin)},
       readViewport:()=>{const el=iframe.value?.contentDocument?.querySelector('.geDiagramContainer');if(!el||!Number.isFinite(el.scrollLeft)||!Number.isFinite(el.scrollTop))throw new DrawioHostProtocolError('VIEWPORT_UNAVAILABLE','当前画布不可读');return {scrollLeft:el.scrollLeft,scrollTop:el.scrollTop}},
       onReady:reveal,onXML:e=>emit('xml',e),onError:e=>{if(!visible.value){cancelReveal();loadFailed.value=true}emit('error',e)},onSaveRequested:e=>emit('saveRequested',e)})
@@ -39,6 +39,7 @@ watch(()=>props.sessionKey,key=>{if(key!==initial.sessionKey){cancelReveal();vis
 onBeforeUnmount(()=>{disposed=true;cancelReveal();window.removeEventListener('message',receive);controller?.dispose();controller=undefined})
 const requireController=()=>{if(!controller)throw new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪');return controller}
 defineExpose({groupSelection:(ungroup=false)=>requireController().groupSelection(ungroup),getSelection:()=>requireController().getSelection(),mergeXML:(xml:string)=>requireController().mergeXML(xml),undo:()=>requireController().undo(),redo:()=>requireController().redo(),deleteSelectedBranch:()=>controller?controller.deleteSelectedBranch():Promise.reject(new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪')),captureXML:()=>controller?.captureXML()??Promise.reject(new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪')),
+  applyRemoteXML:(fromXML:string,toXML:string)=>requireController().applyRemoteXML(fromXML,toXML),
   commitAndCaptureXML:()=>controller?.commitAndCaptureXML()??Promise.reject(new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪')),
   hasUncommittedText:()=>hasUncommittedNativeText(()=>iframe.value?.contentDocument??null),
   fit:()=>{try{if(!controller)throw new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪');controller.fit()}catch(error){report(error)}}})

@@ -42,6 +42,8 @@ export interface NativePendingSave {request:NativeSaveRequest;seq:number}
 export interface NativeDraft extends NativeDraftKey,DraftGuard {
   formatVersion:1;latestXML:string;acknowledgedXML:string;acknowledgedSeq:number
   inflight?:NativePendingSave;updatedAt:number
+  /** Known committed request retained for a blocked cloud rebase, never retried. */
+  acknowledgedPending?:NativePendingSave;reconcileBlocked?:boolean
 }
 export interface NativeDraftUpdate {key:NativeDraftKey;guard:DraftGuard;draft?:NativeDraft}
 export interface DraftRepository {

@@ -10,6 +10,9 @@ import {businessContent} from './fixtures/native-business'
 import {DiagramStore} from '../server/store'
 import {NativeDiagramService} from '../server/application/native-diagrams'
 import {nativeProtocolPatch} from '../src/drawing/engine/collaboration/protocol-patch'
+import {readFileSync} from 'node:fs'
+import {runInNewContext} from 'node:vm'
+import {sameNativeState} from '../src/drawing/engine/collaboration/state'
 
 const content=businessContent('flowchart','concurrent-rendering')
 const base=(await compileDrawio(content)).xml
@@ -77,4 +80,48 @@ test('actual SQLite concurrent saves retain both edits, durable replay survives 
     assert.equal((await restarted.get(content.id)).revision,3)
     await assert.rejects(restarted.saveCollaborativeEditor(content.id,{...a,xml:label(first,nodeIds[0],'异体重放')},restarted.dataRootId),{code:'IDEMPOTENCY_KEY_REUSED'})
   }finally{assert.ok(root.startsWith(join(tmpdir(),'flymind-cloud-merge-')));await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100})}
+})
+test('paper properties merge independently and conflicting background/page changes do not silently disappear',()=>{
+ const paper=(xml:string,attributes:Record<string,string>)=>edit(xml,n=>{for(const [key,value] of Object.entries(attributes))n.model.setAttribute(key,value)})
+ const local=paper(base,{background:'#aabbcc',fold:'0',math:'1',page:'1'}),remote=paper(base,{pageScale:'1.2',pageWidth:'960',pageHeight:'720',shadow:'1'})
+ const result=parseNative(mergeNativeSnapshots(base,local,remote))
+ for(const [key,value] of Object.entries({background:'#aabbcc',fold:'0',math:'1',page:'1',pageScale:'1.2',pageWidth:'960',pageHeight:'720',shadow:'1'}))assert.equal(attr(result.model,key),value)
+ assert.throws(()=>mergeNativeSnapshots(base,local,paper(base,{background:'#112233'})),error=>error instanceof CollaborationMergeError&&error.conflicts.some(c=>c.field==='model:background'))
+ assert.throws(()=>mergeNativeSnapshots(base,paper(base,{pageScale:'2'}),paper(base,{pageScale:'3'})),CollaborationMergeError)
+})
+test('view protocol values use fixed native JSON strings, including explicit resets; unknown model properties reject',()=>{
+ const changed=edit(base,n=>{for(const [key,value] of Object.entries({background:'#ffeedd',page:'1',pageScale:'1.2',pageWidth:'960',pageHeight:'720',shadow:'1',fold:'0',math:'1',adaptiveColors:'auto'}))n.model.setAttribute(key,value)})
+ const pageId=attr(parseNative(base).diagram,'id')!,view=(nativeProtocolPatch(base,changed) as any).u[pageId].view
+ assert.deepEqual(JSON.parse(view.pageFormat),{x:0,y:0,width:960,height:720});assert.equal(JSON.parse(view.background),'#ffeedd')
+ for(const [key,value] of Object.entries({pageVisible:true,shadowVisible:true,foldingEnabled:false,mathEnabled:true,pageScale:1.2,adaptiveColors:'auto'}))assert.equal(JSON.parse(view[key]),value)
+ const reset=edit(changed,n=>{n.model.removeAttribute('background');n.model.setAttribute('shadow','0');n.model.setAttribute('fold','1');n.model.setAttribute('math','0')})
+ const resetView=(nativeProtocolPatch(changed,reset) as any).u[pageId].view;assert.equal(resetView.background,'null');assert.equal(resetView.shadowVisible,'false');assert.equal(resetView.foldingEnabled,'true');assert.equal(resetView.mathEnabled,'false')
+ for(const key of ['extFonts','backgroundImage','unimplementedProperty'])assert.throws(()=>nativeProtocolPatch(base,edit(base,n=>n.model.setAttribute(key,'changed'))),(e:any)=>e.status===422&&e.code==='COLLABORATION_VIEW_UNSUPPORTED')
+ assert.throws(()=>nativeProtocolPatch(changed,edit(changed,n=>n.model.removeAttribute('pageWidth'))),(e:any)=>e.status===422)
+})
+test('fixed vendor patchViewStateProperty decodes every emitted shared view value without changing its wire type',()=>{
+ const vendor=readFileSync(new URL('../resources/drawio/vendor/js/app.min.js',import.meta.url),'utf8')
+ const declaration=vendor.match(/EditorUi\.prototype\.patchViewStateProperty=function\([^)]*\)\{[^}]*\};/)?.[0]
+ assert.ok(declaration,'Fixed native property decoder must exist')
+ const context={EditorUi:function(){}};runInNewContext(declaration,context)
+ const changed=edit(base,n=>{n.model.setAttribute('background','#fefefe');n.model.setAttribute('pageScale','1.1');n.model.setAttribute('pageWidth','1000');n.model.setAttribute('pageHeight','800');n.model.setAttribute('shadow','1');n.model.setAttribute('fold','0');n.model.setAttribute('math','1')})
+ const pageId=attr(parseNative(base).diagram,'id')!,view=(nativeProtocolPatch(base,changed) as any).u[pageId].view,page={viewState:{} as Record<string,unknown>}
+ const decoder=(context.EditorUi.prototype as any).patchViewStateProperty
+ for(const key of Object.keys(view)){assert.equal(typeof view[key],'string');decoder(page,view,key);assert.equal(JSON.stringify(page.viewState[key]),view[key])}
+ assert.equal(page.viewState.background,'#fefefe');assert.equal(page.viewState.foldingEnabled,false)
+})
+test('native codec mirrors and explicit fixed defaults are equivalent, but real shared view edits still merge and conflict normally',()=>{
+ const absent=edit(base,n=>{for(const key of ['math','shadow','fold'])n.model.removeAttribute(key)})
+ const defaults=edit(absent,n=>{for(const [key,value] of Object.entries({math:'0',shadow:'0',fold:'1',fmDocumentId:'legacy',fmKind:'flowchart',fmAdapter:'1',fmProfile:'legacy',fmProfileVersion:'1'}))n.model.setAttribute(key,value)})
+ assert.equal(sameNativeState(absent,defaults),true);assert.deepEqual(JSON.parse(JSON.stringify(nativeProtocolPatch(absent,defaults))),{u:{[attr(parseNative(base).diagram,'id')!]:{view:{shadowVisible:'false',foldingEnabled:'true',mathEnabled:'false'}}}})
+ const real=edit(absent,n=>{n.model.setAttribute('math','1');n.model.setAttribute('shadow','1');n.model.setAttribute('fold','0')})
+ const result=parseNative(mergeNativeSnapshots(absent,defaults,real));assert.equal(attr(result.model,'math'),'1');assert.equal(attr(result.model,'shadow'),'1');assert.equal(attr(result.model,'fold'),'0');assert.equal(sameNativeState(absent,real),false)
+})
+test('public patch ignores only exact geometry codec normalization, retaining precise route and alternate-bounds edits',()=>{
+ const formatted=edit(base,n=>{for(const entry of n.cells.values())for(const geo of children(entry.cell,'mxGeometry')){const attrs:Array<[string,string]>=[];for(let i=0;i<geo.attributes.length;i++){const a=geo.attributes.item(i)!;attrs.push([a.name,a.value])}for(const [key] of attrs)geo.removeAttribute(key);for(const [key,value] of attrs.reverse())geo.setAttribute(key,value);if(!geo.hasAttribute('x'))geo.setAttribute('x','0');geo.insertBefore(n.document.createTextNode('\n  '),geo.firstChild)}})
+ assert.deepEqual(nativeProtocolPatch(base,formatted),{})
+ const precise=edit(base,n=>children(business(n,nodeIds[0]).cell,'mxGeometry')[0].setAttribute('x','0.000000001'))
+ assert.ok(JSON.stringify(nativeProtocolPatch(base,precise)).includes('geometry'))
+ const alternate=edit(base,n=>{const r=n.document.createElement('mxRectangle');r.setAttribute('as','alternateBounds');r.setAttribute('width','123');children(business(n,nodeIds[0]).cell,'mxGeometry')[0].appendChild(r)})
+ assert.match(JSON.stringify(nativeProtocolPatch(base,alternate)),/alternateBounds/)
 })

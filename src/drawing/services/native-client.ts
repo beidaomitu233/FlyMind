@@ -1,10 +1,15 @@
 import {NativeApiError,type NativeHealth,type NativeRecord,type NativeDrawingRecord,type NativeImportRequest,type NativeImportPreview,type NativeSaveRequest,type NativeTransport,type NativeWorkspace,type NativeExportJob,type NativeExportOptions} from './native-types'
 import packageInfo from '../../../package.json'
+import type {ImportBatchItem,ImportBatchPreview,ImportBatchResult} from './import-batch'
+import type {ActivityQuery,ActivityPage} from '../../../server/activity/records'
 import {DRAWIO_VERSION,DRAWIO_ADAPTER_VERSION,DEFAULT_SWIMLANE_PROFILE} from '../engine/constants'
 import {nativeDocumentCapabilities} from './native-capabilities'
 
 /** Native API adapter only; no localStorage replay and no document downgrades. */
 export class NativeClient implements NativeTransport {
+  activity(query:ActivityQuery={}){const values=Object.entries(query).filter(([,v])=>v!==undefined).map(([k,v])=>[k,String(v)]);return this.request<ActivityPage>('/native/activity?'+new URLSearchParams(values))}
+  previewImportItem(input:ImportBatchItem){return this.request<ImportBatchPreview>('/native/imports/items/preview','POST',input)}
+  commitImportItem(input:ImportBatchItem){return this.request<ImportBatchResult>('/native/imports/items','POST',input)}
   readonly expectedDataRootId:string|undefined
   private readonly base:string
   private readonly fetcher:typeof fetch

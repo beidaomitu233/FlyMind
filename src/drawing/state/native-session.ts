@@ -1,11 +1,15 @@
 import {NativeApiError,nativeRecordIdentity,type DraftRepository,type NativeAcknowledgement,type NativeDraft,type NativeDraftKey,type NativeDraftUpdate,type NativePendingSave,type NativeDrawingRecord,type NativeRecoveryDownload,type NativeSessionSnapshot,type NativeSessionStatus,type NativeTransport} from '../services/native-types'
 import {NativeDraftError,recoveryDownload,validateNativeDraft} from '../services/native-drafts'
+import {sameNativeState} from '../engine/collaboration/state'
 
 export interface NativeSessionOptions {
   dataRootId:string;diagramId:string;transport:NativeTransport;drafts:DraftRepository;sessionId?:string
   requestId?:()=>string
   onChange?:(snapshot:NativeSessionSnapshot)=>void
   onAcknowledged?:(ack:NativeAcknowledgement)=>void
+  /** Cloud only: capture/apply public native patch and return current local XML.
+   * Must not discard new input. Local sessions omit this hook and keep CAS. */
+  reconcileRecord?:(baseXML:string,record:NativeDrawingRecord,latestXML:string)=>Promise<string>
 }
 export type NativeRecoveryResult={kind:'ready'|'pending-retry';session:NativeSaveSession}|{
   kind:'conflict'|'deleted'|'workspace-mismatch';draft:NativeDraft;error:NativeApiError;remoteRevision?:number;download:NativeRecoveryDownload
@@ -32,14 +36,18 @@ export class NativeSaveSession {
   private error:NativeApiError|NativeDraftError|undefined
   private inflight:NativePendingSave|undefined
   private running:Promise<void>|undefined
+  private receivingRemote=false
   private persistTail:Promise<void>=Promise.resolve()
   private closed=false
+  private acknowledgedPending:NativePendingSave|undefined
+  private reconcileBlocked=false
+  private comparison:{a:string;b:string;equal:boolean}|undefined
   private constructor(private readonly options:NativeSessionOptions,record:NativeDrawingRecord,draft?:NativeDraft){
     this.dataRootId=options.dataRootId;this.diagramId=options.diagramId;this.sessionId=draft?.sessionId||options.sessionId||uuid()
     this.baseRevision=draft?.baseRevision??record.revision
     this.latestXML=draft?.latestXML??record.document.rendering.engine.xml
     this.acknowledgedXML=draft?.acknowledgedXML??this.latestXML
-    if(draft){this.latestSeq=draft.latestSeq;this.acknowledgedSeq=draft.acknowledgedSeq;this.inflight=structuredClone(draft.inflight);this.generation=draft.generation+1;this.journalVersion=draft.journalVersion+1;this.backedUp=false;this.status=this.inflight?'offline':this.dirty?'dirty':'ready'}
+    if(draft){this.latestSeq=draft.latestSeq;this.acknowledgedSeq=draft.acknowledgedSeq;this.inflight=structuredClone(draft.inflight);this.acknowledgedPending=structuredClone(draft.acknowledgedPending);this.reconcileBlocked=draft.reconcileBlocked??false;this.generation=draft.generation+1;this.journalVersion=draft.journalVersion+1;this.backedUp=false;this.status=this.reconcileBlocked?'conflict':this.inflight?'offline':this.dirty?'dirty':'ready';if(this.reconcileBlocked)this.error=new NativeApiError('已提交内容尚未完成协同重基，请保留草稿',409,'COLLABORATION_RECONCILE_BLOCKED',this.baseRevision)}
   }
   static async open(options:NativeSessionOptions):Promise<NativeSaveSession>{
     const health=await options.transport.health()
@@ -48,9 +56,16 @@ export class NativeSaveSession {
     const record=await options.transport.get(options.diagramId);checkRecord(record,options.diagramId)
     return new NativeSaveSession(options,record)
   }
-  private get dirty(){return !!this.inflight||this.latestXML!==this.acknowledgedXML}
+  private equivalent(a:string,b:string){
+    if(a===b)return true
+    if(!this.options.reconcileRecord)return false
+    if(this.comparison?.a===a&&this.comparison.b===b)return this.comparison.equal
+    let equal=false;try{equal=sameNativeState(a,b)}catch{/* Opaque invalid drafts still compare exactly. */}
+    this.comparison={a,b,equal};return equal
+  }
+  private get dirty(){return !!this.inflight||this.reconcileBlocked||!this.equivalent(this.latestXML,this.acknowledgedXML)}
   private key():NativeDraftKey{return {dataRootId:this.dataRootId,diagramId:this.diagramId,baseRevision:this.baseRevision,sessionId:this.sessionId}}
-  private draft():NativeDraft{return {...this.key(),formatVersion:1,generation:this.generation,journalVersion:Math.max(1,this.journalVersion),latestSeq:this.latestSeq,latestXML:this.latestXML,acknowledgedXML:this.acknowledgedXML,acknowledgedSeq:this.acknowledgedSeq,...(this.inflight?{inflight:structuredClone(this.inflight)}:{}),updatedAt:Date.now()}}
+  private draft():NativeDraft{return {...this.key(),formatVersion:1,generation:this.generation,journalVersion:Math.max(1,this.journalVersion),latestSeq:this.latestSeq,latestXML:this.latestXML,acknowledgedXML:this.acknowledgedXML,acknowledgedSeq:this.acknowledgedSeq,...(this.inflight?{inflight:structuredClone(this.inflight)}:{}),...(this.acknowledgedPending?{acknowledgedPending:structuredClone(this.acknowledgedPending)}:{}),...(this.reconcileBlocked?{reconcileBlocked:true}:{}),updatedAt:Date.now()}}
   snapshot():NativeSessionSnapshot{
     const error=this.error?{message:this.error.message,code:this.error.code,status:this.error instanceof NativeApiError?this.error.status:0,...(this.error instanceof NativeApiError&&this.error.currentRevision!==undefined?{currentRevision:this.error.currentRevision}:{})}:undefined
     return {...this.key(),generation:this.generation,latestXML:this.latestXML,latestSeq:this.latestSeq,acknowledgedSeq:this.acknowledgedSeq,dirty:this.dirty,backedUp:this.backedUp,status:this.status,...(this.inflight?{inflight:structuredClone(this.inflight)}:{}),...(error?{error}:{})}
@@ -61,7 +76,7 @@ export class NativeSaveSession {
   private touch(){this.journalVersion++;this.backedUp=false}
   private persist():Promise<void>{
     const draft=this.draft(),generation=this.generation,version=this.journalVersion
-    const retain=this.dirty||this.error instanceof NativeApiError&&[409,404,410].includes(this.error.status)
+    const retain=this.dirty||this.reconcileBlocked||this.error instanceof NativeApiError&&[409,404,410].includes(this.error.status)
     const update:NativeDraftUpdate={key:this.key(),guard:{generation,journalVersion:Math.max(1,version),latestSeq:this.latestSeq},...(retain?{draft}:{})}
     const task=this.persistTail.then(async()=>{
       const accepted=await this.options.drafts.write(update)
@@ -79,12 +94,13 @@ export class NativeSaveSession {
     this.assertOpen();if(typeof xml!=='string')throw new NativeApiError('编辑内容应为 XML 字符串',400,'INVALID_XML')
     if(xml===this.latestXML)return
     this.latestXML=xml;this.latestSeq++;this.touch()
-    if(!['conflict','deleted','offline'].includes(this.status)){this.status=this.inflight?'saving':this.dirty?'dirty':'ready';this.error=undefined}
+    if(!this.reconcileBlocked&&!['conflict','deleted','offline'].includes(this.status)){this.status=this.inflight?'saving':this.dirty?'dirty':'ready';this.error=undefined}
     this.emit();await this.persist()
   }
   flush():Promise<void>{
     this.assertOpen()
-    if(this.running)return this.running
+    if(this.running)return this.receivingRemote?this.running.then(()=>this.flush()):this.running
+    if(this.reconcileBlocked)return Promise.reject(this.error||new NativeApiError('请先完成已确认内容的协同重基',409,'COLLABORATION_RECONCILE_BLOCKED'))
     if(['conflict','deleted','offline','invalid','draft-error'].includes(this.status))return Promise.reject(this.error||new NativeApiError('当前草稿需要恢复操作后才能继续保存',409,'SAVE_BLOCKED'))
     return this.start()
   }
@@ -125,7 +141,15 @@ export class NativeSaveSession {
         throw failure
       }
       if(!this.active(generation)||this.inflight!==pending)return
-      this.baseRevision=record.revision;this.acknowledgedXML=pending.request.xml;this.acknowledgedSeq=pending.seq;this.inflight=undefined
+      this.baseRevision=record.revision;this.acknowledgedXML=this.options.reconcileRecord?record.document.rendering.engine.xml:pending.request.xml;this.acknowledgedSeq=pending.seq;this.inflight=undefined
+      if(this.options.reconcileRecord){
+        // Durably distinguish a known ACK from an uncertain network request BEFORE
+        // any asynchronous editor work. Recovery must never replay this request.
+        this.acknowledgedPending=structuredClone(pending);this.reconcileBlocked=true;this.touch();await this.persist()
+        if(!this.active(generation))return
+        await this.reconcile(pending.request.xml,record,generation)
+        if(!this.active(generation))return
+      }
       this.status=this.dirty?'dirty':'ready';this.error=undefined;this.touch();this.emit()
       // Move/clear the old baseRevision key atomically before submitting the next edit.
       await this.persist()
@@ -133,16 +157,55 @@ export class NativeSaveSession {
       try{this.options.onAcknowledged?.({request:structuredClone(pending.request),record:structuredClone(record),seq:pending.seq,hasNewerEdits:this.latestSeq>pending.seq})}catch{/* An observer failure cannot undo a known server commit. */}
     }
   }
+  private async reconcile(baseXML:string,record:NativeDrawingRecord,generation:number):Promise<void>{
+    try{
+      for(let attempt=0;attempt<4;attempt++){
+        if(!this.active(generation))return
+        const seq=this.latestSeq,latest=this.latestXML
+        const merged=await this.options.reconcileRecord!(baseXML,structuredClone(record),latest)
+        if(!this.active(generation))return
+        if(seq!==this.latestSeq)continue
+        if(typeof merged!=='string')throw new NativeApiError('协同重基返回内容无效',409,'COLLABORATION_RECONCILE_INVALID')
+        if(merged!==this.latestXML){this.latestXML=merged;this.latestSeq++}
+        this.baseRevision=record.revision;this.acknowledgedXML=record.document.rendering.engine.xml
+        this.acknowledgedPending=undefined;this.reconcileBlocked=false
+        if(!this.dirty)this.acknowledgedSeq=this.latestSeq
+        this.error=undefined;this.status=this.dirty?'dirty':'ready';this.touch();this.emit();await this.persist();return
+      }
+      throw new NativeApiError('编辑持续变化，请暂停输入后重试协同同步；草稿已保留',409,'COLLABORATION_RECONCILE_BUSY')
+    }catch(error){
+      if(!this.active(generation))return
+      const failure=error instanceof NativeApiError?error:new NativeApiError((error as Error)?.message||'协同重基失败，草稿已保留',409,'COLLABORATION_RECONCILE_FAILED')
+      this.reconcileBlocked=true;this.error=failure;this.status='conflict';this.touch();this.emit();await this.persist();throw failure
+    }
+  }
+  /** UI queues a false result and retries after the in-flight save settles.
+   * No network submit is started here. Dirty local input is three-way rebased. */
+  receiveRemote(record:NativeDrawingRecord):Promise<boolean>{
+    this.assertOpen();checkRecord(record,this.diagramId)
+    if(!this.options.reconcileRecord||this.running||this.inflight)return Promise.resolve(false)
+    if(record.revision<this.baseRevision)return Promise.resolve(true)
+    if(record.revision===this.baseRevision&&!this.reconcileBlocked&&this.equivalent(record.document.rendering.engine.xml,this.acknowledgedXML))return Promise.resolve(true)
+    const generation=this.generation,base=this.acknowledgedPending?.request.xml??this.acknowledgedXML
+    this.receivingRemote=true
+    const running=Promise.resolve().then(()=>this.reconcile(base,record,generation)).finally(()=>{if(this.running===running){this.running=undefined;this.receivingRemote=false}})
+    this.running=running
+    return running.then(()=>this.active(generation))
+  }
   /** Explicit content action: caller must hold editor interaction and merge this exact record first. */
   async adoptCommitted(record:NativeDrawingRecord,expectedRevision:number):Promise<void>{
     this.assertOpen();checkRecord(record,this.diagramId)
     if(this.running||this.inflight||this.dirty||(this.baseRevision!==expectedRevision&&!(this.baseRevision===record.revision&&this.latestXML===record.document.rendering.engine.xml))||record.revision<expectedRevision)throw new NativeApiError('编辑期间状态已改变，不能采纳业务属性结果',409,'REVISION_CONFLICT',this.baseRevision)
     this.baseRevision=record.revision;this.latestXML=record.document.rendering.engine.xml;this.acknowledgedXML=this.latestXML;this.latestSeq++;this.acknowledgedSeq=this.latestSeq;this.error=undefined;this.status='ready';this.touch();this.emit();await this.persist()
   }
-  async retry():Promise<void>{
-    this.assertOpen();if(this.running)return this.running
-    if(this.status==='conflict'||this.status==='deleted')throw this.error||new NativeApiError('请保留草稿并另存，不能覆盖远端',409,'SAVE_BLOCKED')
-    const generation=this.generation
+  retry():Promise<void>{
+    this.assertOpen();if(this.running)return this.receivingRemote?this.running.then(()=>this.retry()):this.running
+    if(this.reconcileBlocked)return Promise.reject(this.error||new NativeApiError('请先完成已确认内容的协同重基',409,'COLLABORATION_RECONCILE_BLOCKED'))
+    if(this.status==='conflict'||this.status==='deleted')return Promise.reject(this.error||new NativeApiError('请保留草稿并另存，不能覆盖远端',409,'SAVE_BLOCKED'))
+    const running=this.retryPump(this.generation).finally(()=>{if(this.running===running)this.running=undefined})
+    this.running=running;return running
+  }
+  private async retryPump(generation:number):Promise<void>{
     try{
       const health=await this.options.transport.health()
       if(!this.active(generation))return
@@ -151,7 +214,10 @@ export class NativeSaveSession {
       const remote=await this.options.transport.get(this.diagramId)
       if(!this.active(generation))return
       checkRecord(remote,this.diagramId)
-      if(this.inflight?remote.revision<this.inflight.request.expectedRevision:remote.revision!==this.baseRevision)throw new NativeApiError('远端修订与草稿不一致，请保留并另存',409,'REVISION_CONFLICT',remote.revision)
+      if(this.inflight?remote.revision<this.inflight.request.expectedRevision:remote.revision!==this.baseRevision){
+        if(!this.inflight&&this.options.reconcileRecord&&remote.revision>=this.baseRevision)await this.reconcile(this.acknowledgedXML,remote,generation)
+        else throw new NativeApiError('远端修订与草稿不一致，请保留并另存',409,'REVISION_CONFLICT',remote.revision)
+      }
     }catch(error){
       if(!this.active(generation))return
       const failure=apiError(error);this.error=failure;this.status=failure.status===409?'conflict':deleted(failure)?'deleted':'offline';this.touch();this.emit();await this.persist();throw failure
@@ -160,7 +226,7 @@ export class NativeSaveSession {
     this.error=undefined;this.status=this.dirty?'dirty':'ready';this.touch();this.emit()
     await this.persist()
     if(!this.active(generation))return
-    return this.start()
+    return this.pump(generation)
   }
   async close():Promise<void>{
     if(this.closed)return this.persistTail
@@ -176,7 +242,8 @@ export class NativeSaveSession {
     if(!health.capabilities.nativePilot||!health.capabilities.nativeDocumentWrites)throw new NativeApiError('Native pilot 未启用',404,'NATIVE_PILOT_DISABLED')
     let record:NativeDrawingRecord
     try{record=await options.transport.get(options.diagramId);checkRecord(record,options.diagramId)}catch(error){const failure=apiError(error);if(deleted(failure))return blocked('deleted',failure);throw failure}
-    if(draft.inflight?record.revision<draft.inflight.request.expectedRevision:record.revision!==draft.baseRevision)return blocked('conflict',new NativeApiError('草稿基准修订与远端不一致',409,'REVISION_CONFLICT',record.revision),record.revision)
+    if(draft.reconcileBlocked&&!options.reconcileRecord)return blocked('conflict',new NativeApiError('已确认提交尚未完成重基，请保留草稿',409,'COLLABORATION_RECONCILE_BLOCKED',record.revision),record.revision)
+    if(draft.inflight?record.revision<draft.inflight.request.expectedRevision:record.revision!==draft.baseRevision&&(!options.reconcileRecord||record.revision<draft.baseRevision))return blocked('conflict',new NativeApiError('草稿基准修订与远端不一致',409,'REVISION_CONFLICT',record.revision),record.revision)
     // Two tabs may restore the same source simultaneously. Fork their local journals,
     // while preserving the uncertain server request exactly for idempotent resolution.
     const session=new NativeSaveSession(options,record,{...draft,sessionId:uuid()})

@@ -39,8 +39,9 @@ async function setup(renderer?:NativeExportRenderer,maxQueuedTeams=4,identity?:i
   return reply(404,{})
  })
  const controlPlaneURL=await listen(authority),cloud=createCloudHTTP({controlPlaneURL,publicOrigin:'http://localhost',cloudDataRoot:join(root,'data'),allowInsecureLoopback:true,renderer:renderer??{render:async()=>{throw Error('Unexpected render')},close:async()=>{}},serveAssets:false,maxOpenTeams:4,maxQueuedTeams,identity}),http=createServer(cloud.app),base=await listen(http)
- async function request(path:string,options:{method?:string;body?:unknown;token?:string;rootId?:string;cookie?:string;origin?:string|null;host?:string}={}){
-  const headers:Record<string,string>={Host:options.host??'localhost',...(options.origin===null?{}:{Origin:options.origin??'http://localhost'}),...(options.token?{Authorization:'Bearer '+options.token}:{}),...(options.cookie?{Cookie:options.cookie}:{}),...(options.rootId?{'X-FlyMind-DataRoot-Id':options.rootId}:{}),...(options.body===undefined?{}:{'Content-Type':'application/json'})}
+ async function request(path:string,options:{method?:string;body?:unknown;token?:string;rootId?:string;cookie?:string;origin?:string|null;host?:string;userId?:string|null}={}){
+  const cookieUser=Object.entries(tokens).find(([,value])=>options.cookie?.endsWith('='+value))?.[0],expectedUser=options.userId===null?undefined:options.userId??cookieUser
+  const headers:Record<string,string>={Host:options.host??'localhost',...(options.origin===null?{}:{Origin:options.origin??'http://localhost'}),...(options.token?{Authorization:'Bearer '+options.token}:{}),...(options.cookie?{Cookie:options.cookie}:{}),...(expectedUser?{'X-FlyMind-User-Id':expectedUser}:{}),...(options.rootId?{'X-FlyMind-DataRoot-Id':options.rootId}:{}),...(options.body===undefined?{}:{'Content-Type':'application/json'})}
   return await new Promise<Response>((yes,no)=>{const request=httpRequest(base+path,{method:options.method??'GET',headers},response=>{const chunks:Buffer[]=[];response.on('data',chunk=>chunks.push(chunk));response.once('end',()=>{const h=new Headers();for(const [key,value] of Object.entries(response.headers))if(value!==undefined)for(const v of Array.isArray(value)?value:[value])h.append(key,v);yes(new Response(Buffer.concat(chunks),{status:response.statusCode,headers:h}))})});request.once('error',no);request.end(options.body===undefined?undefined:JSON.stringify(options.body))})
  }
  const team=(id:string,path:string)=>'/cloud-api/teams/'+id+'/studio-api'+path
@@ -58,6 +59,9 @@ test('cloud login proxies only fixed authority paths, keeps token in HttpOnly co
   r=await s.request('/cloud-api/auth/me',{cookie,origin:'https://attacker.invalid'});assert.equal(r.status,403)
   r=await s.request('/cloud-api/auth/me',{cookie,host:'attacker.invalid'});assert.equal(r.status,403)
   r=await s.request('/cloud-api/auth/me',{cookie,token:tokens.bob});assert.equal(r.status,401)
+  r=await s.request('/cloud-api/auth/logout',{cookie,method:'POST',userId:null});assert.equal(r.status,409)
+  r=await s.request('/cloud-api/auth/logout',{cookie:'fm_cloud_session='+tokens.bob,method:'POST',userId:'alice'});assert.equal(r.status,409)
+  assert.ok(!s.calls.some(c=>c.path==='/app/flymind/auth/logout'&&c.token===tokens.bob),'old tab cannot log out the newly logged-in account')
   r=await s.request('/cloud-api/auth/logout',{cookie,method:'POST'});assert.equal(r.status,200);assert.match(r.headers.get('set-cookie')!,/Expires=/)
   r=await s.request('/cloud-api/auth/me',{cookie});assert.equal(r.status,401)
   assert.ok(s.calls.every(c=>c.path.startsWith('/app/flymind/')))

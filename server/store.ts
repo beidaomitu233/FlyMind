@@ -13,7 +13,7 @@ import type {WorkspaceGroup,TrashItem} from '../src/drawing/services/workspace-t
 import {decodeDiagramRow,diagramMetadata,nativeIdentity,isCanvasRecord,validateNativeProject,type DiagramRow,type NativeDiagramRecord,type NativeDrawingRecord,type NativeTrashItem,type StoredDiagramRecord} from './document-record'
 import type {DrawingProjectV3} from '../src/drawing/engine/types'
 import {validateDrawingProject} from '../src/drawing/engine/project'
-import {drawioRenderSignature} from '../src/drawing/engine/drawio'
+import {nativeStateSignature} from '../src/drawing/engine/collaboration/state'
 import {nativeCanvasRenderSignature} from '../src/drawing/engine/native-canvas'
 import {canonicalContentJson} from '../src/drawing/engine/content-hash'
 import {workspaceDataRootId} from './native-pilot'
@@ -21,6 +21,9 @@ import type {EnqueueNativeExport,StoredNativeExport,NativeExportManifest} from '
 import type {MigrationCommit} from './migrations/types'
 import {RESTORE_MARKER} from './backups/marker'
 import type {NativeImportSource} from './imports/source'
+import type {ImportCommitPlan,ImportFingerprint} from './imports/batch'
+import {currentActivityActor} from './activity/context'
+import {appendActivity,readActivity,activitySummary,type ActivityInput,type ActivityQuery} from './activity/records'
 export {PACKAGE_ROOT as PROJECT_ROOT} from './package-paths'
 import {PACKAGE_ROOT as PROJECT_ROOT} from './package-paths'
 export const DATA_ROOT=resolve(process.env.FLYMIND_DATA_DIR||join(PROJECT_ROOT,'data'))
@@ -112,23 +115,29 @@ export class DiagramStore {
   async update(id:string,revision:number,input:unknown){return this.change(id,revision,()=>validateDocument(input))}
   async patch(id:string,revision:number,ops:DiagramOperation[]){return this.change(id,revision,d=>applyOperations(d,ops))}
   async change(id:string,revision:number,fn:(d:DiagramDocument)=>DiagramDocument){return this.transaction(db=>{const prev=this.record(db,id);if(!Number.isInteger(revision)||revision!==prev.revision)throw new StoreError(`版本冲突：当前为 ${prev.revision}，请重新读取并合并`,409,prev.revision);const next=validateDocument(fn(copy(prev.document)));assertLockedObjects(prev.document,next);freezeNewLocks(next,prev.document);next.id=id;next.createdAt=prev.createdAt;next.updatedAt=Date.now();const json=JSON.stringify(projectDocument(next));db.prepare('UPDATE diagrams SET document=?,revision=revision+1,saved_at=? WHERE id=? AND revision=? AND deleted_at IS NULL').run(json,next.updatedAt,id,revision);db.prepare('INSERT INTO diagram_versions VALUES(?,?,?,?)').run(id,revision+1,json,next.updatedAt);return this.record(db,id)})}
-  async delete(id:string,revision:number,expectedDataRootId?:string){return this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);this.id(id);const row=db.prepare('SELECT deleted_at FROM diagrams WHERE id=?').get(id) as any;if(row?.deleted_at!==null&&row?.deleted_at!==undefined)return;const prev=this.storedRecord(db,id);if(revision!==prev.revision)throw new StoreError('版本冲突，请读取最新图形',409,prev.revision);db.prepare('UPDATE diagrams SET deleted_at=? WHERE id=?').run(Date.now(),id)})}
+  async delete(id:string,revision:number,expectedDataRootId?:string){return this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);this.id(id);const row=db.prepare('SELECT deleted_at FROM diagrams WHERE id=?').get(id) as any;if(row?.deleted_at!==null&&row?.deleted_at!==undefined)return;const prev=this.storedRecord(db,id);if(revision!==prev.revision)throw new StoreError('版本冲突，请读取最新图形',409,prev.revision);db.prepare('UPDATE diagrams SET deleted_at=? WHERE id=?').run(Date.now(),id);this.activity(db,{action:'delete',diagramId:id,groupId:prev.workspaceGroupId,fromRevision:prev.revision,toRevision:prev.revision})})}
   private trash(db:DB):NativeTrashItem[]{return (db.prepare('SELECT * FROM diagrams WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC,id').all() as any[]).map(row=>{const raw=JSON.parse(row.document),content=raw.content||raw;return {id:row.id,title:content.title,...(raw.mode==='canvas-only'?{mode:'canvas-only'}:{kind:content.kind}),revision:row.revision,deletedAt:row.deleted_at,createdAt:row.created_at,workspaceGroupId:row.workspace_group_id}})}
   async listTrash(){return this.use(db=>this.trash(db))}
   private deletedRecord(db:DB,id:string,revision:number,deletedAt:number){this.id(id);const row=db.prepare('SELECT * FROM diagrams WHERE id=?').get(id) as any;if(!row)throw new StoreError('回收站中没有该图形',404);if(row.deleted_at===null||row.revision!==revision||row.deleted_at!==deletedAt)throw new StoreError('回收站内容已变化，请刷新后重试',409,row.revision);return row}
-  async restore(id:string,revision:number,deletedAt:number){return this.transaction(db=>{const row=this.deletedRecord(db,id,revision,deletedAt),d=this.fromRow(row).document,now=Date.now();d.updatedAt=now;const json=JSON.stringify(projectDocument(d));db.prepare('UPDATE diagrams SET deleted_at=NULL,revision=revision+1,saved_at=?,document=? WHERE id=?').run(now,json,id);db.prepare('INSERT INTO diagram_versions VALUES(?,?,?,?)').run(id,revision+1,json,now);return this.record(db,id)})}
-  async restoreStored(id:string,revision:number,deletedAt:number,expectedDataRootId?:string){return this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);const row=this.deletedRecord(db,id,revision,deletedAt),record=decodeDiagramRow(row),now=Date.now();record.document.updatedAt=now;const json=JSON.stringify(record.format===3?record.document:projectDocument(record.document));const result=db.prepare('UPDATE diagrams SET deleted_at=NULL,revision=revision+1,saved_at=?,document=? WHERE id=? AND revision=? AND deleted_at=?').run(now,json,id,revision,deletedAt);if(result.changes!==1)throw new StoreError('恢复版本冲突',409,row.revision);db.prepare('INSERT INTO diagram_versions VALUES(?,?,?,?)').run(id,revision+1,json,now);return this.storedRecord(db,id)})}
-  async purge(id:string,revision:number,deletedAt:number,expectedDataRootId?:string){const directory=resolve(this.root,'artifacts',this.id(id)),artifactRoot=resolve(this.root,'artifacts')+sep;if(!directory.startsWith(artifactRoot))throw new StoreError('制品路径无效');this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);this.deletedRecord(db,id,revision,deletedAt);db.prepare('INSERT INTO diagram_tombstones VALUES(?,?)').run(id,Date.now());db.prepare('DELETE FROM diagram_versions WHERE diagram_id=?').run(id);db.prepare('DELETE FROM diagrams WHERE id=?').run(id)});await rm(directory,{recursive:true,force:true})}
+  async restore(id:string,revision:number,deletedAt:number){return this.transaction(db=>{const row=this.deletedRecord(db,id,revision,deletedAt),d=this.fromRow(row).document,now=Date.now();d.updatedAt=now;const json=JSON.stringify(projectDocument(d));db.prepare('UPDATE diagrams SET deleted_at=NULL,revision=revision+1,saved_at=?,document=? WHERE id=?').run(now,json,id);db.prepare('INSERT INTO diagram_versions VALUES(?,?,?,?)').run(id,revision+1,json,now);this.activity(db,{action:'restore',diagramId:id,groupId:row.workspace_group_id,fromRevision:revision,toRevision:revision+1});return this.record(db,id)})}
+  async restoreStored(id:string,revision:number,deletedAt:number,expectedDataRootId?:string){return this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);const row=this.deletedRecord(db,id,revision,deletedAt),record=decodeDiagramRow(row),now=Date.now();record.document.updatedAt=now;const json=JSON.stringify(record.format===3?record.document:projectDocument(record.document));const result=db.prepare('UPDATE diagrams SET deleted_at=NULL,revision=revision+1,saved_at=?,document=? WHERE id=? AND revision=? AND deleted_at=?').run(now,json,id,revision,deletedAt);if(result.changes!==1)throw new StoreError('恢复版本冲突',409,row.revision);db.prepare('INSERT INTO diagram_versions VALUES(?,?,?,?)').run(id,revision+1,json,now);this.activity(db,{action:'restore',diagramId:id,groupId:row.workspace_group_id,fromRevision:revision,toRevision:revision+1});return this.storedRecord(db,id)})}
+  async purge(id:string,revision:number,deletedAt:number,expectedDataRootId?:string){const directory=resolve(this.root,'artifacts',this.id(id)),artifactRoot=resolve(this.root,'artifacts')+sep;if(!directory.startsWith(artifactRoot))throw new StoreError('制品路径无效');this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);this.deletedRecord(db,id,revision,deletedAt);db.prepare('INSERT INTO diagram_tombstones VALUES(?,?)').run(id,Date.now());db.prepare('DELETE FROM diagram_versions WHERE diagram_id=?').run(id);db.prepare('DELETE FROM diagrams WHERE id=?').run(id);this.activity(db,{action:'purge',diagramId:id,fromRevision:revision})});await rm(directory,{recursive:true,force:true})}
   private checkGroup(db:DB,id?:string|null){if(id&&!db.prepare('SELECT 1 FROM workspace_groups WHERE id=?').get(this.id(id)))throw new StoreError('工作区分组不存在',404)}
   groupName(name:string){if(typeof name!=='string'||!name.trim()||name.trim().length>80)throw new StoreError('分组名称需为 1–80 字');return name.trim()}
   private groups(db:DB):WorkspaceGroup[]{return db.prepare('SELECT id,name,revision,created_at AS createdAt,updated_at AS updatedAt FROM workspace_groups ORDER BY created_at,id').all() as WorkspaceGroup[]}
   async listGroups(){return this.use(db=>this.groups(db))}
-  async createGroup(name:string,expectedDataRootId?:string){return this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);const n=this.groupName(name);if(db.prepare('SELECT 1 FROM workspace_groups WHERE name=?').get(n))throw new StoreError('分组名称已存在',409);const now=Date.now(),g={id:'group_'+randomUUID(),name:n,revision:1,createdAt:now,updatedAt:now};db.prepare('INSERT INTO workspace_groups VALUES(?,?,?,?,?)').run(g.id,n,1,now,now);return g})}
-  async updateGroup(id:string,revision:number,name:string,expectedDataRootId?:string){return this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);this.checkGroup(db,id);const g=this.groups(db).find(g=>g.id===id)!;if(g.revision!==revision)throw new StoreError('分组已被修改，请刷新后重试',409,g.revision);const n=this.groupName(name);if(db.prepare('SELECT 1 FROM workspace_groups WHERE name=? AND id<>?').get(n,id))throw new StoreError('分组名称已存在',409);g.name=n;g.revision++;g.updatedAt=Date.now();db.prepare('UPDATE workspace_groups SET name=?,revision=?,updated_at=? WHERE id=?').run(n,g.revision,g.updatedAt,id);return g})}
-  async deleteGroup(id:string,revision:number,expectedDataRootId?:string){return this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);this.checkGroup(db,id);if(this.groups(db).find(g=>g.id===id)!.revision!==revision)throw new StoreError('分组已被修改，请刷新后重试',409);db.prepare('DELETE FROM workspace_groups WHERE id=?').run(id)})}
-  async moveToGroup(id:string,groupId:string|null,expectedGroupId:string|null){return this.transaction(db=>{this.checkGroup(db,groupId);const r=this.record(db,id);if(r.workspaceGroupId!==expectedGroupId)throw new StoreError('图形所属分组已改变，请刷新后重试',409);db.prepare('UPDATE diagrams SET workspace_group_id=? WHERE id=?').run(groupId,id);return this.record(db,id)})}
-  async moveStoredToGroup(id:string,groupId:string|null,expectedGroupId:string|null,expectedDataRootId?:string){return this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);this.checkGroup(db,groupId);const r=this.storedRecord(db,id);if(r.workspaceGroupId!==expectedGroupId)throw new StoreError('图形所属分组已改变，请刷新后重试',409,r.revision);db.prepare('UPDATE diagrams SET workspace_group_id=? WHERE id=?').run(groupId,id);return this.storedRecord(db,id)})}
+  async createGroup(name:string,expectedDataRootId?:string){return this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);const n=this.groupName(name);if(db.prepare('SELECT 1 FROM workspace_groups WHERE name=?').get(n))throw new StoreError('分组名称已存在',409);const now=Date.now(),g={id:'group_'+randomUUID(),name:n,revision:1,createdAt:now,updatedAt:now};db.prepare('INSERT INTO workspace_groups VALUES(?,?,?,?,?)').run(g.id,n,1,now,now);this.activity(db,{action:'group-create',groupId:g.id,toRevision:1});return g})}
+  async updateGroup(id:string,revision:number,name:string,expectedDataRootId?:string){return this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);this.checkGroup(db,id);const g=this.groups(db).find(g=>g.id===id)!;if(g.revision!==revision)throw new StoreError('分组已被修改，请刷新后重试',409,g.revision);const n=this.groupName(name);if(db.prepare('SELECT 1 FROM workspace_groups WHERE name=? AND id<>?').get(n,id))throw new StoreError('分组名称已存在',409);const renamed=g.name!==n;g.name=n;g.revision++;g.updatedAt=Date.now();db.prepare('UPDATE workspace_groups SET name=?,revision=?,updated_at=? WHERE id=?').run(n,g.revision,g.updatedAt,id);if(renamed)this.activity(db,{action:'group-rename',groupId:id,fromRevision:revision,toRevision:g.revision});return g})}
+  async deleteGroup(id:string,revision:number,expectedDataRootId?:string){return this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);this.checkGroup(db,id);if(this.groups(db).find(g=>g.id===id)!.revision!==revision)throw new StoreError('分组已被修改，请刷新后重试',409);const affected=(db.prepare('SELECT count(*) n FROM diagrams WHERE workspace_group_id=?').get(id) as {n:number}).n;db.prepare('DELETE FROM workspace_groups WHERE id=?').run(id);this.activity(db,{action:'group-delete',groupId:id,fromRevision:revision,summary:{affectedDiagrams:affected}})})}
+  async moveToGroup(id:string,groupId:string|null,expectedGroupId:string|null){return this.transaction(db=>{this.checkGroup(db,groupId);const r=this.record(db,id);if(r.workspaceGroupId!==expectedGroupId)throw new StoreError('图形所属分组已改变，请刷新后重试',409);db.prepare('UPDATE diagrams SET workspace_group_id=? WHERE id=?').run(groupId,id);if(r.workspaceGroupId!==groupId)this.activity(db,{action:'move',diagramId:id,groupId,fromGroupId:r.workspaceGroupId,fromRevision:r.revision,toRevision:r.revision});return this.record(db,id)})}
+  async moveStoredToGroup(id:string,groupId:string|null,expectedGroupId:string|null,expectedDataRootId?:string){return this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);this.checkGroup(db,groupId);const r=this.storedRecord(db,id);if(r.workspaceGroupId!==expectedGroupId)throw new StoreError('图形所属分组已改变，请刷新后重试',409,r.revision);db.prepare('UPDATE diagrams SET workspace_group_id=? WHERE id=?').run(groupId,id);if(r.workspaceGroupId!==groupId)this.activity(db,{action:'move',diagramId:id,groupId,fromGroupId:r.workspaceGroupId,fromRevision:r.revision,toRevision:r.revision});return this.storedRecord(db,id)})}
 
+  private activity(db:DB,input:ActivityInput){
+    const actor=currentActivityActor();if(actor.dataRootId!==undefined)this.assertNativeIdentity(db,actor.dataRootId)
+    const workspace=db.prepare("SELECT value FROM metadata WHERE key='native_workspace_id'").get() as {value:string}|undefined
+    appendActivity(db,workspace?workspaceDataRootId(workspace.value):null,input)
+  }
+  async listActivity(query:ActivityQuery={},expectedDataRootId?:string){return this.use(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);const workspace=db.prepare("SELECT value FROM metadata WHERE key='native_workspace_id'").get() as {value:string}|undefined;try{return readActivity(db,workspace?workspaceDataRootId(workspace.value):null,query)}catch(e){if(e instanceof TypeError)throw new StoreError(e.message,400,undefined,'ACTIVITY_QUERY_INVALID');throw e}})}
   private nativeMutationSchema(db:DB){db.exec('CREATE TABLE IF NOT EXISTS native_mutation_requests(request_id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,diagram_id TEXT NOT NULL REFERENCES diagrams(id) ON DELETE CASCADE,operation TEXT NOT NULL,response TEXT NOT NULL CHECK(json_valid(response)),created_at INTEGER NOT NULL)')}
   private mutation(m:NativeMutation){if(!m||typeof m.requestId!=='string'||!(/^[a-zA-Z0-9_-]{1,128}$/).test(m.requestId)||typeof m.requestHash!=='string'||!(/^[a-f0-9]{64}$/).test(m.requestHash)||!['create','editor-save','content-patch','ai-create','ai-content-patch','ai-content-update','configure-rendering','import-content','import-project','import-drawio','canvas-map'].includes(m.operation))throw new StoreError('requestId 或请求摘要无效')}
   private requestEpoch(db:DB,scope:string,key:string){if(db.prepare("SELECT 1 FROM sqlite_master WHERE name='restored_request_barriers'").get()&&db.prepare('SELECT 1 FROM restored_request_barriers WHERE scope=? AND request_id=?').get(scope,key))throw new StoreError('该请求属于恢复前工作区，请读取当前状态并使用新请求键',409,undefined,'REQUEST_EPOCH_CHANGED')}
@@ -148,12 +157,55 @@ export class DiagramStore {
   async createNative(input:unknown,workspaceGroupId:string|null,m:NativeMutation,source?:NativeImportSource):Promise<NativeDiagramRecord>{if((input as any)?.mode!==undefined)throw new StoreError('业务入口不接受仅画布项目',422,undefined,'BUSINESS_MAPPING_REQUIRED');return await this.createNativeDrawing(input,workspaceGroupId,m,source) as NativeDiagramRecord}
   async commitNative(id:string,expectedRevision:number,input:unknown,m:NativeMutation):Promise<NativeDiagramRecord>{if((input as any)?.mode!==undefined)throw new StoreError('业务入口不接受仅画布项目',422,undefined,'BUSINESS_MAPPING_REQUIRED');return await this.commitNativeDrawing(id,expectedRevision,input,m) as NativeDiagramRecord}
   private remember(db:DB,m:NativeMutation,r:NativeDrawingRecord){this.nativeMutationSchema(db);db.prepare('INSERT INTO native_mutation_requests VALUES(?,?,?,?,?,?)').run(m.requestId,m.requestHash,nativeIdentity(r.document).id,m.operation,JSON.stringify(r),Date.now())}
-  async createNativeDrawing(input:unknown,workspaceGroupId:string|null,m:NativeMutation,importSource?:NativeImportSource):Promise<NativeDrawingRecord>{
+  private importSchema(db:DB){db.exec('CREATE TABLE IF NOT EXISTS native_import_keys(key TEXT PRIMARY KEY,diagram_id TEXT NOT NULL,content_hash TEXT,render_hash TEXT,complete INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS native_import_batches(id TEXT PRIMARY KEY,target TEXT NOT NULL,group_id TEXT)')}
+  private importDuplicate(db:DB,f:ImportFingerprint):NativeDrawingRecord|undefined{
+    if(typeof f.complete!=='boolean'||!/^[a-f0-9]{64}$/.test(f.rawSha256)||f.contentHash!==undefined&&!/^[a-f0-9]{64}$/.test(f.contentHash)||f.renderHash!==undefined&&!/^[a-f0-9]{64}$/.test(f.renderHash)||f.sourceKey!==undefined&&!/^[a-f0-9]{64}$/.test(f.sourceKey))throw new StoreError('来源指纹无效')
+    const exists=db.prepare("SELECT 1 FROM sqlite_master WHERE name='native_import_keys'").get()
+    let found=exists?db.prepare('SELECT * FROM native_import_keys WHERE key=?').get('raw:'+f.rawSha256) as any:undefined
+    if(!found&&db.prepare("SELECT 1 FROM sqlite_master WHERE name='native_import_sources'").get()){const old=db.prepare("SELECT diagram_id FROM native_import_sources WHERE json_extract(source,'$.sha256')=?").get(f.rawSha256) as any;if(old)found=old}
+    if(!found&&exists&&f.sourceKey){found=db.prepare('SELECT * FROM native_import_keys WHERE key=?').get('source:'+f.sourceKey) as any;if(found&&(found.content_hash!==f.contentHash||f.complete&&(!found.complete||found.render_hash!==f.renderHash)))throw new StoreError('同一来源图存在不同内容或人工排版，请明确选择来源或另存副本',409,undefined,'IMPORT_SOURCE_CONFLICT')}
+    if(!found&&f.sourceKey&&db.prepare("SELECT 1 FROM sqlite_master WHERE name='native_import_sources'").get()){
+      for(const legacy of db.prepare('SELECT diagram_id,source FROM native_import_sources').all() as {diagram_id:string;source:string}[]){
+        const source=JSON.parse(legacy.source) as NativeImportSource
+        if(!source.sourceDocumentId)continue
+        const canvas=source.format==='project-canvas'||source.format==='drawio-canvas',key=createHash('sha256').update((canvas?'canvas:':'business:')+source.sourceDocumentId).digest('hex')
+        if(key!==f.sourceKey)continue
+        const initial=db.prepare('SELECT document FROM diagram_versions WHERE diagram_id=? AND revision=1').get(legacy.diagram_id) as {document:string}|undefined,document=initial?JSON.parse(initial.document):undefined
+        const contentHash=document?.content?createHash('sha256').update(canonicalContentJson({...document.content,id:source.sourceDocumentId})).digest('hex'):undefined
+        if(f.complete||contentHash!==f.contentHash)throw new StoreError('已有旧来源尚无可验证的排版指纹，请明确选择来源，不重复导入',409,undefined,'IMPORT_SOURCE_CONFLICT')
+        found={diagram_id:legacy.diagram_id};break
+      }
+    }
+    if(!found)return
+    const row=db.prepare('SELECT deleted_at FROM diagrams WHERE id=?').get(found.diagram_id) as any
+    if(!row||row.deleted_at!==null)throw new StoreError('此来源图已删除，不能通过导入复活',410,undefined,'IMPORT_SOURCE_DELETED')
+    return this.storedRecord(db,found.diagram_id) as NativeDrawingRecord
+  }
+  async findImportDuplicate(f:ImportFingerprint,expectedDataRootId:string){return this.use(db=>{this.assertNativeIdentity(db,expectedDataRootId);return this.importDuplicate(db,f)})}
+  private rememberImport(db:DB,f:ImportFingerprint,id:string){this.importSchema(db);for(const key of ['raw:'+f.rawSha256,...(f.sourceKey?['source:'+f.sourceKey]:[])])db.prepare('INSERT OR IGNORE INTO native_import_keys VALUES(?,?,?,?,?)').run(key,id,f.contentHash??null,f.renderHash??null,f.complete?1:0)}
+  async createNativeDrawing(input:unknown,workspaceGroupId:string|null,m:NativeMutation,importSource?:NativeImportSource,importPlan?:ImportCommitPlan):Promise<NativeDrawingRecord>{
     m={...m}
-    this.mutation(m);if(!['create','ai-create','import-content','import-project','import-drawio'].includes(m.operation)||m.operation.startsWith('import-')!==!!importSource)throw new StoreError('创建请求操作或导入来源无效')
+    this.mutation(m);if(!['create','ai-create','import-content','import-project','import-drawio'].includes(m.operation)||m.operation.startsWith('import-')!==!!importSource||!!importPlan&&!importSource)throw new StoreError('创建请求操作或导入来源无效')
     const snapshot=structuredClone(input);if(typeof(snapshot as any)?.rendering?.engine?.xml==='string'&&Buffer.byteLength((snapshot as any).rendering.engine.xml)>4_000_000)throw new StoreError('原生XML超过4,000,000字节预算',413,undefined,'NATIVE_XML_TOO_LARGE');const project=await validateNativeProject(snapshot);this.id(nativeIdentity(project).id)
     return this.transaction(db=>{
       const replay=this.replay(db,m);if(replay)return replay
+      if(importPlan){
+        this.importSchema(db)
+        const batch=importPlan.batch,batchKey=batch?createHash('sha256').update(JSON.stringify([m.expectedDataRootId,batch.id])).digest('hex'):undefined
+        const target=batch?canonicalContentJson(batch.target as any):undefined
+        const previous=batchKey?db.prepare('SELECT * FROM native_import_batches WHERE id=?').get(batchKey) as any:undefined
+        if(previous&&previous.target!==target)throw new StoreError('同批次不能改变导入目标',409,undefined,'IMPORT_BATCH_TARGET_CHANGED')
+        if(batch&&'groupId'in batch.target)this.checkGroup(db,batch.target.groupId)
+        const duplicate=this.importDuplicate(db,importPlan.fingerprint)
+        if(duplicate){this.rememberImport(db,importPlan.fingerprint,nativeIdentity(duplicate.document).id);if(batchKey&&!previous)db.prepare('INSERT INTO native_import_batches VALUES(?,?,NULL)').run(batchKey,target!);this.remember(db,m,duplicate);return duplicate}
+        if(importPlan.duplicateOnly)throw new StoreError('此来源仅允许关联已存在的图形',422,undefined,'NATIVE_CANVAS_UNSUPPORTED')
+        if(batch&&'newGroupName'in batch.target){
+          const name=this.groupName(batch.target.newGroupName),groupId='group_import_'+batchKey!.slice(0,32)
+          if(previous?.group_id){this.checkGroup(db,previous.group_id);workspaceGroupId=previous.group_id}
+          else {if(db.prepare('SELECT 1 FROM workspace_groups WHERE name=?').get(name))throw new StoreError('目标分组名称已存在，请明确选择分组ID',409,undefined,'IMPORT_GROUP_CONFLICT');const now=Date.now();db.prepare('INSERT INTO workspace_groups VALUES(?,?,?,?,?)').run(groupId,name,1,now,now);this.activity(db,{action:'group-create',groupId,toRevision:1,requestId:m.requestId,batchId:batch.id,itemId:batch.itemId});workspaceGroupId=groupId}
+        }
+        if(batchKey)db.prepare('INSERT INTO native_import_batches VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET group_id=excluded.group_id').run(batchKey,target!,workspaceGroupId)
+      }
       this.checkGroup(db,workspaceGroupId)
       if(db.prepare('SELECT 1 FROM diagram_tombstones WHERE id=?').get(nativeIdentity(project).id))throw new StoreError('该 ID 已永久删除，不能重新创建',410)
       const existing=db.prepare('SELECT revision,deleted_at FROM diagrams WHERE id=?').get(nativeIdentity(project).id) as any
@@ -165,6 +217,8 @@ export class DiagramStore {
       db.prepare('INSERT INTO diagram_versions VALUES(?,?,?,?)').run(nativeIdentity(project).id,1,json,project.updatedAt)
       if(importSource){if(importSource.diagramId!==nativeIdentity(project).id||!m.operation.startsWith('import-'))throw new StoreError('来源记录与导入身份不符');db.exec('CREATE TABLE IF NOT EXISTS native_import_sources(import_id TEXT PRIMARY KEY,diagram_id TEXT NOT NULL UNIQUE REFERENCES diagrams(id) ON DELETE CASCADE,source TEXT NOT NULL CHECK(json_valid(source)))');db.prepare('INSERT INTO native_import_sources VALUES(?,?,?)').run(importSource.importId,nativeIdentity(project).id,JSON.stringify(importSource))}
       const record=this.storedRecord(db,nativeIdentity(project).id) as NativeDrawingRecord
+      if(importPlan)this.rememberImport(db,importPlan.fingerprint,nativeIdentity(project).id)
+      this.activity(db,{action:importSource?'import':m.operation,diagramId:nativeIdentity(project).id,groupId:workspaceGroupId,toRevision:1,requestId:m.requestId,...(importSource?{source:{format:importSource.format,sha256:importSource.sha256,bytes:importSource.bytes}}:{}),...(importPlan?.batch?{batchId:importPlan.batch.id,itemId:importPlan.batch.itemId}:{}),summary:activitySummary(undefined,'content'in project?project.content:undefined,true)})
       this.remember(db,m,record)
       return record
     })
@@ -174,7 +228,7 @@ export class DiagramStore {
     this.id(id);this.mutation(m);if(!['editor-save','content-patch','ai-content-patch','ai-content-update','configure-rendering','canvas-map'].includes(m.operation)||!Number.isSafeInteger(expectedRevision)||expectedRevision<1)throw new StoreError('原生保存修订或操作无效')
     const snapshot=structuredClone(input);if(typeof(snapshot as any)?.rendering?.engine?.xml==='string'&&Buffer.byteLength((snapshot as any).rendering.engine.xml)>4_000_000)throw new StoreError('原生XML超过4,000,000字节预算',413,undefined,'NATIVE_XML_TOO_LARGE');const project=await validateNativeProject(snapshot)
     if(nativeIdentity(project).id!==id)throw new StoreError('原生项目 ID 与路径不一致')
-    const candidateSignature=('mode'in project?nativeCanvasRenderSignature:drawioRenderSignature)(project.rendering.engine.xml),candidatePreferences=canonicalContentJson(('preferences'in project.rendering?project.rendering.preferences:{}) as any)
+    const candidateSignature=('mode'in project?nativeCanvasRenderSignature:nativeStateSignature)(project.rendering.engine.xml),candidatePreferences=canonicalContentJson(('preferences'in project.rendering?project.rendering.preferences:{}) as any)
     // All asynchronous projection/validation completes before this short CAS transaction.
     return this.transaction(db=>{
       const replay=this.replay(db,m);if(replay)return replay
@@ -185,9 +239,10 @@ export class DiagramStore {
       const previousCanvas=isCanvasRecord(previous),candidateCanvas='mode'in project
       if(candidateCanvas&&m.operation!=='editor-save')throw new StoreError('仅画布只接受原生编辑保存',422,previous.revision,'BUSINESS_MAPPING_REQUIRED')
       if(previousCanvas!==candidateCanvas&&!(m.operation==='canvas-map'&&previousCanvas&&!candidateCanvas))throw new StoreError('项目模式改变必须通过显式映射',409,previous.revision,'NATIVE_MODE_MISMATCH')
+      const previousSignature=(isCanvasRecord(previous)?nativeCanvasRenderSignature:nativeStateSignature)(previous.document.rendering.engine.xml)
       const unchanged=previousCanvas===candidateCanvas&&nativeIdentity(project).title===nativeIdentity(previous.document).title
         &&(candidateCanvas||!previousCanvas&&'contentHash'in project.rendering.engine&&project.rendering.engine.contentHash===previous.document.rendering.engine.contentHash)
-        &&candidateSignature===(isCanvasRecord(previous)?nativeCanvasRenderSignature:drawioRenderSignature)(previous.document.rendering.engine.xml)
+        &&candidateSignature===previousSignature
         &&candidatePreferences===canonicalContentJson(('preferences'in previous.document.rendering?previous.document.rendering.preferences:{}) as any)
       if(unchanged){this.remember(db,m,previous);return previous}
       project.updatedAt=Math.max(Date.now(),previous.document.updatedAt+1,project.createdAt)
@@ -196,6 +251,7 @@ export class DiagramStore {
       if(result.changes!==1)throw new StoreError('图形保存冲突',409,previous.revision,'REVISION_CONFLICT')
       db.prepare('INSERT INTO diagram_versions VALUES(?,?,?,?)').run(id,expectedRevision+1,json,project.updatedAt)
       const record=this.storedRecord(db,id) as NativeDrawingRecord
+      this.activity(db,{action:m.operation,diagramId:id,groupId:record.workspaceGroupId,fromRevision:previous.revision,toRevision:record.revision,requestId:m.requestId,summary:activitySummary(!isCanvasRecord(previous)?previous.document.content:undefined,'content'in project?project.content:undefined,candidateSignature!==previousSignature||candidatePreferences!==canonicalContentJson(('preferences'in previous.document.rendering?previous.document.rendering.preferences:{}) as any))})
       this.remember(db,m,record)
       return record
     })
@@ -352,6 +408,7 @@ export class DiagramStore {
       const response={...decodeDiagramRow({...row,document:json,revision,saved_at:now}),deletedAt:row.deleted_at}
       db.prepare('INSERT INTO native_migration_records VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').run(value.requestId,value.requestHash,s.diagramId,s.revision,revision,s.rawDocument,s.rawDocumentSha256,value.sourceHash,value.converterVersion,value.geometryDigest,JSON.stringify(value.report),JSON.stringify(response),now)
       db.prepare('INSERT OR IGNORE INTO schema_migrations VALUES(?,?,?)').run(2,now,'native explicit legacy conversion and provenance')
+      this.activity(db,{action:'migrate',diagramId:s.diagramId,groupId:s.workspaceGroupId,fromRevision:s.revision,toRevision:revision,requestId:value.requestId,summary:{renderingChanged:true}})
       return response
     })
   }

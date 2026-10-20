@@ -4,6 +4,29 @@ import {DrawioHostController,MAX_HOST_MESSAGE_BYTES,MAX_HOST_XML_BYTES,type Host
 import {businessLibraryConfiguration,drawioHostURL} from '../src/drawing/engine/drawio-host/library'
 import {hasUncommittedNativeText} from '../src/drawing/engine/drawio-host/editing'
 const xml='<mxGraphModel><root><mxCell id="0"/></root></mxGraphModel>'
+const collabXML='<mxfile><diagram id="live" name="page"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="a" parent="1" vertex="1" value="before"><mxGeometry x="20" y="20" width="100" height="40" as="geometry"/></mxCell></root></mxGraphModel></diagram></mxfile>'
+test('cloud patch enables diff sync and waits for correlated patch/reset without a document reload',async()=>{
+ const h=setup({collaboration:true,initialXML:collabXML});try{
+  h.boot();assert.equal(h.sent[1].diffSync,true)
+  const applying=h.controller.applyRemoteXML(collabXML,collabXML.replace('value="before"','value="after"'))
+  const patch=h.sent.at(-1)!;assert.equal(patch.action,'patch');assert.ok(patch.patch)
+  h.receive({event:'patch',message:{...patch,message:'stale'}})
+  assert.equal(h.sent.at(-1)?.action,'patch')
+  h.receive({event:'patch',message:patch});await new Promise(r=>setImmediate(r))
+  const reset=h.sent.at(-1)!;assert.equal(reset.action,'resetDiff')
+  h.receive({event:'resetDiff',message:reset});await applying
+  assert.equal(h.sent.filter(m=>m.action==='load').length,1)
+  assert.equal(h.xmlEvents.length,0)
+ }finally{h.controller.dispose()}
+})
+test('remote patch failures and dispose never report an unconfirmed patch as synchronized',async()=>{
+ const h=setup({collaboration:true});try{
+  h.boot();const applying=h.controller.applyRemoteXML(collabXML,collabXML.replace('value="before"','value="after"')),patch=h.sent.at(-1)!
+  h.receive({event:'patch',message:patch,error:'invalid'});await assert.rejects(applying,{code:'REMOTE_PATCH_FAILED'})
+  assert.equal(h.sent.filter(m=>m.action==='resetDiff').length,0)
+  const pending=h.controller.applyRemoteXML(collabXML,collabXML);h.controller.dispose();await assert.rejects(pending,{code:'SESSION_CLOSED'})
+ }finally{h.controller.dispose()}
+})
 function setup(extra:Partial<ConstructorParameters<typeof DrawioHostController>[0]>={}){
  const source={},sent:Array<Record<string,any>>=[],xmlEvents:HostXML[]=[],errors:HostError[]=[],ready:string[]=[],requests:string[]=[]
  const controller=new DrawioHostController({sessionKey:'session-a',initialXML:xml,origin:'http://localhost:5178',source:()=>source,post:(data,origin)=>{assert.equal(origin,'http://localhost:5178');sent.push(JSON.parse(data))},onReady:e=>ready.push(e.sessionKey),onXML:e=>xmlEvents.push(e),onError:e=>errors.push(e),onSaveRequested:e=>requests.push(e.reason),...extra})

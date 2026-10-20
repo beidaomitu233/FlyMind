@@ -1,4 +1,5 @@
 import express,{type Request,type Response,type RequestHandler} from 'express'
+import {withActivityActor} from '../activity/context'
 import {CloudControlPlane,CloudAccessError,type CloudIdentityProvider,type CloudPermission} from './identity'
 import {CloudTeamWorkspaces,cloudRequestId} from './team-workspaces'
 import {CloudExportPool} from './export-pool'
@@ -13,6 +14,7 @@ import {CloudOAuthProvider,MCP_SCOPES} from './oauth-provider'
 import {CloudOAuthMcpHost} from './oauth-mcp'
 import {join} from 'node:path'
 import {PACKAGE_ROOT} from '../package-paths'
+import {CloudCollaborationRooms} from './collaboration'
 
 export interface CloudHTTPOptions {
  controlPlaneURL:string;cloudDataRoot:string;publicOrigin:string
@@ -20,6 +22,7 @@ export interface CloudHTTPOptions {
  renderer?:NativeExportRenderer;maxOpenTeams?:number;maxQueuedTeams?:number;serveAssets?:boolean
  recoveryIntervalMs?:number;recoveryBatchSize?:number
  gatewayKey?:string;maxMcpSessions?:number;mcpSessionIdleMs?:number;serveSPA?:boolean;spaRoot?:string
+ collaborationIntervalMs?:number
 }
 const tokenPattern=/^[a-zA-Z0-9_-]{32,512}$/
 const safeId=/^[a-zA-Z0-9_-]{1,100}$/
@@ -57,6 +60,7 @@ export function createCloudHTTP(options:CloudHTTPOptions){
  const oauth=options.gatewayKey?new CloudOAuthProvider({controlPlaneURL:options.controlPlaneURL,publicOrigin:options.publicOrigin,gatewayKey:options.gatewayKey,fetch:options.fetch,allowInsecureLoopback:options.allowInsecureLoopback}):undefined
  const mcp=oauth?new CloudOAuthMcpHost(oauth,{maxSessions:options.maxMcpSessions,idleMs:options.mcpSessionIdleMs}):undefined
  const workspaces=new CloudTeamWorkspaces(options.cloudDataRoot,options.identity??control,{maxOpenTeams:options.maxOpenTeams})
+ const rooms=new CloudCollaborationRooms(workspaces,{intervalMs:options.collaborationIntervalMs})
  const pool=new CloudExportPool(options.renderer??new NativeDrawioRenderer(),options.maxQueuedTeams??32,{root:options.cloudDataRoot,intervalMs:options.recoveryIntervalMs,batchSize:options.recoveryBatchSize})
  const app=express(),secure=publicURL.protocol==='https:',cookieName=secure?'__Host-fm_cloud_session':'fm_cloud_session'
  app.disable('x-powered-by')
@@ -87,10 +91,23 @@ export function createCloudHTTP(options:CloudHTTPOptions){
   if(header&&!bearer||bearer&&cookie&&bearer!==cookie)throw new CloudAccessError(401,'LOGIN_REQUIRED','登录会话无效')
   const value=bearer??cookie;if(!value||!tokenPattern.test(value))throw new CloudAccessError(401,'LOGIN_REQUIRED','请先登录 FlyMind');return value
  }
+ function expectedUser(req:Request,userId:string){
+  const expected=req.get('X-FlyMind-User-Id'),cookie=(req.get('Cookie')??'').split(';').some(s=>s.trim().startsWith(cookieName+'='))
+  if(expected&&!safeId.test(expected)||cookie&&!['GET','HEAD','OPTIONS'].includes(req.method)&&!expected)throw new CloudAccessError(409,'USER_IDENTITY_REQUIRED','请重新确认当前登录账号')
+  if(expected&&expected!==userId)throw new CloudAccessError(409,'USER_IDENTITY_MISMATCH','登录账号已改变，请保留草稿并重新打开')
+ }
+ async function checkManagementUser(req:Request,credential:string){
+  const response=await (options.fetch??fetch)(new URL('/app/flymind/auth/me',options.controlPlaneURL),{redirect:'error',cache:'no-store',signal:AbortSignal.timeout(8000),headers:{Authorization:'Bearer '+credential}})
+  const body=await boundedJSON(response)
+  if(!response.ok||body?.code!==200||typeof body?.data?.user?.id!=='string')throw new CloudAccessError(401,'LOGIN_REQUIRED','请先登录 FlyMind')
+  expectedUser(req,body.data.user.id)
+ }
  async function proxy(req:Request,res:Response,path:string,login=false){
-  if(!login&&token(req).startsWith('fm_mcp_'))throw new CloudAccessError(403,'MCP_SCOPE_FORBIDDEN','MCP令牌不能访问账号或团队管理')
+  const credential=login?undefined:token(req)
+  if(credential?.startsWith('fm_mcp_'))throw new CloudAccessError(403,'MCP_SCOPE_FORBIDDEN','MCP令牌不能访问账号或团队管理')
+  if(credential&&!['GET','HEAD'].includes(req.method))await checkManagementUser(req,credential)
   let response:globalThis.Response
-  try{response=await (options.fetch??fetch)(new URL(path,options.controlPlaneURL),{method:req.method,redirect:'error',cache:'no-store',signal:AbortSignal.timeout(8000),headers:{'Content-Type':'application/json',...(login?{}:{Authorization:'Bearer '+token(req)})},...(!['GET','HEAD'].includes(req.method)?{body:JSON.stringify(req.body??{})}:{})})}
+  try{response=await (options.fetch??fetch)(new URL(path,options.controlPlaneURL),{method:req.method,redirect:'error',cache:'no-store',signal:AbortSignal.timeout(8000),headers:{'Content-Type':'application/json',...(credential?{Authorization:'Bearer '+credential}:{})},...(!['GET','HEAD'].includes(req.method)?{body:JSON.stringify(req.body??{})}:{})})}
   catch(error){if(error instanceof CloudAccessError)throw error;throw new CloudAccessError(503,'IDENTITY_UNAVAILABLE','授权服务暂时不可用')}
   const value=await boundedJSON(response)
   if(!response.ok||value?.code!==200){const status=[400,401,403,404,409,429,503].includes(response.status)?response.status:503;throw new CloudAccessError(status,typeof value?.errorCode==='string'?value.errorCode:'IDENTITY_UNAVAILABLE',typeof value?.message==='string'?value.message:'授权服务暂时不可用')}
@@ -110,7 +127,8 @@ export function createCloudHTTP(options:CloudHTTPOptions){
   const cookies=(req.get('Cookie')??'').split(';').map(v=>v.trim()).filter(v=>v.startsWith(cookieName+'='))
   if(cookies.length!==1||req.get('Authorization'))throw new CloudAccessError(401,'LOGIN_REQUIRED','授权确认需要浏览器登录会话')
   const sessionToken=token(req);if(sessionToken.startsWith('fm_mcp_'))throw new CloudAccessError(403,'MCP_SCOPE_FORBIDDEN','授权确认需要应用会话')
-  const body=req.body;if(!body||typeof body.requestId!=='string'||!/^[a-zA-Z0-9_-]{20,512}$/.test(body.requestId)||Object.keys(body).some(k=>!(action==='approve'?['requestId','teamId','approved']:['requestId']).includes(k))||action==='approve'&&(typeof body.approved!=='boolean'||!safeId.test(body.teamId)))throw new CloudAccessError(400,'INVALID_CONSENT','授权请求参数无效')
+  await checkManagementUser(req,sessionToken)
+  const body=req.body;if(!body||typeof body.requestId!=='string'||!/^[a-zA-Z0-9_-]{20,512}$/.test(body.requestId)||Object.keys(body).some(k=>!(action==='approve'?['requestId','teamId','approved']:['requestId']).includes(k))||action==='approve'&&(typeof body.approved!=='boolean'||body.approved&&!safeId.test(body.teamId)||body.teamId!==undefined&&!safeId.test(body.teamId)))throw new CloudAccessError(400,'INVALID_CONSENT','授权请求参数无效')
   const data=await oauth.internal('/requests/'+action,body,sessionToken)
   if(action==='approve'){
    let redirect:URL;try{redirect=new URL(data?.redirectUri)}catch{throw new CloudAccessError(503,'IDENTITY_INVALID_RESPONSE','授权服务响应无效')}
@@ -119,26 +137,45 @@ export function createCloudHTTP(options:CloudHTTPOptions){
   res.json({code:200,message:'ok',data})
  })
  app.get('/cloud-api/teams/:teamId/studio-api/health',async(req,res)=>{
-  await workspaces.run(token(req),String(req.params.teamId),'workspace:read',async workspace=>{const expected=req.get('X-FlyMind-DataRoot-Id');if(expected&&expected!==workspace.dataRootId)throw new CloudAccessError(409,'WORKSPACE_MISMATCH','工作区身份不匹配');res.json({name:'flymind',version:VERSION,storage:'sqlite',dataRootId:workspace.dataRootId,capabilities:runtimeCapabilities()})})
+  await workspaces.run(token(req),String(req.params.teamId),'workspace:read',async (workspace,principal)=>{expectedUser(req,principal.user.id);const expected=req.get('X-FlyMind-DataRoot-Id');if(expected&&expected!==workspace.dataRootId)throw new CloudAccessError(409,'WORKSPACE_MISMATCH','工作区身份不匹配');res.json({name:'flymind',version:VERSION,storage:'sqlite',dataRootId:workspace.dataRootId,capabilities:runtimeCapabilities()})})
+ })
+ const collaborationPath='/cloud-api/teams/:teamId/studio-api/native/collaboration/:id'
+ app.get(collaborationPath+'/events',async(req,res)=>{
+  const credential=token(req),team=String(req.params.teamId),id=String(req.params.id),root=req.get('X-FlyMind-DataRoot-Id')
+  const cursor=req.query.since??req.get('Last-Event-ID')
+  if(!root||!safeId.test(id)||cursor!==undefined&&(typeof cursor!=='string'||!/^\d{1,10}$/.test(cursor)||Number(cursor)<1))throw new CloudAccessError(400,'INVALID_COLLABORATION_REQUEST','协同标识或修订无效')
+  await workspaces.run(credential,team,'diagram:read',async(workspace,principal)=>{
+   expectedUser(req,principal.user.id)
+   if(root!==workspace.dataRootId)throw new CloudAccessError(409,'WORKSPACE_MISMATCH','工作区身份不匹配')
+   await rooms.connect({team,id,root,token:credential,principal,workspace,response:res,since:cursor===undefined?undefined:Number(cursor)})
+  })
+ })
+ app.post(collaborationPath+'/commit',async(req,res)=>{
+  await workspaces.run(token(req),String(req.params.teamId),'diagram:write',async(workspace,principal)=>{
+   expectedUser(req,principal.user.id)
+   const requestId=req.body?.requestId,record=await withActivityActor({userId:principal.user.id,userDisplayName:principal.user.name,teamId:principal.team.id,channel:principal.authorization?'mcp':'web',...(principal.authorization?.clientId?{clientId:principal.authorization.clientId}:{}),dataRootId:workspace.dataRootId},()=>workspace.diagrams.saveCollaborativeEditor(String(req.params.id),{...req.body,requestId:cloudRequestId(principal,requestId)},req.get('X-FlyMind-DataRoot-Id')))
+   res.json({requestId,record});rooms.kick()
+  })
  })
  app.use('/cloud-api/teams/:teamId/studio-api/native',async(req,res,next)=>{
   try{
    const teamId=String(req.params.teamId),access=permission(req)
    await workspaces.run(token(req),teamId,access,async(workspace,principal)=>{
+    expectedUser(req,principal.user.id)
     const expected=req.get('X-FlyMind-DataRoot-Id');if(expected&&expected!==workspace.dataRootId)throw new CloudAccessError(409,'WORKSPACE_MISMATCH','工作区身份不匹配')
     if(req.body&&typeof req.body==='object'&&Object.hasOwn(req.body,'requestId'))req.body={...req.body,requestId:cloudRequestId(principal,req.body.requestId)}
     const release=access==='export:create'||/^\/exports\//.test(req.path)?pool.reserve(workspace):()=>{}
-    try{await new Promise<void>((yes,no)=>{
+    try{await withActivityActor({userId:principal.user.id,userDisplayName:principal.user.name,teamId:principal.team.id,channel:principal.authorization?'mcp':'web',...(principal.authorization?.clientId?{clientId:principal.authorization.clientId}:{}),dataRootId:workspace.dataRootId},()=>new Promise<void>((yes,no)=>{
      let settled=false,inJSON=false
      const json=res.json.bind(res),send=res.send.bind(res)
      const finished=()=>{if(settled)return;settled=true;res.off('finish',finished);yes()}
      // close is only a transport event: async service work may still commit.
      // Native routes settle through json/send/next even after a client aborts.
-     res.json=body=>{inJSON=true;try{return json(rewriteURLs(body,'/cloud-api/teams/'+teamId))}finally{inJSON=false;finished()}}
+     res.json=body=>{inJSON=true;try{return json(rewriteURLs(body,'/cloud-api/teams/'+teamId))}finally{inJSON=false;finished();if(req.method!=='GET')rooms.kick()}}
      res.send=body=>{try{return send(body)}finally{if(!inJSON)finished()}}
      res.once('finish',finished)
      nativeRouter(workspace.diagrams,workspace.exports)(req,res,error=>{res.off('finish',finished);if(settled)return;settled=true;if(error)no(error);else{next();yes()}})
-    })}finally{release()}
+    }))}finally{release()}
    })
   }catch(error){next(error)}
  })
@@ -146,5 +183,5 @@ export function createCloudHTTP(options:CloudHTTPOptions){
  if(options.serveSPA!==false)app.use(express.static(options.spaRoot??join(PACKAGE_ROOT,'dist'),{index:'index.html',redirect:false}))
  app.use((_req,res)=>res.status(404).json({error:'接口不存在',code:'NOT_FOUND'}))
  app.use((error:unknown,_req:Request,res:Response,_next:unknown)=>{if(!res.headersSent)errorResponse(res,error)})
- return {app,workspaces,async close(){try{await mcp?.close();await pool.close()}finally{workspaces.close()}}}
+ return {app,workspaces,async close(){rooms.close();try{await mcp?.close();await pool.close()}finally{workspaces.close()}}}
 }

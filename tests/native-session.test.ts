@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {NativeSaveSession,recoverNativeSession,type NativeSessionOptions} from '../src/drawing/state/native-session'
 import {NativeClient} from '../src/drawing/services/native-client'
 import {NativeApiError,type DraftRepository,type NativeDraft,type NativeDraftKey,type NativeDraftUpdate,type NativeHealth,type NativeRecord,type NativeSaveRequest,type NativeTransport} from '../src/drawing/services/native-types'
-import {acceptsDraftGuard,draftKey,draftSessionKey,IndexedDbDraftRepository,NativeDraftError} from '../src/drawing/services/native-drafts'
+import {acceptsDraftGuard,draftKey,draftSessionKey,IndexedDbDraftRepository,NativeDraftError,validateNativeDraft} from '../src/drawing/services/native-drafts'
 
 const clone=<T>(value:T):T=>structuredClone(value)
 function deferred<T>(){let resolve!:(value:T)=>void,reject!:(error:unknown)=>void;const promise=new Promise<T>((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject}}
@@ -305,4 +305,91 @@ test('explicit content result adopts revision only while clean and next editor s
   await session.adoptCommitted(applied,1);assert.equal(session.snapshot().latestXML,'XML-PROPERTY');assert.equal(session.snapshot().baseRevision,2);assert.equal(session.snapshot().dirty,false)
   await session.edit('XML-AFTER');await assert.rejects(session.adoptCommitted(applied,2),e=>e instanceof NativeApiError&&e.code==='REVISION_CONFLICT');assert.equal(session.snapshot().latestXML,'XML-AFTER')
   const flush=session.flush();await until(()=>transport.calls.length===1);assert.equal(transport.calls[0].request.expectedRevision,2);transport.ack(0);await flush;assert.equal(session.snapshot().baseRevision,3)
+})
+
+test('cloud ACK rebase rechecks input arriving during async hook and saves only the merged latest edit',async()=>{
+ const gate=deferred<void>(),calls:Array<{base:string;latest:string}>=[]
+ const {session,transport,repo}=await setup('diagram-1',undefined,{reconcileRecord:async(base,remote,latest)=>{calls.push({base,latest});if(calls.length===1)await gate.promise;return remote.document.rendering.engine.xml.includes('|REMOTE')&&!latest.includes('|REMOTE')?latest+'|REMOTE':latest}})
+ await session.edit('XML-A');const saving=session.flush();await until(()=>transport.calls.length===1);await session.edit('XML-B')
+ const ack=transport.commit(0);ack.document.rendering.engine.xml+='|REMOTE';transport.remote=clone(ack);transport.calls[0].deferred.resolve(ack)
+ await until(()=>calls.length===1);await session.edit('XML-C');assert.equal((await repo.list())[0].acknowledgedPending?.request.requestId,transport.calls[0].request.requestId)
+ assert.equal(await session.receiveRemote(transport.remote),false,'receive must not interleave with an ACK rebase')
+ gate.resolve();await until(()=>transport.calls.length===2)
+ assert.deepEqual(calls.slice(0,2),[{base:'XML-A',latest:'XML-B'},{base:'XML-A',latest:'XML-C'}])
+ assert.equal(transport.calls[1].request.xml,'XML-C|REMOTE');assert.equal(transport.calls[1].request.expectedRevision,2)
+ transport.ack(1);await saving;assert.equal(session.snapshot().dirty,false);assert.equal((await repo.list()).length,0)
+})
+
+test('remote record rebases dirty local XML without submitting, and busy inflight remote application is deferred',async()=>{
+ const {session,transport}=await setup('diagram-1',undefined,{reconcileRecord:async(_base,remote,latest)=>latest==='XML-0'?remote.document.rendering.engine.xml:latest.includes('|REMOTE')?latest:latest+'|REMOTE'})
+ await session.edit('XML-B');transport.remote.revision=2;transport.remote.document.rendering.engine.xml='XML-0|REMOTE'
+ assert.equal(await session.receiveRemote(clone(transport.remote)),true);assert.equal(session.snapshot().baseRevision,2);assert.equal(session.snapshot().latestXML,'XML-B|REMOTE');assert.equal(session.snapshot().dirty,true);assert.equal(transport.calls.length,0)
+ const flush=session.flush();await until(()=>transport.calls.length===1);assert.equal(await session.receiveRemote(transport.remote),false);assert.equal(transport.calls[0].request.expectedRevision,2);transport.ack(0);await flush
+ assert.equal(session.snapshot().dirty,false)
+})
+
+test('failed ACK rebase retains known commit evidence across recovery and never retries the acknowledged request',async()=>{
+ let blocked=true
+ const {session,transport,repo,options}=await setup('diagram-1',undefined,{reconcileRecord:async(_base,remote,latest)=>{if(blocked)throw new NativeApiError('同字段冲突',409,'COLLABORATION_CONFLICT');return latest==='XML-A'?remote.document.rendering.engine.xml:latest.includes('|REMOTE')?latest:latest+'|REMOTE'}})
+ await session.edit('XML-A');const flush=session.flush(),failed=assert.rejects(flush,(e:any)=>e.code==='COLLABORATION_CONFLICT');await until(()=>transport.calls.length===1)
+ const ack=transport.commit(0);ack.document.rendering.engine.xml='XML-A|REMOTE';transport.remote=clone(ack);transport.calls[0].deferred.resolve(ack);await failed
+ assert.equal(session.snapshot().baseRevision,2);assert.equal(session.snapshot().inflight,undefined);assert.equal(session.snapshot().status,'conflict');await session.edit('XML-C')
+ const draft=(await repo.list())[0];validateNativeDraft(draft);assert.equal(draft.acknowledgedXML,'XML-A|REMOTE');assert.equal(draft.acknowledgedPending?.request.xml,'XML-A');assert.equal(draft.latestXML,'XML-C');assert.equal(draft.reconcileBlocked,true)
+ await assert.rejects(session.retry());await assert.rejects(session.flush());assert.equal(transport.calls.length,1);await session.close()
+ const recovered=await recoverNativeSession(options,draft);assert.equal(recovered.kind,'ready');assert.ok('session'in recovered)
+ await assert.rejects(recovered.session.flush());assert.equal(transport.calls.length,1)
+ blocked=false;await recovered.session.receiveRemote(transport.remote);const resumed=recovered.session.flush();await until(()=>transport.calls.length===2)
+ assert.equal(transport.calls[1].request.xml,'XML-C|REMOTE');assert.equal(transport.calls[1].request.expectedRevision,2);assert.notEqual(transport.calls[1].request.requestId,transport.calls[0].request.requestId);transport.ack(1);await resumed
+})
+
+test('cloud offline draft without pending request can activate and explicitly rebase an older baseline; local remains strict',async()=>{
+ const {session,transport,repo,options}=await setup('diagram-1',undefined,{reconcileRecord:async(_base,_record,latest)=>latest+'|REMOTE'})
+ await session.edit('XML-LOCAL');const draft=(await repo.list())[0];transport.remote.revision=2;transport.remote.document.rendering.engine.xml='XML-REMOTE'
+ const local=await recoverNativeSession({...options,reconcileRecord:undefined},draft);assert.equal(local.kind,'conflict')
+ const cloud=await recoverNativeSession(options,draft);assert.equal(cloud.kind,'ready');assert.ok('session'in cloud);assert.equal(cloud.session.snapshot().baseRevision,1)
+ await cloud.session.receiveRemote(transport.remote);assert.equal(cloud.session.snapshot().latestXML,'XML-LOCAL|REMOTE');assert.equal(cloud.session.snapshot().baseRevision,2);assert.equal(transport.calls.length,0)
+})
+
+test('cloud no-op compares only native state; viewport/file timestamps do not create a save',async()=>{
+ const xml='<mxfile modified="a"><diagram id="p"><mxGraphModel dx="1"><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel></diagram></mxfile>'
+ const transport=new ControlledTransport();transport.remote.document.rendering.engine.xml=xml
+ const session=await NativeSaveSession.open({dataRootId:'workspace-1',diagramId:'diagram-1',transport,drafts:new MemoryDraftRepository(),reconcileRecord:async(_base,_record,latest)=>latest})
+ await session.edit(xml.replace('modified="a"','modified="b"').replace('dx="1"','dx="999"'));assert.equal(session.snapshot().dirty,false);await session.flush();assert.equal(transport.calls.length,0)
+ await session.edit(xml.replace('id="p"','id="p" name="changed"'));assert.equal(session.snapshot().dirty,true)
+})
+
+test('blocked ACK draft validation rejects ambiguous uncertain and confirmed request states',async()=>{
+ const {session,repo}=await setup();await session.edit('XML-A');const draft=(await repo.list())[0]
+ const pending={seq:draft.latestSeq,request:{xml:'XML-A',expectedRevision:1,requestId:'known'}}
+ assert.throws(()=>validateNativeDraft({...draft,acknowledgedPending:pending}),NativeDraftError)
+ assert.throws(()=>validateNativeDraft({...draft,reconcileBlocked:true,inflight:pending}),NativeDraftError)
+ assert.throws(()=>validateNativeDraft({...draft,reconcileBlocked:'true'}),NativeDraftError)
+})
+
+test('closing during cloud ACK hook retains the confirmed revision and newer input without late submission',async()=>{
+ const gate=deferred<void>();let entered=false
+ const {session,transport,repo,options}=await setup('diagram-1',undefined,{reconcileRecord:async(_base,_remote,latest)=>{entered=true;await gate.promise;return latest}})
+ await session.edit('XML-A');const saving=session.flush();await until(()=>transport.calls.length===1);transport.ack(0);await until(()=>entered)
+ await session.edit('XML-B');await session.close();gate.resolve();await saving
+ assert.equal(transport.calls.length,1);assert.equal(session.snapshot().status,'closed');assert.equal(session.snapshot().baseRevision,2)
+ const saved=(await repo.list())[0];assert.equal(saved.latestXML,'XML-B');assert.equal(saved.acknowledgedPending?.request.xml,'XML-A')
+ const local=await recoverNativeSession({...options,reconcileRecord:undefined},saved);assert.equal(local.kind,'conflict')
+})
+
+test('draft failure immediately after known cloud ACK blocks new sends until explicit successful rebase',async()=>{
+ const {session,transport,repo}=await setup('diagram-1',undefined,{reconcileRecord:async(_base,_remote,latest)=>latest})
+ await session.edit('XML-A');const saving=session.flush(),failed=assert.rejects(saving,(e:any)=>e.code==='DRAFT_QUOTA');await until(()=>transport.calls.length===1)
+ repo.fail=true;transport.ack(0);await failed;assert.equal(session.snapshot().baseRevision,2);assert.equal(session.snapshot().inflight,undefined)
+ repo.fail=false;await session.edit('XML-B');await assert.rejects(session.flush());await assert.rejects(session.retry());assert.equal(transport.calls.length,1)
+ const download=JSON.parse(session.downloadRecovery().contents).draft;assert.equal(download.acknowledgedPending.request.xml,'XML-A');assert.equal(download.reconcileBlocked,true)
+ await session.receiveRemote(transport.remote);const resumed=session.flush();await until(()=>transport.calls.length===2);assert.equal(transport.calls[1].request.expectedRevision,2);assert.equal(transport.calls[1].request.xml,'XML-B');transport.ack(1);await resumed
+})
+
+test('flush requested during remote rebase waits for that boundary then submits the preserved local delta',async()=>{
+ const gate=deferred<void>();let entered=false
+ const {session,transport}=await setup('diagram-1',undefined,{reconcileRecord:async(_base,_record,latest)=>{entered=true;await gate.promise;return latest}})
+ await session.edit('XML-LOCAL');transport.remote.revision=2;transport.remote.document.rendering.engine.xml='XML-REMOTE'
+ const receive=session.receiveRemote(transport.remote);await until(()=>entered);const saving=session.flush();assert.equal(transport.calls.length,0)
+ gate.resolve();assert.equal(await receive,true);await until(()=>transport.calls.length===1);assert.equal(transport.calls[0].request.xml,'XML-LOCAL');assert.equal(transport.calls[0].request.expectedRevision,2);transport.ack(0);await saving
+ assert.equal(session.snapshot().dirty,false)
 })

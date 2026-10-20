@@ -15,6 +15,7 @@ import {requireNativeAIQuality} from './native-quality'
 import {diffNativeContent} from './native-content-diff'
 import {defaultProfileForKind,drawioCapabilities} from '../../src/drawing/engine/profiles'
 import {mergeNativeSnapshots,CollaborationMergeError} from '../../src/drawing/engine/collaboration/merge'
+import {nativeProtocolPatch} from '../../src/drawing/engine/collaboration/protocol-patch'
 import type {DrawioRenderingChanges,DrawioConfigureResult,DrawingProjectV3} from '../../src/drawing/engine/types'
 
 type Input=Record<string,any>
@@ -144,6 +145,9 @@ export class NativeDiagramService {
     const m=mutation('editor-save',id,value,expectedDataRootId),replay=await this.store.replayNativeDrawing(m)
     if(replay)return replay
     const base=await this.store.getNativeDrawingRevision(id,expected)
+    // Reject unsupported shared model/page changes before merge can discard them
+    // and before any durable commit/receipt. The original XML stays in the draft.
+    nativeProtocolPatch(base.document.rendering.engine.xml,value.xml)
     for(let attempt=0;attempt<4;attempt++){
       const current=await this.getDrawing(id)
       if(expected>current.revision||isCanvasRecord(base)!==isCanvasRecord(current))throw new StoreError('图形模式或基线已改变，请保留草稿',409,current.revision,'COLLABORATION_CONFLICT')
@@ -157,6 +161,7 @@ export class NativeDiagramService {
         const normalized=await normalizeDrawioEdits(xml,current.document)
         candidate=await validateDrawingProject({...current.document,content:normalized.content,rendering:{...current.document.rendering,engine:{...current.document.rendering.engine,xml:normalized.xml,contentHash:normalized.contentHash}}})
       }
+      nativeProtocolPatch(current.document.rendering.engine.xml,candidate.rendering.engine.xml)
       try{return await this.store.commitNativeDrawing(id,current.revision,candidate,m)}
       catch(error){if(!(error instanceof StoreError&&error.code==='REVISION_CONFLICT')||attempt===3)throw error}
     }

@@ -1,4 +1,5 @@
 import {attr,children,parseNative,serialize,type NativeCell} from '../drawio/xml'
+import {personalModelAttributes} from './protocol-patch'
 
 export interface CollaborationConflict {cellId:string;field:string}
 export class CollaborationMergeError extends Error {
@@ -69,7 +70,7 @@ function mergeCell(base:NativeCell,local:NativeCell,remote:NativeCell,result:Nat
     if(same(chosen,childState(local.cell)))replaceChildren(result.cell,local.cell)
   }
 }
-const viewportAttributes=new Set(['dx','dy','grid','gridSize','guides','tooltips','connect','arrows','fold','page','pageScale','pageWidth','pageHeight','scrollTop','scrollLeft','scale','translate'])
+const viewportAttributes=new Set([...personalModelAttributes,'math','shadow','fold'])
 
 /** Three-way merge of rendering state. Inputs are complete, validated snapshots;
  * the base comes from durable server history, never a client supplied baseline.
@@ -81,6 +82,9 @@ export function mergeNativeSnapshots(baseXML:string,localXML:string,remoteXML:st
   if(attr(base.diagram,'id')!==attr(local.diagram,'id')||attr(base.diagram,'id')!==attr(remote.diagram,'id'))throw new CollaborationMergeError([{cellId:'',field:'pageIdentity'}])
   mergeAttributes(base.diagram,local.diagram,remote.diagram,result.diagram,'','page:',conflicts,new Set(['id']))
   mergeAttributes(base.model,local.model,remote.model,result.model,'','model:',conflicts,viewportAttributes)
+  // Fixed Graph.createViewState defaults; native saves materialize these values.
+  // Compare semantics so a codec-added default cannot conflict with a real edit.
+  for(const [key,value] of [['math','0'],['shadow','0'],['fold','1']])setAttribute(result.model,key,mergeValue(attr(base.model,key)??value,attr(local.model,key)??value,attr(remote.model,key)??value,'','model:'+key,conflicts))
   const ids=new Set([...base.cells.keys(),...local.cells.keys(),...remote.cells.keys()])
   for(const id of ids){
     const b=base.cells.get(id),l=local.cells.get(id),r=remote.cells.get(id),out=result.cells.get(id)

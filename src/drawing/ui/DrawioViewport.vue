@@ -7,7 +7,7 @@ import {DrawioHostProtocolError,type HostReady,type HostXML,type HostError,type 
 interface DocumentInput {sessionKey:string;initialXML:string;title?:string}
 interface Slot extends DocumentInput {ready:boolean;failed?:boolean}
 type Host=InstanceType<typeof DrawioHost>
-const props=defineProps<DocumentInput&{loading?:boolean;appearance?:DrawioAppearance}>()
+const props=defineProps<DocumentInput&{loading?:boolean;appearance?:DrawioAppearance;collaboration?:boolean}>()
 const emit=defineEmits<{ready:[event:HostReady];xml:[event:HostXML];error:[event:HostError];saveRequested:[event:HostSaveRequested]}>()
 const slots=shallowRef<Slot[]>(props.sessionKey?[{sessionKey:props.sessionKey,initialXML:props.initialXML,title:props.title,ready:false}]:[])
 const displayedKey=shallowRef(props.sessionKey)
@@ -69,6 +69,7 @@ defineExpose({prepare,discardPrepared,groupSelection:(ungroup=false)=>activeHost
   captureXML:()=>activeHost().captureXML(),commitAndCaptureXML:()=>activeHost().commitAndCaptureXML(),
   hasUncommittedText:()=>{try{return activeHost().hasUncommittedText()}catch{return true}},
   getSelection:()=>activeHost().getSelection(),mergeXML:(xml:string)=>activeHost().mergeXML(xml),
+  applyRemoteXML:(fromXML:string,toXML:string)=>activeHost().applyRemoteXML(fromXML,toXML),
   undo:()=>activeHost().undo(),redo:()=>activeHost().redo(),fit:()=>activeHost().fit(),
   deleteSelectedBranch:()=>activeHost().deleteSelectedBranch()
 })
@@ -78,7 +79,7 @@ defineExpose({prepare,discardPrepared,groupSelection:(ungroup=false)=>activeHost
   <div class="drawio-viewport" :data-appearance="appearance??'light'" :aria-busy="covering">
     <slot v-if="!slots.length&&!covering" />
     <div v-for="slot in slots" :key="slot.sessionKey" class="drawio-viewport-slot" :class="{'drawio-viewport-active':slot.sessionKey===displayedKey}" :inert="slot.sessionKey!==displayedKey||covering" :aria-hidden="slot.sessionKey!==displayedKey">
-      <DrawioHost :ref="value=>{if(value)hosts.set(slot.sessionKey,value as Host);else hosts.delete(slot.sessionKey)}" :appearance="appearance??'light'" :session-key="slot.sessionKey" :initial-x-m-l="slot.initialXML" :title="slot.title" @ready="ready" @error="failed" @xml="(event:HostXML)=>{if(isActive(event.sessionKey))emit('xml',event)}" @save-requested="(event:HostSaveRequested)=>{if(isActive(event.sessionKey))emit('saveRequested',event)}" />
+      <DrawioHost :ref="value=>{if(value)hosts.set(slot.sessionKey,value as Host);else hosts.delete(slot.sessionKey)}" :appearance="appearance??'light'" :collaboration="props.collaboration" :session-key="slot.sessionKey" :initial-x-m-l="slot.initialXML" :title="slot.title" @ready="ready" @error="failed" @xml="(event:HostXML)=>{if(isActive(event.sessionKey))emit('xml',event)}" @save-requested="(event:HostSaveRequested)=>{if(isActive(event.sessionKey))emit('saveRequested',event)}" />
     </div>
     <div class="drawio-viewport-loader" :class="{'drawio-viewport-loading':covering}" :aria-hidden="!covering" role="status" aria-label="加载中">
       <div class="drawio-viewport-loader-content"><span class="drawio-viewport-spinner" aria-hidden="true"></span><span>加载中</span></div>

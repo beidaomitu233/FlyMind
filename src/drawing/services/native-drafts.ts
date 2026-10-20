@@ -13,6 +13,8 @@ export function validateNativeDraft(input:unknown):NativeDraft {
   const integer=(v:unknown,min=0)=>Number.isSafeInteger(v)&&Number(v)>=min
   if(!d||d.formatVersion!==1||![d.dataRootId,d.diagramId,d.sessionId].every(v=>typeof v==='string'&&!!v)||!integer(d.baseRevision,1)||!integer(d.generation,1)||!integer(d.journalVersion,1)||!integer(d.latestSeq)||!integer(d.acknowledgedSeq)||d.acknowledgedSeq>d.latestSeq||typeof d.latestXML!=='string'||typeof d.acknowledgedXML!=='string'||!integer(d.updatedAt,1))throw new NativeDraftError('恢复草稿格式无效，原数据应保留','DRAFT_INVALID')
   if(d.inflight&&(!integer(d.inflight.seq)||d.inflight.seq>d.latestSeq||d.inflight.seq<d.acknowledgedSeq||d.inflight.request?.expectedRevision!==d.baseRevision||typeof d.inflight.request.xml!=='string'||typeof d.inflight.request.requestId!=='string'||!d.inflight.request.requestId))throw new NativeDraftError('未确认请求的恢复数据无效','DRAFT_INVALID')
+  const known=d.acknowledgedPending
+  if(d.reconcileBlocked!==undefined&&typeof d.reconcileBlocked!=='boolean'||known&&(!integer(known.seq)||known.seq>d.acknowledgedSeq||!integer(known.request?.expectedRevision,1)||known.request.expectedRevision>d.baseRevision||typeof known.request.xml!=='string'||typeof known.request.requestId!=='string'||!known.request.requestId||!d.reconcileBlocked)||d.reconcileBlocked&&d.inflight)throw new NativeDraftError('已确认请求的重基证据无效','DRAFT_INVALID')
   return structuredClone(d)
 }
 export function recoveryDownload(draft:NativeDraft):NativeRecoveryDownload {

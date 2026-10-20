@@ -21,10 +21,18 @@ export function nativeRouter(service:NativeDiagramService,exports?:NativeExportS
   router.get('/capabilities',(_req,res)=>res.json(nativeDocumentCapabilities()))
   router.post('/imports',async(req,res)=>res.status(201).json(await imports.import(req.body,req.get('X-FlyMind-DataRoot-Id'))))
   router.post('/imports/preview',async(req,res)=>res.json(await imports.preview(req.body,req.get('X-FlyMind-DataRoot-Id'))))
+  router.post('/imports/items/preview',async(req,res)=>res.json(await imports.previewItem(req.body,req.get('X-FlyMind-DataRoot-Id'))))
+  router.post('/imports/items',async(req,res)=>res.status(201).json(await imports.commitItem(req.body,req.get('X-FlyMind-DataRoot-Id'))))
   router.get('/diagrams/:id/import-source',async(req,res)=>{const source=await imports.source(req.params.id);res.set('Cache-Control','no-store');res.attachment(source.source.format.startsWith('drawio-')?'source.drawio':'source.json');res.type(source.source.format.startsWith('drawio-')?'application/xml':'application/json');res.send(source.buffer)})
   router.get('/diagrams/:id/rendering',async(req,res)=>res.json(await service.rendering(req.params.id)))
   router.post('/diagrams/:id/rendering',async(req,res)=>res.json(await service.configureRendering(req.params.id,req.body,req.get('X-FlyMind-DataRoot-Id'))))
   router.get('/workspace',async(_req,res)=>{res.set('Cache-Control','no-store');res.json(await service.workspace())})
+  router.get('/activity',async(req,res)=>{
+    const allowed=['diagramId','groupId','actorUserId','channel','action','limit','cursor']
+    if(Object.keys(req.query).some(k=>!allowed.includes(k))||Object.values(req.query).some(v=>typeof v!=='string'))throw new StoreError('操作记录筛选无效',400,undefined,'ACTIVITY_QUERY_INVALID')
+    const query={...req.query,...(req.query.limit!==undefined?{limit:Number(req.query.limit)}:{})} as Parameters<typeof service.store.listActivity>[0]
+    res.json(await service.store.listActivity(query,req.get('X-FlyMind-DataRoot-Id')))
+  })
   router.get('/records',async(_req,res)=>res.json(await service.listRecords()))
   router.get('/records/:id',async(req,res)=>res.json(await service.readContent(req.params.id)))
   router.get('/groups',async(_req,res)=>res.json({groups:await service.groups()}))

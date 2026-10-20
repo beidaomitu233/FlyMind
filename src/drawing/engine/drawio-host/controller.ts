@@ -1,5 +1,6 @@
 import {parseNative,attr} from '../drawio/xml'
 import {businessLibraryConfiguration} from './library'
+import {nativeProtocolPatch} from '../collaboration/protocol-patch'
 
 export const MAX_HOST_XML_BYTES=5*1024*1024
 export const MAX_HOST_MESSAGE_BYTES=12*1024*1024
@@ -19,6 +20,7 @@ export interface DrawioHostOptions {
   startupTimeoutMs?:number;requestTimeoutMs?:number
   readViewport?:()=>{scrollLeft:number;scrollTop:number}|Promise<{scrollLeft:number;scrollTop:number}>
   fontFamilies?:readonly string[]
+  collaboration?:boolean
 }
 const object=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v)
 const bytes=(value:string)=>new TextEncoder().encode(value).byteLength
@@ -38,6 +40,7 @@ export class DrawioHostController {
   private jsonPending=new Map<string,{resolve:(value:Record<string,unknown>)=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}>()
   private mergePending=new Map<string,{resolve:()=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}>()
   private pending=new Map<string,{resolve:(xml:string)=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}>()
+  private incremental=new Map<string,{action:'patch'|'resetDiff';resolve:()=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}>()
   constructor(private readonly options:DrawioHostOptions){
     const origin=new URL(options.origin)
     if(origin.origin!==options.origin||!['http:','https:'].includes(origin.protocol))throw new DrawioHostProtocolError('INVALID_ORIGIN','Host 必须使用精确 HTTP origin')
@@ -48,7 +51,7 @@ export class DrawioHostController {
   private report(code:string,message:string){this.options.onError?.({sessionKey:this.options.sessionKey,code,message})}
   private fail(code:string,message:string){this.report(code,message);this.dispose(new DrawioHostProtocolError(code,message))}
   private send(action:string,fields:Record<string,unknown>={}){
-    if(!['configure','load','export','fit','invokeAction'].includes(action)||action==='invokeAction'&&!['save','selectDescendants','deleteAll','undo','redo','group','ungroup'].includes(String(fields.actionName)))throw new DrawioHostProtocolError('ACTION_DENIED','不允许的原生编辑器动作')
+    if(!['configure','load','export','fit','invokeAction','patch','resetDiff'].includes(action)||action==='invokeAction'&&!['save','selectDescendants','deleteAll','undo','redo','group','ungroup'].includes(String(fields.actionName)))throw new DrawioHostProtocolError('ACTION_DENIED','不允许的原生编辑器动作')
     if(this.phase==='closed')throw new DrawioHostProtocolError('SESSION_CLOSED','编辑会话已关闭')
     this.options.post(JSON.stringify({action,...fields}),this.options.origin)
   }
@@ -65,7 +68,7 @@ export class DrawioHostController {
     }
     if(data.event==='init'){
       if(this.phase!=='init')return
-      this.phase='load';this.send('load',{xml:this.options.initialXML,title:this.options.title??'',autosave:1});return
+      this.phase='load';this.send('load',{xml:this.options.initialXML,title:this.options.title??'',autosave:1,...(this.options.collaboration?{diffSync:true}:{})});return
     }
     if(data.event==='load'&&this.phase==='ready'&&this.committedLoad){const request=this.committedLoad;if(data.xml!==request.xml)return;const pending=this.mergePending.get(request.id);if(!pending)return;this.committedLoad=undefined;this.mergePending.delete(request.id);clearTimeout(pending.timer);pending.resolve();return}
     if(data.event==='load'){
@@ -79,6 +82,13 @@ export class DrawioHostController {
       return
     }
     if(this.phase!=='ready')return
+    if((data.event==='patch'||data.event==='resetDiff')&&object(data.message)&&data.message.action===data.event&&typeof data.message.message==='string'){
+      const request=this.incremental.get(data.message.message);if(!request||request.action!==data.event)return
+      this.incremental.delete(data.message.message);clearTimeout(request.timer)
+      if(data.error!==undefined)request.reject(new DrawioHostProtocolError('REMOTE_PATCH_FAILED','原生增量同步失败，当前草稿已保留'))
+      else request.resolve()
+      return
+    }
     if(data.event==='autosave'||data.event==='save'){
       if(!validXML(data.xml)){this.report('INVALID_XML','原生保存 XML 无效或超过 5 MiB');return}
       const reason=data.event;this.options.onXML?.({sessionKey:this.options.sessionKey,xml:data.xml,reason})
@@ -120,6 +130,18 @@ export class DrawioHostController {
    * Never called by autosave/ack; viewport restored, selection intentionally reset. */
   async mergeXML(xml:string):Promise<void>{if(this.phase!=='ready')throw new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪');if(!validXML(xml))throw new DrawioHostProtocolError('INVALID_XML','XML 无效或超过字节预算');parseNative(xml);if(this.mergePending.size)throw new DrawioHostProtocolError('TOO_MANY_REQUESTS','已有属性提交');await this.captureXML();const view=this.captureView;if(!view||!this.options.readViewport)throw new DrawioHostProtocolError('VIEWPORT_UNAVAILABLE','无法读取当前视口，未应用属性');const scroll=await this.options.readViewport();if(!Number.isFinite(scroll.scrollLeft)||!Number.isFinite(scroll.scrollTop))throw new DrawioHostProtocolError('VIEWPORT_UNAVAILABLE','当前滚动位置无效');const id=`${this.token}:commit:${++this.sequence}`;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.mergePending.delete(id);this.committedLoad=undefined;reject(new DrawioHostProtocolError('APPLY_TIMEOUT','属性提交超时'))},this.options.requestTimeoutMs??10000);this.mergePending.set(id,{resolve,reject,timer});this.committedLoad={id,xml};try{this.send('load',{xml,title:this.options.title??'',autosave:1,scale:view.scale,scroll:{x:scroll.scrollLeft/view.scale-view.translate.x,y:scroll.scrollTop/view.scale-view.translate.y},message:id})}catch(error){clearTimeout(timer);this.mergePending.delete(id);reject(error)}})}
   /** Native visual grouping only; business identity and persistence stay external. */
+  private incrementalRequest(action:'patch'|'resetDiff',fields:Record<string,unknown>={}):Promise<void>{
+    if(!this.options.collaboration||this.phase!=='ready')return Promise.reject(new DrawioHostProtocolError('COLLABORATION_NOT_READY','协同画布尚未就绪'))
+    const id=`${this.token}:remote:${++this.sequence}`
+    return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.incremental.delete(id);reject(new DrawioHostProtocolError('REMOTE_PATCH_TIMEOUT','原生增量同步超时，当前草稿已保留'))},this.options.requestTimeoutMs??10000);this.incremental.set(id,{action,resolve,reject,timer});try{this.send(action,{...fields,message:id})}catch(error){clearTimeout(timer);this.incremental.delete(id);reject(error)}})
+  }
+  /** Public patch keeps native Undo and viewport; never loads the full document. */
+  async applyRemoteXML(fromXML:string,toXML:string):Promise<void>{
+    if(!validXML(fromXML)||!validXML(toXML))throw new DrawioHostProtocolError('INVALID_XML','协同XML无效或超过预算')
+    const patch=nativeProtocolPatch(fromXML,toXML)
+    if(Object.keys(patch).length)await this.incrementalRequest('patch',{patch})
+    await this.incrementalRequest('resetDiff')
+  }
   async groupSelection(ungroup=false):Promise<string>{
     if(this.phase!=='ready')throw new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪')
     await this.commitAndCaptureXML()
@@ -131,6 +153,7 @@ export class DrawioHostController {
   fit(){if(this.phase!=='ready')throw new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪');this.send('fit',{border:16,maxScale:1})}
   dispose(error:Error=new DrawioHostProtocolError('SESSION_CLOSED','编辑会话已关闭')){
     this.phase='closed';clearTimeout(this.startup);this.startup=undefined
+    for(const request of this.incremental.values()){clearTimeout(request.timer);request.reject(error)}this.incremental.clear()
     for(const request of this.mergePending.values()){clearTimeout(request.timer);request.reject(error)}this.mergePending.clear()
     for(const request of this.jsonPending.values()){clearTimeout(request.timer);request.reject(error)}this.jsonPending.clear()
     for(const request of this.pending.values()){clearTimeout(request.timer);request.reject(error)}this.pending.clear()

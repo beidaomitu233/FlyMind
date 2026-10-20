@@ -2,6 +2,9 @@ import {NativeDiagramService} from './native-diagrams'
 import {StoreError,type NativeMutation} from '../store'
 import {validateImportInput,importIdentity,sourceSha,prepareImportSource,readImportSource,type NativeImportSource} from '../imports/source'
 import {validateContent} from '../../src/drawing/core/layers'
+import {validateImportItem,importItemKey,type ImportCommitPlan,type ImportItemResult,type ImportFingerprint} from '../imports/batch'
+import {nativeStateSignature} from '../../src/drawing/engine/collaboration/state'
+import {nativeCanvasRenderSignature} from '../../src/drawing/engine/native-canvas'
 import {canonicalContentJson} from '../../src/drawing/engine/content-hash'
 import {compileDrawio} from '../../src/drawing/engine/drawio'
 import {createDrawingProject,validateDrawingProject} from '../../src/drawing/engine/project'
@@ -45,18 +48,39 @@ export class NativeImportService {
   if(Buffer.byteLength(project.rendering.engine.xml)>4_000_000)throw new StoreError('导入后XML超过4,000,000字节预算',413,undefined,'IMPORT_TOO_LARGE')
   return {project,format,sourceDocumentId,diagnostics}
  }
- async preview(input:unknown,expectedDataRootId:string|undefined){
-  const {parsed,diagramId}=await this.prepare(input,expectedDataRootId),resolved=await this.project(parsed,diagramId),canvas=isNativeCanvasProject(resolved.project),cap=nativeDocumentCapabilities().imports
-  return {sourceSha256:parsed.sha256,bytes:parsed.bytes.length,...nativeIdentity(resolved.project),mode:canvas?'canvas-only':'business',format:resolved.format,supported:parsed.input.format==='drawio'?!canvas?cap.drawio:cap.drawio&&cap.canvasOnly:!canvas||cap.canvasOnly,workspaceGroupId:parsed.input.workspaceGroupId??null,diagnostics:resolved.diagnostics,...(!isNativeCanvasProject(resolved.project)?{quality:inspectDrawing(resolved.project.content)}:{})}
+ private async fingerprint(parsed:ReturnType<typeof validateImportInput>,resolved:Awaited<ReturnType<NativeImportService['project']>>):Promise<ImportFingerprint>{
+  const project=resolved.project,canvas=isNativeCanvasProject(project),sourceId=resolved.sourceDocumentId
+  const normalized=sourceId?await rebindNativeProject(project,sourceId):project
+  return {rawSha256:parsed.sha256,complete:parsed.input.format!=='content',...(sourceId?{sourceKey:sourceSha((canvas?'canvas:':'business:')+sourceId)}:{}),...(!isNativeCanvasProject(normalized)?{contentHash:sourceSha(canonicalContentJson(normalized.content))}:{}),...(parsed.input.format!=='content'?{renderHash:sourceSha(canvas?canonicalContentJson({signature:nativeCanvasRenderSignature(normalized.rendering.engine.xml),title:nativeIdentity(normalized).title} as any):nativeStateSignature(normalized.rendering.engine.xml))}:{})}
  }
- async import(input:unknown,expectedDataRootId:string|undefined){
-  const {parsed,diagramId,importId,mutation}=await this.prepare(input,expectedDataRootId),replay=await this.diagrams.store.replayNativeDrawing(mutation);if(replay)return this.result(replay)
-  const resolved=await this.project(parsed,diagramId),cap=nativeDocumentCapabilities().imports
-  if(parsed.input.format==='drawio'&&!cap.drawio||isNativeCanvasProject(resolved.project)&&!cap.canvasOnly)throw new StoreError('原生画布导入尚未启用',422,undefined,'NATIVE_CANVAS_UNSUPPORTED')
+ private item(input:unknown,root:string|undefined){
+  const item=validateImportItem(input)
+  if(!root)throw new StoreError('缺少工作区身份',409,undefined,'WORKSPACE_MISMATCH')
+  const single={...item.source,requestId:importItemKey(root,item.batchId,item.itemId),workspaceGroupId:'groupId'in item.target?item.target.groupId:null}
+  return {item,single}
+ }
+ async previewItem(input:unknown,root:string|undefined){const {item,single}=this.item(input,root),preview=await this.preview(single,root);return {...preview,batchId:item.batchId,itemId:item.itemId,target:item.target}}
+ async commitItem(input:unknown,root:string|undefined):Promise<ImportItemResult>{
+  const {item,single}=this.item(input,root)
+  const record=await this.importPrepared(single,root,{id:item.batchId,itemId:item.itemId,target:item.target},item.requestId)
+  return {batchId:item.batchId,itemId:item.itemId,status:nativeIdentity(record.document).id===importIdentity(root!,single.requestId).diagramId?'imported':'duplicate',record}
+ }
+ async preview(input:unknown,expectedDataRootId:string|undefined){
+  const {parsed,diagramId}=await this.prepare(input,expectedDataRootId),resolved=await this.project(parsed,diagramId),fingerprint=await this.fingerprint(parsed,resolved),duplicate=await this.diagrams.store.findImportDuplicate(fingerprint,expectedDataRootId!),canvas=isNativeCanvasProject(resolved.project),cap=nativeDocumentCapabilities().imports
+  return {sourceFingerprint:fingerprint,...(duplicate?{duplicate:{id:nativeIdentity(duplicate.document).id,revision:duplicate.revision,workspaceGroupId:duplicate.workspaceGroupId}}:{}),sourceSha256:parsed.sha256,bytes:parsed.bytes.length,...nativeIdentity(resolved.project),mode:canvas?'canvas-only':'business',format:resolved.format,supported:duplicate?true:parsed.input.format==='drawio'?!canvas?cap.drawio:cap.drawio&&cap.canvasOnly:!canvas||cap.canvasOnly,workspaceGroupId:parsed.input.workspaceGroupId??null,diagnostics:resolved.diagnostics,...(!isNativeCanvasProject(resolved.project)?{quality:inspectDrawing(resolved.project.content)}:{})}
+ }
+ async import(input:unknown,expectedDataRootId:string|undefined){return this.importPrepared(input,expectedDataRootId)}
+ private async importPrepared(input:unknown,expectedDataRootId:string|undefined,batch?:ImportCommitPlan['batch'],originalRequestId?:string){
+  const {parsed,diagramId,importId,mutation}=await this.prepare(input,expectedDataRootId)
+  if(batch)mutation.requestHash=sourceSha(canonicalContentJson({base:mutation.requestHash,batch,originalRequestId} as any))
+  const replay=await this.diagrams.store.replayNativeDrawing(mutation);if(replay)return this.result(replay)
+  const resolved=await this.project(parsed,diagramId),fingerprint=await this.fingerprint(parsed,resolved),cap=nativeDocumentCapabilities().imports
+  const unsupported=parsed.input.format==='drawio'&&!cap.drawio||isNativeCanvasProject(resolved.project)&&!cap.canvasOnly
+  if(unsupported&&!await this.diagrams.store.findImportDuplicate(fingerprint,expectedDataRootId!))throw new StoreError('原生画布导入尚未启用',422,undefined,'NATIVE_CANVAS_UNSUPPORTED')
   const source=await prepareImportSource(this.diagrams.store.root,{importId,diagramId,format:resolved.format,sha256:parsed.sha256,bytes:parsed.bytes.length,sourceDocumentId:resolved.sourceDocumentId,importedAt:Date.now()},parsed.bytes)
   await readImportSource(this.diagrams.store.root,source)
   const project=await validateNativeProject({...resolved.project,createdAt:source.importedAt,updatedAt:source.importedAt})
-  return this.result(await this.diagrams.store.createNativeDrawing(project,parsed.input.workspaceGroupId??null,mutation,source))
+  return this.result(await this.diagrams.store.createNativeDrawing(project,parsed.input.workspaceGroupId??null,mutation,source,{fingerprint,duplicateOnly:unsupported,...(batch?{batch}:{})}))
  }
  async source(id:string){await this.diagrams.getDrawing(id);const source=await this.diagrams.store.nativeImportSource(id),buffer=await readImportSource(this.diagrams.store.root,source);return {source,buffer}}
 }
