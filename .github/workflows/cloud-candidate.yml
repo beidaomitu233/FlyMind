@@ -31,7 +31,7 @@ jobs:
       - run: npm run setup:runtime
       - run: npm run build
       - name: Cloud and local contract gates
-        run: node --import tsx --test --test-concurrency=1 tests/cloud-wire.test.ts tests/cloud-client.test.ts tests/cloud-workspaces.test.ts tests/cloud-http.test.ts tests/cloud-collaboration.test.ts tests/cloud-merge.test.ts tests/cloud-mcp.test.ts tests/cloud-oauth.test.ts tests/cloud-mcp-updates.test.ts tests/cloud-maintenance.test.ts tests/local-auth.test.ts tests/local-auth-runtime.test.ts tests/native-session.test.ts tests/native-text-drafts.test.ts tests/native-undo-guard.test.ts tests/native-import-batch.test.ts tests/native-activity.test.ts tests/native-exports.test.ts tests/cloud-deployment.test.mjs tests/cloud-artifact-source.test.mjs tests/cloud-python-extract.test.mjs
+        run: node --import tsx --test --test-concurrency=1 tests/cloud-wire.test.ts tests/cloud-client.test.ts tests/cloud-workspaces.test.ts tests/cloud-http.test.ts tests/cloud-collaboration.test.ts tests/cloud-merge.test.ts tests/cloud-mcp.test.ts tests/cloud-oauth.test.ts tests/cloud-mcp-updates.test.ts tests/cloud-maintenance.test.ts tests/local-auth.test.ts tests/local-auth-runtime.test.ts tests/native-session.test.ts tests/native-text-drafts.test.ts tests/task-groups.test.ts tests/drawio-outer-return.test.ts tests/native-undo-guard.test.ts tests/native-import-batch.test.ts tests/native-activity.test.ts tests/native-exports.test.ts tests/cloud-deployment.test.mjs tests/cloud-artifact-source.test.mjs tests/cloud-python-extract.test.mjs
       - name: Restricted artifact transfer validation (local fake source only)
         run: python tests/cloud-artifact-fetch.test.py
       - name: Java control plane

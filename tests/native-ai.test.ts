@@ -41,22 +41,22 @@ test('AI create requires passed quality; manual receipt cannot bypass the indepe
   const s=await setup()
   try{
     const poor=clone(basic);poor.nodes[1].kind='decision'
-    await assert.rejects(s.service.createAI({content:poor,requestId:'bad-ai'},s.identity),(e:any)=>e.code==='QUALITY_FAILED')
+    await assert.rejects(s.service.createAI({taskName:'回归测试任务',content:poor,requestId:'bad-ai'},s.identity),(e:any)=>e.code==='QUALITY_FAILED')
     await assert.rejects(s.store.getNative(poor.id),(e:any)=>e.status===404)
     await s.service.create({content:poor,requestId:'manual-poor'},s.identity)
-    await assert.rejects(s.service.createAI({content:poor,requestId:'manual-poor'},s.identity),(e:any)=>e.code==='IDEMPOTENCY_KEY_REUSED')
-    const good={...basic,id:'good-create'},first=await s.service.createAI({content:good,requestId:'good-ai'},s.identity)
-    assert.equal(inspectDrawing(first.document.content).passed,true);assert.deepEqual(await s.service.createAI({content:good,requestId:'good-ai'},s.identity),first)
-    await assert.rejects(s.service.createAI({content:{...good,title:'改payload'},requestId:'good-ai'},s.identity),(e:any)=>e.code==='IDEMPOTENCY_KEY_REUSED')
+    await assert.rejects(s.service.createAI({taskName:'回归测试任务',content:poor,requestId:'manual-poor'},s.identity),(e:any)=>e.code==='IDEMPOTENCY_KEY_REUSED')
+    const good={...basic,id:'good-create'},first=await s.service.createAI({taskName:'回归测试任务',content:good,requestId:'good-ai'},s.identity)
+    assert.equal(inspectDrawing(first.document.content).passed,true);assert.deepEqual(await s.service.createAI({taskName:'回归测试任务',content:good,requestId:'good-ai'},s.identity),first)
+    await assert.rejects(s.service.createAI({taskName:'回归测试任务',content:{...good,title:'改payload'},requestId:'good-ai'},s.identity),(e:any)=>e.code==='IDEMPOTENCY_KEY_REUSED')
     const unsupported=drawioCapabilities().profiles.find(p=>!p.compile)
-    if(unsupported)await assert.rejects(s.service.createAI({content:{...basic,id:'unsupported',kind:unsupported.kind},requestId:'other-kind'},s.identity),(e:any)=>e.code==='NATIVE_KIND_UNSUPPORTED')
+    if(unsupported)await assert.rejects(s.service.createAI({taskName:'回归测试任务',content:{...basic,id:'unsupported',kind:unsupported.kind},requestId:'other-kind'},s.identity),(e:any)=>e.code==='NATIVE_KIND_UNSUPPORTED')
   }finally{await cleanup(s.root)}
 })
 
 test('native AI rejects new warnings and note-only changes, preserves historical problems without worsening',async()=>{
   const s=await setup()
   try{
-    const first=await s.service.createAI({content:basic,requestId:'create'},s.identity),before=counts(s.store)
+    const first=await s.service.createAI({taskName:'回归测试任务',content:basic,requestId:'create'},s.identity),before=counts(s.store)
     await assert.rejects(s.service.patchAI(basic.id,{expectedRevision:1,requestId:'warn',operations:[{op:'update_node',id:'b',changes:{label:'甲'.repeat(20)}}]},s.identity),(e:any)=>e.quality.issues.some((i:any)=>i.code==='wordy_label'))
     await assert.rejects(s.service.patchAI(basic.id,{expectedRevision:1,requestId:'note',operations:[{op:'add_node',node:{id:'n',kind:'note',label:'仅补说明'}}]},s.identity),(e:any)=>e.quality.issues.some((i:any)=>i.code==='annotation_only_change'))
     assert.deepEqual(counts(s.store),before);assert.deepEqual(await s.service.get(basic.id),first)
@@ -85,7 +85,7 @@ test('all measurable quality scales include warning growth, improved families an
 test('full update computes local semantic operations and preserves unrelated manual native geometry',async()=>{
   const s=await setup()
   try{
-    const first=await s.service.createAI({content:basic,requestId:'create'},s.identity),xml=new DOMParser().parseFromString(first.document.rendering.engine.xml,'text/xml')
+    const first=await s.service.createAI({taskName:'回归测试任务',content:basic,requestId:'create'},s.identity),xml=new DOMParser().parseFromString(first.document.rendering.engine.xml,'text/xml')
     const main=Array.from(xml.getElementsByTagName('*')).find(e=>e.getAttribute('fmType')==='node'&&e.getAttribute('fmId')==='c'&&e.getAttribute('fmRole')==='main')!;main.getElementsByTagName('mxGeometry')[0].setAttribute('x','111')
     const manual=await s.service.saveEditor(basic.id,{expectedRevision:1,requestId:'human-geometry',xml:new XMLSerializer().serializeToString(xml)},s.identity)
     const next=clone(manual.document.content);next.nodes.find(n=>n.id==='b')!.label='核对申请'
@@ -100,7 +100,7 @@ test('full update computes local semantic operations and preserves unrelated man
 test('full update adds dependencies and reconnects retained edges before removing their old endpoint',async()=>{
   const s=await setup()
   try{
-    await s.service.createAI({content:basic,requestId:'create'},s.identity)
+    await s.service.createAI({taskName:'回归测试任务',content:basic,requestId:'create'},s.identity)
     const next=clone(basic);next.nodes=next.nodes.filter(n=>n.id!=='b');next.nodes.push({id:'new-task',kind:'task',label:'复核申请',laneId:'new-owner',phaseId:'new-phase'});next.edges[0].target='new-task';next.edges[1].source='new-task';next.lanes.push({id:'new-owner',label:'复核人员'});next.phases.push({id:'new-phase',label:'复核'});next.lanes.reverse();next.phases.reverse()
     const result=await s.service.updateAI(basic.id,{expectedRevision:1,requestId:'replace-endpoint',content:next},s.identity);assert.equal(result.revision,2);assert.deepEqual(result.document.content.edges,next.edges);assert.equal(result.document.content.nodes.find(n=>n.id==='new-task')!.laneId,'new-owner');assert.deepEqual(result.document.content.lanes,next.lanes)
     await s.service.organize('delete',basic.id,{expectedRevision:2},s.identity);await assert.rejects(s.service.updateAI(basic.id,{expectedRevision:2,requestId:'late-update',content:next},s.identity),(e:any)=>e.status===410)
@@ -110,7 +110,7 @@ test('full update adds dependencies and reconnects retained edges before removin
 test('historical export can be enqueued after an idempotent old receipt replay without using current content',async()=>{
   const s=await setup()
   try{
-    const input={content:basic,requestId:'create-r1'},first=await s.service.createAI(input,s.identity)
+    const input={taskName:'回归测试任务',content:basic,requestId:'create-r1'},first=await s.service.createAI(input,s.identity)
     await s.service.patchAI(basic.id,{expectedRevision:1,requestId:'advance-r2',editIntent:'wording',operations:[{op:'update_node',id:'b',changes:{label:'核对申请'}}]},s.identity)
     const receipt=await s.service.createAI(input,s.identity);assert.deepEqual(receipt,first)
     const exports=new NativeExportService(s.store,true),job=await exports.createSnapshot(basic.id,{revision:receipt.revision,requestId:'snapshot-r1'},s.identity)
@@ -126,7 +126,7 @@ test('mixed reads expose strict pure content and only declare v3 synced after XM
   try{
     const legacy=await s.service.readContent('sample-swimlane');assert.equal(legacy.format,2);assert.equal(legacy.readOnly,true);assert.equal(legacy.syncStatus,'legacy-readonly');assert.equal(contentSchema.safeParse(legacy.content).success,true)
     for(const key of ['presentation','rendering','updatedAt','createdAt','positions'])assert.equal(Object.hasOwn(legacy.content,key),false)
-    const created=await s.service.createAI({content:basic,requestId:'create'},s.identity);assert.equal((await s.service.readContent(basic.id)).syncStatus,'synced')
+    const created=await s.service.createAI({taskName:'回归测试任务',content:basic,requestId:'create'},s.identity);assert.equal((await s.service.readContent(basic.id)).syncStatus,'synced')
     const db=new Database(s.store.databasePath);try{const wrong=clone(created.document);wrong.rendering.engine.xml=wrong.rendering.engine.xml.replace('办理申请','偷偷更换正文');db.prepare('UPDATE diagrams SET document=? WHERE id=?').run(JSON.stringify(wrong),basic.id)}finally{db.close()}
     await assert.rejects(s.service.readContent(basic.id))
   }finally{await cleanup(s.root)}
@@ -137,9 +137,9 @@ test('1.1 validate/create/patch/update enforce identical AI budgets while manual
  try{
   const bad=clone(basic);bad.nodes[1].items=['方案说明'];bad.nodes[1].description='甲'.repeat(121)
   const validation=await s.service.validateAI(bad);assert.equal(validation.valid,false);assert.ok(validation.quality.issues.some(i=>i.code==='node_field_items'))
-  await assert.rejects(s.service.createAI({content:bad,requestId:'bad-field'},s.identity),(e:any)=>e.code==='QUALITY_FAILED')
+  await assert.rejects(s.service.createAI({taskName:'回归测试任务',content:bad,requestId:'bad-field'},s.identity),(e:any)=>e.code==='QUALITY_FAILED')
   const manual=await s.service.create({content:{...bad,id:'human-budget'},requestId:'human-budget'},s.identity);assert.equal(manual.revision,1)
-  const first=await s.service.createAI({content:basic,requestId:'clean'},s.identity),baseline=counts(s.store)
+  const first=await s.service.createAI({taskName:'回归测试任务',content:basic,requestId:'clean'},s.identity),baseline=counts(s.store)
   await assert.rejects(s.service.patchAI(basic.id,{expectedRevision:1,requestId:'huge-before-routing',operations:[{op:'update_node',id:'b',changes:{label:'长段'.repeat(200)}}]},s.identity),(e:any)=>e.code==='QUALITY_FAILED'&&e.quality.issues.some((i:any)=>i.code==='long_label'))
   const hugeUpdate=clone(basic);hugeUpdate.nodes[1].label='长段'.repeat(200);await assert.rejects(s.service.updateAI(basic.id,{expectedRevision:1,requestId:'huge-update-before-routing',content:hugeUpdate},s.identity),(e:any)=>e.code==='QUALITY_FAILED')
   const operations=[{op:'add_node',node:{id:'extra-note',kind:'note',label:'这里应该补处理逻辑'}},{op:'update_node',id:'b',changes:{label:'核验申请'}}]

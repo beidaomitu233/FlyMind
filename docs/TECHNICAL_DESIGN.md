@@ -1,5 +1,7 @@
 # FlyMind draw.io 技术设计
 
+> 2026-10-21 R26/R27：任务归属为内容对象之外的组织元数据，使用现有workspaceGroupId和新增create参数taskName；任务组与图形在同一SQLite事务落库，幂等回执与并发复用沿用现有服务，不在图内groups伪造文件夹。流程/泳道回流通过主方向/阶段及feedback语义识别，强制经过整体绘图区外侧通道，固定libavoid仍负责节点避障；只更新受影响边，普通文案编辑保留人工几何。本轮不改版本/不部署，证据见[本地验收](validation/task-groups-and-return-routes.md)。
+
 > 2026-10-20 v1.1集成基线：按[版本计划](releases/V1_1_PLAN.md)合入冻结云端账号/团队/OAuth/协同核心与当前质量线。操作记录绑定权威身份和持久提交；目录导入复用已有结构验证/来源保留并增加批次去重与目标归档。发布同时保护MCP会话、协同未ACK编辑和不可变导出任务，服务器OS和现有服务待SSH只读核查。v1.1仍待实施/整体验收，不修改当前数据或取消本机安全边界。
 
 > 2026-10-20 R22：采用固定 `/mcp` 远程接入，网关与绘图应用进程分离，稳定工具契约与动态权威guide配合；规则/schema/校验器同包发布，任务绑定不可变修订和引擎供应。云端首期SQLite仍为单活写入者，升级排空/重启/回滚由维护者完成；不以改客户端URL或静默上传本地图形完成更新。详细设计与实际缺口见[MCP持久更新方案](MCP_UPDATE_STRATEGY.md)，不能把设计误标为已实装。
@@ -323,7 +325,7 @@ D05 已验收的实现接口（指定 pilot 范围，见验收台账）：`ensur
 | get_drawing_guide | 返回技术规则、内容标准、类型模板及能力版本 |
 | validate_diagram | 结构和质量检查，不保存；兼容现有输出时通过真实引擎测量返回尺寸，不能伪造；可选尺寸需显式升级能力/schema |
 | list_diagrams/get_diagram | 列表元数据、最新内容及 revision；增加同步/质量/导出状态；preview 可取图片 |
-| create_diagram | 纯 content 与可选 workspaceGroupId；同引擎生成、保存和交付 |
+| create_diagram | 纯 content、稳定 requestId，必须有 workspaceGroupId 或 taskName；同引擎生成，分组复用/创建与落图同事务后交付，图内groups不表示工作区归属 |
 | patch_diagram/update_diagram | expectedRevision 必填；增量修改保留原生文档；完整替换仍保留未涉及渲染 |
 | get_rendering_config/configure_rendering | 独立渲染标准及显式视觉调整，带版本保护 |
 | export_diagram | 对指定已提交快照导出；兼容不传 revision 时选择当前版本 |

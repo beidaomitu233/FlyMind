@@ -65,12 +65,12 @@ try{
  ]
  for(const entry of negatives){
   const before=(await api('/records')).length,validation=data(await call('validate_diagram',{content:entry.value}));assert.equal(validation.valid,false);assert.ok(validation.quality.issues.some(i=>i.code===entry.issue))
-  const error=await toolError('create_diagram',{content:entry.value,requestId:'create-'+entry.value.id},'QUALITY_FAILED');assert.ok(error.quality.issues.some(i=>i.code===entry.issue));assert.equal((await api('/records')).length,before)
+  const error=await toolError('create_diagram',{taskName:'验证-drawing-quality-acceptance',content:entry.value,requestId:'create-'+entry.value.id},'QUALITY_FAILED');assert.ok(error.quality.issues.some(i=>i.code===entry.issue));assert.equal((await api('/records')).length,before)
   report.negative.push({name:entry.name,issue:entry.issue,valid:false,noWrite:true})
  }
  for(const value of [architecture,flow,mindmap]){
   const validated=data(await call('validate_diagram',{content:value}));assert.equal(validated.valid,true,JSON.stringify(validated))
-  let created=data(await call('create_diagram',{content:value,requestId:'create-'+value.id}))
+  let created=data(await call('create_diagram',{taskName:'验证-drawing-quality-acceptance',content:value,requestId:'create-'+value.id}))
   if(created.exportStatus==='waiting_timeout')created=data(await call('export_diagram',{id:value.id,jobId:created.jobId,requestId:'resume-'+value.id}))
   assert.equal(created.exportStatus,'succeeded',JSON.stringify(created));assert.equal(created.revision,1);assert.ok(created.editorUrl.includes('/#/native?diagram='));assert.equal(created.quality.passed,true)
   const png=await readFile(created.files.png),meta=await sharp(png).metadata();assert.equal(png.subarray(0,8).toString('hex'),'89504e470d0a1a0a');assert.equal(meta.width,created.width);assert.equal(meta.height,created.height)
@@ -87,12 +87,12 @@ try{
  // The current older Codex registration still selects the compatibility MCP.
  // Its quality gate must be the same policy; don't migrate its real database.
  await client.close();await transport.close();client=undefined;transport=undefined
- const legacyRoot=join(directory,'legacy'),legacyStore=new DiagramStore(legacyRoot);await legacyStore.init();await legacyStore.create(composeDocument(flow))
+ const legacyRoot=join(directory,'legacy'),legacyStore=new DiagramStore(legacyRoot);await legacyStore.init();await legacyStore.create(composeDocument(flow));const legacyGroup=await legacyStore.createGroup('兼容质量验证任务')
  const legacyEnv={...env,FLYMIND_NATIVE_PILOT:'0',FLYMIND_DATA_DIR:legacyRoot,FLYMIND_AUTO_WEB:'0'}
  transport=new StdioClientTransport({command:process.execPath,args:['server/start.mjs'],cwd:process.cwd(),env:Object.fromEntries(Object.entries(legacyEnv).filter(([,value])=>typeof value==='string')),stderr:'pipe'})
  transport.stderr?.on('data',bytes=>stderr+=bytes);client=new Client({name:'quality-legacy-acceptance',version:'1'});await client.connect(transport)
  assert.equal(data(await call('get_drawing_guide',{})).standardVersion,'1.1')
- for(const entry of negatives){const validation=data(await call('validate_diagram',{content:entry.value}));assert.equal(validation.valid,false);await toolError('create_diagram',{content:entry.value},'QUALITY_FAILED')}
+ for(const entry of negatives){const validation=data(await call('validate_diagram',{content:entry.value}));assert.equal(validation.valid,false);await toolError('create_diagram',{content:entry.value,workspaceGroupId:legacyGroup.id},'QUALITY_FAILED')}
  await toolError('patch_diagram',{id:flow.id,expectedRevision:1,operations:[{op:'update_node',id:'dual',changes:{items:['转移说明绕过']}}]},'QUALITY_FAILED')
  assert.equal((await legacyStore.get(flow.id)).revision,1);report.checks.compatibilityMcpHasSameQualityGatesWithoutUserDataMigration=true
  report.ok=true

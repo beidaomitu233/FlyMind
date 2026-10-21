@@ -67,8 +67,12 @@ test('real Streamable HTTP SDK uses Java authorization and team native HTTP for 
   await client.connect(clientTransport)
   const before=introspections,guide=await client.callTool({name:'get_drawing_guide',arguments:{kind:'flowchart'}})
   assert.ok(!guide.isError);assert.ok(introspections>=before+2,'even local guide must traverse authority and cloud HTTP')
-  const created=await client.callTool({name:'create_diagram',arguments:{content:businessContent('flowchart','cloud-mcp-diagram'),requestId:'sdk-create'}})
+  const created=await client.callTool({name:'create_diagram',arguments:{taskName:'云端契约回归任务',content:businessContent('flowchart','cloud-mcp-diagram'),requestId:'sdk-create'}})
   assert.ok(!created.isError,JSON.stringify(created));const data=created.structuredContent as any
+  assert.ok(data.workspaceGroupId,'real SDK creation must return its task group')
+  const taskGroups=await client.callTool({name:'list_workspace_groups',arguments:{}})
+  assert.ok(!taskGroups.isError)
+  assert.ok((taskGroups.structuredContent as any).groups.some((group:any)=>group.id===data.workspaceGroupId&&group.name==='云端契约回归任务'))
   assert.equal(data.revision,1);assert.equal(data.exportStatus,'succeeded',JSON.stringify(data));assert.ok(created.content.some((c:any)=>c.type==='image'&&Buffer.from(c.data,'base64').subarray(1,4).toString()==='PNG'))
   assert.equal(data.editorUrl,base+'/#/cloud?team=team-a&diagram=cloud-mcp-diagram');assert.ok(!JSON.stringify(created).includes(token))
   const got=await client.callTool({name:'get_diagram',arguments:{id:data.diagramId}});assert.equal((got.structuredContent as any).revision,1)

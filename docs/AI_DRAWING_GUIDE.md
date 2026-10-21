@@ -43,8 +43,8 @@ items仅架构，badge仅架构/数据卡；其余类型不借字段藏说明。
 
 工作区分组是文件管理元数据，不放进 `content` 或 `rendering`，也不等于架构图的 `groups`、泳道/阶段或画布组合。
 
-1. `list_workspace_groups` 获取现有分组；需要时 `create_workspace_group({"name":"客户项目"})`，使用返回的 `group.id`。
-2. `create_diagram({"content":{...},"workspaceGroupId":"返回的分组 ID"})` 可直接归入分组；省略时未分组。
+1. `list_workspace_groups` 获取现有分组；需要时 `create_workspace_group({"name":"客户项目","reuseExisting":true})`，使用返回的 `group.id`。也可直接在下一步传taskName，将建组和落图放在同一事务。
+2. `create_diagram({"content":{...},"requestId":"本次稳定请求ID","workspaceGroupId":"返回的分组 ID"})` 归入已有任务组。也可由AI根据当前用户任务自行命名，调用 `create_diagram({content,requestId,taskName:"客户反馈处理"})` 自动复用或创建任务组；不要每次要求用户填写或确认。缺少任务名和组ID会返回 `TASK_GROUP_REQUIRED`，不会散放到未分组；后续本任务沿用返回的 `workspaceGroupId`。工作区任务组与图内 `content.groups` 不同，旧图不自动搬迁。
 3. `list_diagrams({"workspaceGroupId":"分组 ID","sortBy":"updated"})` 列出组内图形；`sortBy:"created"` 按创建时间，`workspaceGroupId:null` 筛选未分组，省略则全部。返回 `createdAt/updatedAt/workspaceGroupId` 元数据。
 4. 先 `get_diagram`，再 `move_diagram_to_group({"id":"图形 ID","workspaceGroupId":"目标分组 ID 或 null","expectedWorkspaceGroupId":"刚读取的所属分组 ID 或 null"})`；实际 null 不加引号。移动不改变内容、渲染和图形 revision。
 5. 分组改名或删除先读取最新分组 revision，调用 `rename_workspace_group` 或 `delete_workspace_group` 并携带 `expectedRevision`。删除分组保留图形，全部转为未分组。
@@ -158,6 +158,7 @@ edges/lanes/phases/groups 可省略，自动补空数组。思维导图通过 pa
 - 普通边（省略 `kind` 或 `kind:"flow"`）表示 `source` 在 `target` 之前。必须写全实际前置关系，不能只按角色罗列节点。角色变化不代表并行。
 - 独立分支从共同前置节点分别连出；需要汇合的步骤分别接收各分支的边。它们的同排、间距和避让由渲染器决定，不写 `order/ranks`、坐标或“第几行”。判断出口仍需写具体业务条件。
 - 退回、驳回、返工、重试和返回监控等回流边显式标 `kind:"feedback"`，保留真实方向与条件。回流参与绘制，不推进主流程的步骤行；不能为压缩排版把普通前置边标为反馈。
+- 流程图和泳道图的反馈/实际逆行边由渲染器沿整个图形外围走独立正交通道：纵向右侧，横向底侧；多条回流分开留距，标签放在各自外围主干。不填写坐标、折点或排版描述。旧图需要显式“自动排版”或渲染配置的 `relayout` 才全图应用新规则，普通文案保存继续保留人工布局。必要的垂直交叉仍可能存在；自环保留原生处理。
 - `phases` 数组按真实业务阶段先后排列，节点用 `phaseId` 关联。后阶段返回前阶段也应标为反馈。旧数据未标记的循环会尝试自动拆出回边，但业务含义有歧义，后续 AI 修改时需核对。
 - 如果材料没有说明先后、是否独立推进、是否等待全部分支或哪条边是返工，应向用户确认该业务关系；不要用描述文字暗示排版或自行补出业务依赖。
 
@@ -219,7 +220,7 @@ edges/lanes/phases/groups 可省略，自动补空数组。思维导图通过 pa
 
 1. `get_drawing_guide` 获取规则，可传 kind 获取纯内容模板。
 2. 从业务材料写内容，必要时用 `validate_diagram({content})` 校验。
-3. `create_diagram({content})`，自动布局、保存并输出图片。
+3. `create_diagram({content,requestId,taskName:"当前任务名称"})`，或传明确的 `workspaceGroupId`；自动归组、布局、保存并输出图片。重试保持全部参数和requestId一致。
 4. 向用户展示 PNG，附 editorUrl 以及 SVG/内容 JSON/工作区下载链接。不要只交付 JSON。
 5. 用户在网页修改，自动保存至与 MCP 相同的共享存储。
 6. AI 修改前 `get_diagram` 读取最新 content/revision，再 `patch_diagram` 或 `update_diagram`。
@@ -231,7 +232,7 @@ edges/lanes/phases/groups 可省略，自动补空数组。思维导图通过 pa
 | list_diagrams | 图形 ID、类型、最新 revision、编辑链接 |
 | get_diagram | id，preview 可选；默认返回 content + revision；preview=true 返回图片与制品 |
 | validate_diagram | content；不保存，返回尺寸和数量 |
-| create_diagram | content；版本 1、PNG、制品路径和编辑链接 |
+| create_diagram | content、requestId及taskName或workspaceGroupId；版本 1、PNG、制品路径和编辑链接 |
 | update_diagram | id、expectedRevision、content；替换内容并保留渲染；类型改变时使用新类型默认渲染 |
 | patch_diagram | id、expectedRevision、operations；仅接受内容操作 |
 | export_diagram | id；当前版本 PNG、SVG、内容 JSON、工作区 JSON、draw.io |

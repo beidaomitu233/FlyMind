@@ -30,6 +30,10 @@ test('native SDK exposes original names, stable requestId schemas and truthful g
  const h=await harness(path=>path.endsWith('/rendering')?response({error:'此profile未开放配置',code:'NATIVE_RENDERING_EDIT_UNSUPPORTED'},422):path.endsWith('/records/'+content.id)?pure:record)
  try{
   const tools=(await h.client.listTools()).tools;assert.equal(tools.length,18)
+  const missingGroup=await h.client.callTool({name:'create_diagram',arguments:{content,requestId:'missing-task'}})
+  assert.equal(missingGroup.isError,true);assert.match(JSON.stringify(missingGroup),/TASK_GROUP_REQUIRED/)
+  assert.equal(h.calls.some(c=>c.path.endsWith('/ai/diagrams')),false)
+  assert.ok(tools.find(t=>t.name==='create_diagram')!.inputSchema.properties?.taskName)
   for(const name of ['create_diagram','patch_diagram','update_diagram','configure_rendering']){const tool=tools.find(t=>t.name===name)!;assert.ok(tool.inputSchema.required?.includes('requestId'))}
   const guide=await h.client.callTool({name:'get_drawing_guide',arguments:{kind:'swimlane'}});assert.equal(guide.isError,undefined);assert.equal((guide.structuredContent as any).standardVersion,'1.1');assert.match((guide.structuredContent as any).guide,/profile/);assert.deepEqual((guide.structuredContent as any).capabilities,nativeDocumentCapabilities())
   for(const unsupportedKind of nativeDocumentCapabilities().profiles.filter(p=>!p.compile)){const unsupported=await h.client.callTool({name:'get_drawing_guide',arguments:{kind:unsupportedKind.kind}});assert.equal(unsupported.isError,true)}
@@ -40,12 +44,12 @@ test('native SDK exposes original names, stable requestId schemas and truthful g
 test('saved mutation remains saved when renderer job fails; never repeats create',async()=>{
  const job={id:'failed-job',diagramId:content.id,dataRootId:'test-root',revision:1,status:'failed',error:{code:'RENDER_FAILED',message:'injected'}}
  const h=await harness(path=>path.endsWith('/ai/diagrams')?record:path.endsWith('/exports/snapshot')?job:pure)
- try{const got=await h.client.callTool({name:'create_diagram',arguments:{content,requestId:'create-one'}});const data=got.structuredContent as any;assert.equal(data.saved,true);assert.equal(data.revision,1);assert.equal(data.exportStatus,'failed');assert.equal(data.jobId,'failed-job');assert.equal(got.content.some((x:any)=>x.type==='image'),false);assert.equal(h.calls.filter(c=>c.path.endsWith('/ai/diagrams')).length,1)}finally{await h.close()}
+ try{const got=await h.client.callTool({name:'create_diagram',arguments:{taskName:'回归测试任务',content,requestId:'create-one'}});const data=got.structuredContent as any;assert.equal(data.saved,true);assert.equal(data.revision,1);assert.equal(data.exportStatus,'failed');assert.equal(data.jobId,'failed-job');assert.equal(got.content.some((x:any)=>x.type==='image'),false);assert.equal(h.calls.filter(c=>c.path.endsWith('/ai/diagrams')).length,1)}finally{await h.close()}
 })
 test('waiting timeout returns saved receipt/job; original mutation replay exports exact old revision',async()=>{
  const job={id:'queued-job',diagramId:content.id,dataRootId:'test-root',revision:1,status:'queued'}
  const h=await harness(path=>path.endsWith('/ai/diagrams')?record:path.endsWith('/records/'+content.id)?{...pure,revision:2}:job)
- try{const args={name:'create_diagram',arguments:{content,requestId:'stable-create'}},a=await h.client.callTool(args),b=await h.client.callTool(args);for(const got of [a,b]){const d=got.structuredContent as any;assert.equal(d.saved,true);assert.equal(d.exportStatus,'waiting_timeout');assert.equal(d.currentRevision,2);assert.equal(d.isCurrentRevision,false);assert.equal(d.revision,1)}const bodies=h.calls.filter(c=>c.path.endsWith('/exports/snapshot')).map(c=>JSON.parse(String(c.init.body)));assert.deepEqual(bodies[0],bodies[1]);assert.equal(bodies[0].revision,1)}finally{await h.close()}
+ try{const args={name:'create_diagram',arguments:{taskName:'回归测试任务',content,requestId:'stable-create'}},a=await h.client.callTool(args),b=await h.client.callTool(args);for(const got of [a,b]){const d=got.structuredContent as any;assert.equal(d.saved,true);assert.equal(d.exportStatus,'waiting_timeout');assert.equal(d.currentRevision,2);assert.equal(d.isCurrentRevision,false);assert.equal(d.revision,1)}const bodies=h.calls.filter(c=>c.path.endsWith('/exports/snapshot')).map(c=>JSON.parse(String(c.init.body)));assert.deepEqual(bodies[0],bodies[1]);assert.equal(bodies[0].revision,1)}finally{await h.close()}
 })
 test('resource id/revision/root mismatches reject before reading bytes; legacy resource cannot guess export',async()=>{
  const h=await harness(()=>({id:'job',diagramId:content.id,dataRootId:'wrong-root',revision:1,status:'succeeded'}))
@@ -53,7 +57,7 @@ test('resource id/revision/root mismatches reject before reading bytes; legacy r
 })
 test('SDK preserves actual native HTTP error code/currentRevision/quality',async()=>{
  for(const [status,body] of [[409,{error:'版本冲突',code:'REVISION_CONFLICT',currentRevision:4}],[422,{error:'质量拒绝',code:'QUALITY_FAILED',quality:{passed:false,issues:[{code:'decision_exits'}]}}]] as const){
-  const h=await harness(()=>new Response(JSON.stringify(body),{status}));try{const result=await h.client.callTool({name:'create_diagram',arguments:{content,requestId:'error-case'}});assert.equal(result.isError,true);const error=JSON.parse((result.content[0] as any).text).error;assert.equal(error.code,body.code);assert.equal(error.status,status);if('currentRevision'in body)assert.equal(error.currentRevision,body.currentRevision);if('quality'in body)assert.deepEqual(error.quality,body.quality)}finally{await h.close()}
+  const h=await harness(()=>new Response(JSON.stringify(body),{status}));try{const result=await h.client.callTool({name:'create_diagram',arguments:{taskName:'回归测试任务',content,requestId:'error-case'}});assert.equal(result.isError,true);const error=JSON.parse((result.content[0] as any).text).error;assert.equal(error.code,body.code);assert.equal(error.status,status);if('currentRevision'in body)assert.equal(error.currentRevision,body.currentRevision);if('quality'in body)assert.deepEqual(error.quality,body.quality)}finally{await h.close()}
  }
 })
 test('failed r1 retry after current r2 anchors title/time/content and PNG to r1; resume never enqueues',async()=>{
@@ -73,7 +77,7 @@ test('inline budget retains successful export files, rejects large resources and
  const job={id:'large-job',diagramId:content.id,dataRootId:'test-root',revision:1,status:'succeeded',width:2,height:3,exportedAt:1000,files:Object.fromEntries(['png','svg','drawio','json','project.json'].map(f=>[f,{bytes:f==='png'?png.length:f==='svg'?22*1024*1024:100,filename:'large.'+f,url:'/studio-api/native/exports/large-job/files/'+f}]))}
  const h=await harness(path=>path.endsWith('/ai/diagrams')?record:path.endsWith('/snapshot')?job:path.endsWith('/delivery')?{jobId:job.id,diagramId:content.id,revision:1,dataRootId:'test-root',files:{png:'C:/isolated/large.png',svg:'C:/isolated/large.svg'}}:path.endsWith('/files/png')?new Response(png):path.endsWith('/files/svg')?new Response('x'.repeat(9*1024*1024)):path.includes('/records/')?pure:job)
  try{
-  const result=await h.client.callTool({name:'create_diagram',arguments:{content,requestId:'large-create'}}),data=result.structuredContent as any
+  const result=await h.client.callTool({name:'create_diagram',arguments:{taskName:'回归测试任务',content,requestId:'large-create'}}),data=result.structuredContent as any
   assert.equal(data.exportStatus,'succeeded');assert.equal(data.previewStatus,'too_large');assert.equal(data.previewError.code,'MCP_PREVIEW_TOO_LARGE');assert.equal(data.files.png,'C:/isolated/large.png');assert.equal(result.content.some((x:any)=>x.type==='image'),false)
   await assert.rejects(h.client.readResource({uri:`flymind://exports/${content.id}/1/large-job/svg`}),(error:any)=>error.data?.code==='MCP_RESOURCE_TOO_LARGE')
   const alive=await h.client.callTool({name:'get_diagram',arguments:{id:content.id}});assert.equal(alive.isError,undefined)
@@ -85,7 +89,7 @@ test('uncertain write is not replayed automatically; next same-key request re-en
   if(path.endsWith('/ai/diagrams')){writes++;const key=JSON.parse(String(init?.body)).requestId;if(!seen.has(key)){seen.add(key);commits++}if(attempt===1)throw new TypeError('connection reset after commit');return response(record)}
   return response(path.endsWith('/snapshot')?{id:'failed',diagramId:content.id,dataRootId:'root',revision:1,status:'failed'}:pure)
  })})
- try{const args={name:'create_diagram',arguments:{content,requestId:'same-key'}},first=await h.client.callTool(args);assert.equal(first.isError,true);assert.match(JSON.stringify(first),/RUNTIME_CONNECTION_LOST/);assert.match(JSON.stringify(first),/requestId/);assert.equal(writes,1);const second=await h.client.callTool(args);assert.equal((second.structuredContent as any).saved,true);assert.equal(connects,2);assert.equal(writes,2);assert.equal(commits,1)}finally{await h.close()}
+ try{const args={name:'create_diagram',arguments:{taskName:'回归测试任务',content,requestId:'same-key'}},first=await h.client.callTool(args);assert.equal(first.isError,true);assert.match(JSON.stringify(first),/RUNTIME_CONNECTION_LOST/);assert.match(JSON.stringify(first),/requestId/);assert.equal(writes,1);const second=await h.client.callTool(args);assert.equal((second.structuredContent as any).saved,true);assert.equal(connects,2);assert.equal(writes,2);assert.equal(commits,1)}finally{await h.close()}
 })
 test('401 re-ensures while business conflicts do not; changed workspace never rebinds',async()=>{
  let connects=0,mode='401',newRoot='root',requests=0

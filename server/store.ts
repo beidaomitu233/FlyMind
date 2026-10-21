@@ -127,7 +127,20 @@ export class DiagramStore {
   groupName(name:string){if(typeof name!=='string'||!name.trim()||name.trim().length>80)throw new StoreError('分组名称需为 1–80 字');return name.trim()}
   private groups(db:DB):WorkspaceGroup[]{return db.prepare('SELECT id,name,revision,created_at AS createdAt,updated_at AS updatedAt FROM workspace_groups ORDER BY created_at,id').all() as WorkspaceGroup[]}
   async listGroups(){return this.use(db=>this.groups(db))}
-  async createGroup(name:string,expectedDataRootId?:string){return this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);const n=this.groupName(name);if(db.prepare('SELECT 1 FROM workspace_groups WHERE name=?').get(n))throw new StoreError('分组名称已存在',409);const now=Date.now(),g={id:'group_'+randomUUID(),name:n,revision:1,createdAt:now,updatedAt:now};db.prepare('INSERT INTO workspace_groups VALUES(?,?,?,?,?)').run(g.id,n,1,now,now);this.activity(db,{action:'group-create',groupId:g.id,toRevision:1});return g})}
+  private ensureTaskGroup(db:DB,name:string,requestId?:string):WorkspaceGroup{
+    const display=this.groupName(this.groupName(name).normalize('NFKC').replace(/\s+/g,' ')),key=display.toLocaleLowerCase('en-US')
+    const matches=this.groups(db).filter(g=>g.name.normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('en-US')===key)
+    if(matches.length>1)throw new StoreError('存在多个同名任务分组，请读取分组列表并传明确workspaceGroupId',409,undefined,'TASK_GROUP_AMBIGUOUS')
+    if(matches.length===1)return matches[0]
+    const stableId='group_task_'+createHash('sha256').update(key).digest('hex').slice(0,32)
+    // A formerly matching group may have been renamed into a different task.
+    // Identity collisions never override the name match above.
+    const id=this.groups(db).some(g=>g.id===stableId)?'group_task_'+randomUUID():stableId
+    const now=Date.now(),group={id,name:display,revision:1,createdAt:now,updatedAt:now}
+    db.prepare('INSERT INTO workspace_groups VALUES(?,?,?,?,?)').run(id,display,1,now,now)
+    this.activity(db,{action:'group-create',groupId:id,toRevision:1,requestId});return group
+  }
+  async createGroup(name:string,expectedDataRootId?:string,reuseExisting=false){return this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);if(reuseExisting)return this.ensureTaskGroup(db,name);const n=this.groupName(name);if(db.prepare('SELECT 1 FROM workspace_groups WHERE name=?').get(n))throw new StoreError('分组名称已存在',409);const now=Date.now(),g={id:'group_'+randomUUID(),name:n,revision:1,createdAt:now,updatedAt:now};db.prepare('INSERT INTO workspace_groups VALUES(?,?,?,?,?)').run(g.id,n,1,now,now);this.activity(db,{action:'group-create',groupId:g.id,toRevision:1});return g})}
   async updateGroup(id:string,revision:number,name:string,expectedDataRootId?:string){return this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);this.checkGroup(db,id);const g=this.groups(db).find(g=>g.id===id)!;if(g.revision!==revision)throw new StoreError('分组已被修改，请刷新后重试',409,g.revision);const n=this.groupName(name);if(db.prepare('SELECT 1 FROM workspace_groups WHERE name=? AND id<>?').get(n,id))throw new StoreError('分组名称已存在',409);const renamed=g.name!==n;g.name=n;g.revision++;g.updatedAt=Date.now();db.prepare('UPDATE workspace_groups SET name=?,revision=?,updated_at=? WHERE id=?').run(n,g.revision,g.updatedAt,id);if(renamed)this.activity(db,{action:'group-rename',groupId:id,fromRevision:revision,toRevision:g.revision});return g})}
   async deleteGroup(id:string,revision:number,expectedDataRootId?:string){return this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);this.checkGroup(db,id);if(this.groups(db).find(g=>g.id===id)!.revision!==revision)throw new StoreError('分组已被修改，请刷新后重试',409);const affected=(db.prepare('SELECT count(*) n FROM diagrams WHERE workspace_group_id=?').get(id) as {n:number}).n;db.prepare('DELETE FROM workspace_groups WHERE id=?').run(id);this.activity(db,{action:'group-delete',groupId:id,fromRevision:revision,summary:{affectedDiagrams:affected}})})}
   async moveToGroup(id:string,groupId:string|null,expectedGroupId:string|null){return this.transaction(db=>{this.checkGroup(db,groupId);const r=this.record(db,id);if(r.workspaceGroupId!==expectedGroupId)throw new StoreError('图形所属分组已改变，请刷新后重试',409);db.prepare('UPDATE diagrams SET workspace_group_id=? WHERE id=?').run(groupId,id);if(r.workspaceGroupId!==groupId)this.activity(db,{action:'move',diagramId:id,groupId,fromGroupId:r.workspaceGroupId,fromRevision:r.revision,toRevision:r.revision});return this.record(db,id)})}
@@ -155,7 +168,7 @@ export class DiagramStore {
   }
   async replayNativeDrawing(m:NativeMutation){m={...m};return this.use(db=>db.transaction(()=>this.replay(db,m))())}
   async replayNative(m:NativeMutation):Promise<NativeDiagramRecord|undefined>{const record=await this.replayNativeDrawing(m);if(record&&isCanvasRecord(record))throw new StoreError('仅画布没有业务内容',422,record.revision,'BUSINESS_MAPPING_REQUIRED');return record}
-  async createNative(input:unknown,workspaceGroupId:string|null,m:NativeMutation,source?:NativeImportSource):Promise<NativeDiagramRecord>{if((input as any)?.mode!==undefined)throw new StoreError('业务入口不接受仅画布项目',422,undefined,'BUSINESS_MAPPING_REQUIRED');return await this.createNativeDrawing(input,workspaceGroupId,m,source) as NativeDiagramRecord}
+  async createNative(input:unknown,workspaceGroupId:string|null,m:NativeMutation,source?:NativeImportSource,taskName?:string):Promise<NativeDiagramRecord>{if((input as any)?.mode!==undefined)throw new StoreError('业务入口不接受仅画布项目',422,undefined,'BUSINESS_MAPPING_REQUIRED');return await this.createNativeDrawing(input,workspaceGroupId,m,source,undefined,taskName) as NativeDiagramRecord}
   async commitNative(id:string,expectedRevision:number,input:unknown,m:NativeMutation):Promise<NativeDiagramRecord>{if((input as any)?.mode!==undefined)throw new StoreError('业务入口不接受仅画布项目',422,undefined,'BUSINESS_MAPPING_REQUIRED');return await this.commitNativeDrawing(id,expectedRevision,input,m) as NativeDiagramRecord}
   private remember(db:DB,m:NativeMutation,r:NativeDrawingRecord){this.nativeMutationSchema(db);db.prepare('INSERT INTO native_mutation_requests VALUES(?,?,?,?,?,?)').run(m.requestId,m.requestHash,nativeIdentity(r.document).id,m.operation,JSON.stringify(r),Date.now())}
   private importSchema(db:DB){db.exec('CREATE TABLE IF NOT EXISTS native_import_keys(key TEXT PRIMARY KEY,diagram_id TEXT NOT NULL,content_hash TEXT,render_hash TEXT,complete INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS native_import_batches(id TEXT PRIMARY KEY,target TEXT NOT NULL,group_id TEXT)')}
@@ -184,7 +197,7 @@ export class DiagramStore {
   }
   async findImportDuplicate(f:ImportFingerprint,expectedDataRootId:string){return this.use(db=>{this.assertNativeIdentity(db,expectedDataRootId);return this.importDuplicate(db,f)})}
   private rememberImport(db:DB,f:ImportFingerprint,id:string){this.importSchema(db);for(const key of ['raw:'+f.rawSha256,...(f.sourceKey?['source:'+f.sourceKey]:[])])db.prepare('INSERT OR IGNORE INTO native_import_keys VALUES(?,?,?,?,?)').run(key,id,f.contentHash??null,f.renderHash??null,f.complete?1:0)}
-  async createNativeDrawing(input:unknown,workspaceGroupId:string|null,m:NativeMutation,importSource?:NativeImportSource,importPlan?:ImportCommitPlan):Promise<NativeDrawingRecord>{
+  async createNativeDrawing(input:unknown,workspaceGroupId:string|null,m:NativeMutation,importSource?:NativeImportSource,importPlan?:ImportCommitPlan,taskName?:string):Promise<NativeDrawingRecord>{
     m={...m}
     this.mutation(m);if(!['create','ai-create','import-content','import-project','import-drawio'].includes(m.operation)||m.operation.startsWith('import-')!==!!importSource||!!importPlan&&!importSource)throw new StoreError('创建请求操作或导入来源无效')
     const snapshot=structuredClone(input);if(typeof(snapshot as any)?.rendering?.engine?.xml==='string'&&Buffer.byteLength((snapshot as any).rendering.engine.xml)>4_000_000)throw new StoreError('原生XML超过4,000,000字节预算',413,undefined,'NATIVE_XML_TOO_LARGE');const project=await validateNativeProject(snapshot);this.id(nativeIdentity(project).id)
@@ -207,6 +220,8 @@ export class DiagramStore {
         }
         if(batchKey)db.prepare('INSERT INTO native_import_batches VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET group_id=excluded.group_id').run(batchKey,target!,workspaceGroupId)
       }
+      if(m.operation==='ai-create'&&!workspaceGroupId&&taskName===undefined)throw new StoreError('AI新建必须提供workspaceGroupId或当前任务taskName；请根据用户任务自行命名并重试',422,undefined,'TASK_GROUP_REQUIRED')
+      if(!workspaceGroupId&&taskName!==undefined)workspaceGroupId=this.ensureTaskGroup(db,taskName,m.requestId).id
       this.checkGroup(db,workspaceGroupId)
       if(db.prepare('SELECT 1 FROM diagram_tombstones WHERE id=?').get(nativeIdentity(project).id))throw new StoreError('该 ID 已永久删除，不能重新创建',410)
       const existing=db.prepare('SELECT revision,deleted_at FROM diagrams WHERE id=?').get(nativeIdentity(project).id) as any

@@ -45,19 +45,21 @@ export class NativeDiagramService {
   async createAI(input:unknown,expectedDataRootId?:string):Promise<NativeDiagramRecord>{return this.createWithPolicy(input,expectedDataRootId,true)}
   private async createWithPolicy(input:unknown,expectedDataRootId:string|undefined,ai:boolean):Promise<NativeDiagramRecord>{
     this.available()
-    const value=exact(input,['content','profile','preferences','workspaceGroupId','requestId'],['content','requestId'])
+    const value=exact(input,['content','profile','preferences','workspaceGroupId','taskName','requestId'],['content','requestId'])
     if(value.content?.schemaVersion!==1||typeof value.content?.id!=='string')throw new StoreError('content 必须提供 schemaVersion:1 和稳定 id')
     this.store.id(value.content.id)
     if(value.workspaceGroupId!==undefined&&value.workspaceGroupId!==null&&typeof value.workspaceGroupId!=='string')throw new StoreError('workspaceGroupId 无效')
+    if(value.taskName!==undefined)this.store.groupName(value.taskName)
     const m=mutation(ai?'ai-create':'create',value.content.id,value,expectedDataRootId),replay=await this.store.replayNative(m)
     if(replay)return replay
     const content=validateContent(value.content)
     if(ai){this.supportedAI(content);requireNativeAIQuality(content)}
+    if(ai&&!value.workspaceGroupId&&value.taskName===undefined)throw new StoreError('AI新建必须提供workspaceGroupId或当前任务taskName；请根据用户任务自行命名并重试',422,undefined,'TASK_GROUP_REQUIRED')
     if(!drawioCapabilities().supportedKinds.includes(content.kind))throw new StoreError('此原生类型尚未适配',422,undefined,'NATIVE_KIND_UNSUPPORTED')
     const profile=value.profile??defaultProfileForKind(content.kind)
     const engine=await compileDrawio(content,{profile,preferences:value.preferences})
     const project=await createDrawingProject(content,engine,{profile,preferences:value.preferences})
-    return this.store.createNative(project,value.workspaceGroupId??null,m)
+    return this.store.createNative(project,value.workspaceGroupId??null,m,undefined,value.taskName)
   }
   async get(id:string){this.available();const record=await this.store.getNative(id);record.document=await validateDrawingProject(record.document);return record}
   async getDrawing(id:string){this.available();const record=await this.store.getNativeDrawing(id);record.document=await validateNativeProject(record.document);return record}
@@ -71,7 +73,7 @@ export class NativeDiagramService {
   async trash(){this.available();return this.store.listTrash()}
   async organize(action:string,id:string|undefined,input:unknown,expectedDataRootId:string|undefined){
     this.available();this.assertWorkspaceIdentity(expectedDataRootId)
-    if(action==='create-group'){const value=exact(input,['name'],['name']);return {group:await this.store.createGroup(value.name,expectedDataRootId)}}
+    if(action==='create-group'){const value=exact(input,['name','reuseExisting'],['name']);if(value.reuseExisting!==undefined&&typeof value.reuseExisting!=='boolean')throw new StoreError('reuseExisting必须为布尔值');return {group:await this.store.createGroup(value.name,expectedDataRootId,value.reuseExisting??false)}}
     if(action==='rename-group'){const value=exact(input,['name','expectedRevision'],['name','expectedRevision']);return {group:await this.store.updateGroup(id!,revision(value.expectedRevision),value.name,expectedDataRootId)}}
     if(action==='delete-group'){const value=exact(input,['expectedRevision'],['expectedRevision']);await this.store.deleteGroup(id!,revision(value.expectedRevision),expectedDataRootId);return {success:true}}
     if(action==='move'){const value=exact(input,['workspaceGroupId','expectedWorkspaceGroupId'],['workspaceGroupId','expectedWorkspaceGroupId']);for(const key of ['workspaceGroupId','expectedWorkspaceGroupId'])if(value[key]!==null&&typeof value[key]!=='string')throw new StoreError('分组ID无效');await this.store.moveStoredToGroup(id!,value.workspaceGroupId,value.expectedWorkspaceGroupId,expectedDataRootId);return this.readContent(id!)}

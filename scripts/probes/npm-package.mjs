@@ -61,7 +61,7 @@ try{
  const baseline=(await call('list_diagrams',{})).structuredContent.diagrams
  report.initialRecords=baseline.length
  for(const kind of ['flowchart','swimlane','architecture','mindmap','dataflow']){
-  const data=await delivered(await call('create_diagram',{content:content(kind),requestId:'package-create-'+kind}),kind)
+  const data=await delivered(await call('create_diagram',{taskName:'验证-npm-package',content:content(kind),requestId:'package-create-'+kind}),kind)
   assert.equal(data.revision,1);assert.equal(data.quality.passed,true)
   report.diagrams.push({id:data.diagramId,kind,revision:data.revision,createdAt:data.createdAt,updatedAt:data.updatedAt,editorUrl:data.editorUrl,digests:data.digests})
  }
@@ -70,7 +70,7 @@ try{
  const original=await call('get_diagram',{id:'package-flowchart'})
  const patched=await delivered(await call('patch_diagram',{id:'package-flowchart',expectedRevision:1,requestId:'package-wording',editIntent:'wording',operations:[{op:'update_node',id:'task',changes:{label:'复核资料'}}]}),'flowchart-patched')
  assert.equal(patched.revision,2);assert.equal(patched.createdAt,original.structuredContent.createdAt);assert.equal(patched.content.nodes.find(n=>n.id==='task').label,'复核资料')
- const replay=await delivered(await call('create_diagram',{content:content('flowchart'),requestId:'package-create-flowchart'}),'flowchart-replayed');assert.equal(replay.revision,1);assert.equal(replay.currentRevision,2)
+ const replay=await delivered(await call('create_diagram',{taskName:'验证-npm-package',content:content('flowchart'),requestId:'package-create-flowchart'}),'flowchart-replayed');assert.equal(replay.revision,1);assert.equal(replay.currentRevision,2)
  report.checks.aiPatchAndIdempotentReplay=true
  const group=(await call('create_workspace_group',{name:'安装验收分组'})).structuredContent
  const groupId=group.id??group.group?.id;assert.ok(groupId,JSON.stringify(group))

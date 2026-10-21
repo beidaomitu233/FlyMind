@@ -6,6 +6,7 @@ const supportedKinds=drawioCapabilities().supportedKinds as [DiagramKind,...Diag
 const availableProfiles=drawioCapabilities().profiles.filter(p=>p.compile).map(p=>p.profile)
 export {diagramId,diagramKind,revision,operationSchema}
 export const requestId=z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/).describe('稳定幂等请求ID；重试同一次提交必须沿用，同key不能改payload')
+export const taskName=z.string().trim().min(1).max(80).describe('当前用户任务的清晰名称，由AI根据任务自行命名；自动复用或创建同名任务分组，不是图内content.groups')
 export const nativeContentSchema=contentSchema.extend({schemaVersion:z.literal(1),id:diagramId,kind:z.enum(supportedKinds),edges:contentSchema.shape.edges.unwrap(),lanes:contentSchema.shape.lanes.unwrap(),phases:contentSchema.shape.phases.unwrap(),groups:contentSchema.shape.groups.unwrap()})
 export const preferencesSchema=renderingSchema.pick({theme:true,orientation:true,nodeDefaults:true,edgeDefaults:true}).strict()
 export const profileSchema=z.strictObject({id:z.enum(availableProfiles.map(p=>p.id) as [string,...string[]]),version:z.enum([...new Set(availableProfiles.map(p=>p.version))] as [string,...string[]])})

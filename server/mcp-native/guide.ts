@@ -9,8 +9,9 @@ import type {z} from 'zod'
 const capabilities=nativeDocumentCapabilities()
 export const nativeGuide=`# FlyMind native pilot
 实际可用类型：${capabilities.supportedKinds.join('、')}。各profile及compile/project/patch/configure/migrate能力：${JSON.stringify(capabilities.profiles)}。未启用能力明确拒绝，不以profile名称冒充已适配。
-先读取 get_drawing_guide 获取内容标准1.1。content 必须 schemaVersion=1、稳定 id、title、kind、nodes、edges、lanes、phases、groups；内容字段依图形类型，不包含坐标、样式、presentation 或文档时间。节点用简短动作/概念；判断出口完整，退回边 kind=feedback，不猜测来源缺失关系。
+先读取 get_drawing_guide 获取内容标准1.1。content 必须 schemaVersion=1、稳定 id、title、kind、nodes、edges、lanes、phases、groups；内容字段依图形类型，不包含坐标、样式、presentation 或文档时间。节点用简短动作/概念；判断出口完整，退回边 kind=feedback，不猜测来源缺失关系。流程/泳道的反馈及实际逆行边由渲染器走整体外围独立正交通道，纵向走右侧、横向走底侧；不要输入路线点或额外说明节点来指挥排版。已有人工布局需明确relayout才整体采用新规则，普通文字修改保留原布局。
 create_diagram、patch_diagram、update_diagram 必须提供稳定 requestId；同次请求重试必须保持 requestId 和全部 payload。修改前 get_diagram，携带最新 expectedRevision；冲突重新读取并合并，不覆盖人工修改。完整 update 通过语义差异 patch 保留无关人工几何。
+AI新建必须按当前用户任务归组：先list_workspace_groups复用明确workspaceGroupId，或从用户当前任务自行给出简洁taskName，create_diagram自动复用/创建该任务组并同事务落图；后续本任务沿用返回的workspaceGroupId。不应每次向用户询问或弹窗确认任务名。缺二者返回TASK_GROUP_REQUIRED，补上上下文后重试；同名多组返回TASK_GROUP_AMBIGUOUS，读取列表选择明确ID。不将图全部散入未分组，不猜测搬迁旧图。workspaceGroupId是工作区文件夹，content.groups只表示图内架构分层，不能互代。单独建组可用create_workspace_group的reuseExisting:true保证同任务重复调用不重复建组。人工导入选择明确目标，复制保留当前所选目标归属，不继承外部备份组织。
 Runtime网络中断或401时首次请求不会自动重放；请保留原requestId及原payload再试，后续请求可重新启动/连接同一工作区的Runtime。MCP会话首次绑定的工作区身份不变，同路径换库返回WORKSPACE_MISMATCH，禁止据此盲目重建图形。
 AI 新建必须质量合格；修改历史人工草稿不得新增或加重 error/warning，包括同一问题的规模。默认 editIntent=structure，禁止仅补 note 或加note后微改节点/边/容器文案冒充业务修改；用户明确只加说明时用 annotation。来源 PBS 的业务缺口应保留并确认。
 流程/泳道使用动作和判断，架构使用模块和依赖（箭头合法），脑图用主题分类，数据流用来源/处理/去向。技术组件名和参数预算不能充当流程动作。items仅架构，badge仅架构/数据流；短description与note同样受预算，不能搬正文逃避标题约束。

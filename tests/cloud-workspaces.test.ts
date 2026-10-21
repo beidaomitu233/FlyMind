@@ -70,7 +70,7 @@ test('team stores isolate identical IDs, member mutation keys, trash and restart
     const created=await Promise.all(['team-a','team-b'].map(team=>registry.run(token,team,'diagram:write',async(ws,actor)=>{
       assert.deepEqual(await ws.store.listStored(),[])
       const content=businessContent('flowchart','shared-id');content.title='Flow '+team
-      const record=await ws.diagrams.createAI({content,requestId:cloudRequestId(actor,'create')},ws.dataRootId)
+      const record=await ws.diagrams.createAI({taskName:'回归测试任务',content,requestId:cloudRequestId(actor,'create')},ws.dataRootId)
       return {identity:ws.dataRootId,title:record.document.content.title,path:ws.store.root}
     })))
     assert.notEqual(created[0].identity,created[1].identity)

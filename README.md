@@ -90,7 +90,7 @@ MCP 使用 STDIO；HTTP 端口是工作台与制品服务，不是 HTTP MCP 地�
 
 五类业务 `kind`：`swimlane` 泳道、`flowchart` 流程、`architecture` 架构、`mindmap` 脑图、`dataflow` 数据流卡片。先调用 `get_drawing_guide` 获取正式内容标准和当前能力表，再创建/修改。数据流卡片不等同严格 DFD，不宣称覆盖全部 UML/BPMN。
 
-流程：`get_drawing_guide → create_diagram → get_diagram → patch_diagram`。原工具名称保持 18 个，包含内容校验、完整更新、配置读取/修改、导出、工作区分组与回收站操作；实际输入以工具发现 schema 为准。
+流程：`get_drawing_guide → create_diagram → get_diagram → patch_diagram`。AI新建需带稳定requestId及已有workspaceGroupId，或由AI根据当前任务给出taskName，自动复用/创建任务分组，不将图散放未分组。原工具名称保持 18 个，包含内容校验、完整更新、配置读取/修改、导出、工作区分组与回收站操作；实际输入以工具发现 schema 为准。
 
 - 内容层提供 `schemaVersion:1`、稳定 `id`、`title/kind/nodes/edges/lanes/phases/groups`，不写坐标或渲染字段。
 - 创建、内容更新、增量修改、渲染配置和导出使用稳定 `requestId`。不确定是否提交时沿用相同 ID 与全部参数重试，不重新创建；修改还必须携带最新 `expectedRevision`。

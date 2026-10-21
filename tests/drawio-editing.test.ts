@@ -102,15 +102,20 @@ test('container add/reorder/remove uses the native table and preserves unknown d
  const final=parseNative(last.xml),edge=mainEntry(final,'edge','ab')
  const issues=inspectNativeLayout(final).filter(issue=>['ROUTE_THROUGH_SHAPE','LABEL_OVERLAP_SHAPE','LABEL_OVERLAP_LABEL','ROUTE_THROUGH_LABEL','LABEL_TOO_FAR_FROM_EDGE'].includes(issue.code)&&issue.cellIds.includes(edge.id));assert.deepEqual(issues,[],'ordinary container editing must retain the original collision/near-line gates')
 })
-test('crowded PBS container reorder rejects an unsafe label slot without mutating the source',async()=>{
+test('PBS container reorder now uses safe outer returns while preserving source and manual decoration',async()=>{
  const b=await base();assert.equal(b.content.nodes.length,23);assert.equal(b.content.edges.length,26)
  const a=await patchDrawio(b,[{op:'add_container',collection:'lanes',item:{id:'review',label:'复核人'},index:1},{op:'add_container',collection:'phases',item:{id:'review-phase',label:'复核阶段'},index:2},{op:'add_node',node:{id:'review-node',label:'独立复核',kind:'task',laneId:'review',phaseId:'review-phase'}}]),project=await createDrawingProject((await projectDrawio(a.xml)).content,a,{createdAt:1,updatedAt:2})
  // The pure compiler receives the document, not permission to advance the
- // caller's revision. A rejected candidate must leave both completely intact.
+ // caller's revision. The candidate must leave both completely intact.
+ project.rendering.engine.xml=edit(project.rendering.engine.xml,n=>{const e=element(n.document,'mxCell',{id:'manual-protected-decoration',vertex:1,parent:'1',value:'人工保留',style:'text;fontColor=#246824;'});e.appendChild(element(n.document,'mxGeometry',{x:20,y:4,width:80,height:16,as:'geometry'}));n.root.appendChild(e)})
  const record={revision:2,document:project},before=JSON.stringify(record),xml=project.rendering.engine.xml,hash=project.rendering.engine.contentHash
- await assert.rejects(()=>patchDrawio(record.document,[{op:'reorder_container',collection:'phases',id:'p05',index:0},{op:'remove_container',collection:'lanes',id:'review',moveTo:'r04'},{op:'remove_container',collection:'phases',id:'review-phase',moveTo:'p03'}]),/ROUTING_LABEL_NO_SPACE: 连线 e17 的 145×28px/)
+ const operations=[{op:'reorder_container',collection:'phases',id:'p05',index:0},{op:'remove_container',collection:'lanes',id:'review',moveTo:'r04'},{op:'remove_container',collection:'phases',id:'review-phase',moveTo:'p03'}] as const
+ const changed=await patchDrawio(record.document,[...operations]),projection=await projectDrawio(changed.xml),expected=extractContent(applyContentOperations(composeDocument(project.content),[...operations])),native=parseNative(changed.xml)
+ assert.deepEqual(projection.content,expected);assert.deepEqual(inspectNativeLayout(native),[])
+ assert.equal(serialize(native.cells.get('manual-protected-decoration')!.object),serialize(parseNative(xml).cells.get('manual-protected-decoration')!.object))
+ // A pure successful candidate still cannot advance/mutate its caller's record.
  assert.equal(JSON.stringify(record),before);assert.equal(record.revision,2);assert.equal(project.rendering.engine.xml,xml);assert.equal(project.rendering.engine.contentHash,hash)
- assert.equal((await projectDrawio(xml)).contentHash,hash);assert.equal(project.content.nodes.length,24);assert.equal(project.content.edges.length,26);assert.ok(project.content.lanes.some(l=>l.id==='review'));assert.ok(project.content.phases.some(p=>p.id==='review-phase'))
+ assert.equal((await projectDrawio(xml)).contentHash,hash);assert.equal(projection.content.nodes.length,24);assert.equal(projection.content.edges.length,26);assert.ok(!projection.content.lanes.some(l=>l.id==='review'));assert.ok(!projection.content.phases.some(p=>p.id==='review-phase'))
 })
 test('long text grows only its local business range while notes neither occupy steps nor stretch phases',async()=>{
  const b=await base();b.rendering.engine.xml=edit(b.rendering.engine.xml,n=>{const note=mainEntry(n,'node','n21'),parent=mainEntry(n,'node','n01').cell.getAttribute('parent');note.cell.setAttribute('parent',parent);geometry(note).setAttribute('y','9000');const e=element(n.document,'mxCell',{id:'far-decoration',vertex:1,parent});e.appendChild(element(n.document,'mxGeometry',{x:10,y:10000,width:100,height:100,as:'geometry'}));n.root.appendChild(e)})

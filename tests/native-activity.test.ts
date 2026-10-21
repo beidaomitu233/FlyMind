@@ -26,7 +26,7 @@ test('actor scopes remain isolated across async work and events omit request sec
 })
 
 test('AI acceptance, no-op, receipt replay and failed quality/CAS produce exactly the committed activity',async()=>{
- const s=await setup();try{const scope=actor('alice',s.identity,'mcp'),first=await withActivityActor(scope,()=>s.service.createAI({content:basic,requestId:'create'},s.identity))
+ const s=await setup();try{const scope=actor('alice',s.identity,'mcp'),first=await withActivityActor(scope,()=>s.service.createAI({taskName:'回归测试任务',content:basic,requestId:'create'},s.identity))
  const input={expectedRevision:1,requestId:'ai-patch',editIntent:'wording',operations:[{op:'update_node',id:'b',changes:{label:'审核申请'}}]}
  const second=await withActivityActor(scope,()=>s.service.patchAI(basic.id,input,s.identity));assert.equal(second.revision,2)
  await withActivityActor(scope,()=>s.service.patchAI(basic.id,input,s.identity))

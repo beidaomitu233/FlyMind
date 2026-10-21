@@ -83,7 +83,7 @@ test('one authenticated SDK config survives two real app restarts with fresh gui
   const releases=[await boot(0)]
   gateway=createCloudMcpGateway({publicOrigin,applicationOrigin,controlPlaneURL,gatewayKey:key,allowInsecureLoopback:true});await connect()
   const sessionId=transport!.sessionId,tools=(await client!.listTools()).tools
-  const content=businessContent('flowchart','persistent-update'),created=await client!.callTool({name:'create_diagram',arguments:{content,requestId:'create-once'}})
+  const content=businessContent('flowchart','persistent-update'),created=await client!.callTool({name:'create_diagram',arguments:{taskName:'云端契约回归任务',content,requestId:'create-once'}})
   assert.ok(!created.isError,JSON.stringify(created));let current=created.structuredContent as any
   report.firstExport={status:current.exportStatus,error:current.exportError};assert.equal(current.exportStatus,'succeeded',JSON.stringify(report.firstExport));assert.ok(created.content.some((c:any)=>c.type==='image'))
   const original={jobId:current.jobId,resource:current.resources.png,urls:current.urls,revision:current.revision},image=(await client!.readResource({uri:original.resource})).contents[0] as any,sha=createHash('sha256').update(Buffer.from(image.blob,'base64')).digest('hex')
@@ -100,7 +100,7 @@ test('one authenticated SDK config survives two real app restarts with fresh gui
    const download=await fetch(current.urls.png,{headers:{Authorization:'Bearer '+token}});assert.equal(download.status,200);assert.equal(Buffer.from(await download.arrayBuffer()).subarray(1,4).toString(),'PNG')
    report.releases.push({release:releases[index].releaseId,appVersion:releases[index].appVersion,revision:current.revision,sameMcpSession:true,oldPngSha256:sha})
   }
-  const replay=await client!.callTool({name:'create_diagram',arguments:{content,requestId:'create-once'}});assert.ok(!replay.isError);assert.equal((replay.structuredContent as any).revision,1);assert.equal((replay.structuredContent as any).jobId,original.jobId,'original immutable export receipt survives both restarts')
+  const replay=await client!.callTool({name:'create_diagram',arguments:{taskName:'云端契约回归任务',content,requestId:'create-once'}});assert.ok(!replay.isError);assert.equal((replay.structuredContent as any).revision,1);assert.equal((replay.structuredContent as any).jobId,original.jobId,'original immutable export receipt survives both restarts')
   await gateway.close();gateway=createCloudMcpGateway({publicOrigin,applicationOrigin,controlPlaneURL,gatewayKey:key,allowInsecureLoopback:true})
   await assert.rejects(client!.callTool({name:'get_drawing_guide',arguments:{}}),/404|MCP_SESSION_NOT_FOUND/);report.gatewayRestart.oldSession='404; SDK does not automatically initialize'
   await client!.close();await connect();const restored=await client!.callTool({name:'get_diagram',arguments:{id:content.id}});assert.equal((restored.structuredContent as any).revision,3);report.gatewayRestart.sameURLNewInitialization=true

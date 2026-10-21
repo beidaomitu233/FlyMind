@@ -48,7 +48,7 @@ export class NativeClient implements NativeTransport {
   async previewCanvasMapping(id:string,input:{mapping:import('../engine/types').NativeBusinessMapping;expectedRevision:number}){return this.request<{revision:number;kind:import('../core/model').DiagramKind;nodes:number;edges:number;quality:NonNullable<NativeRecord['quality']>}>('/native/diagrams/'+encodeURIComponent(id)+'/business-mapping/preview','POST',input)}
   async list(){return this.request<NativeWorkspace['metadata']>('/native/diagrams')}
   async workspace(){return this.request<NativeWorkspace>('/native/workspace')}
-  async create(input:{content:unknown;requestId:string;profile?:unknown;preferences?:unknown;workspaceGroupId?:string|null}){return this.request<NativeRecord>('/native/diagrams','POST',input)}
+  async create(input:{content:unknown;requestId:string;profile?:unknown;preferences?:unknown;workspaceGroupId?:string|null;taskName?:string}){return this.request<NativeRecord>('/native/diagrams','POST',input)}
   async saveEditor(id:string,request:NativeSaveRequest){return this.request<NativeDrawingRecord>('/native/diagrams/'+encodeURIComponent(id)+'/editor-save','POST',request)}
   async configureRendering(id:string,input:{rendering:{relayout:true;orientation?:'vertical'|'horizontal'};expectedRevision:number;requestId:string}){return this.request<NativeRecord>('/native/diagrams/'+encodeURIComponent(id)+'/rendering','POST',input)}
   async createExport(id:string,input:{expectedRevision:number;requestId:string;options?:NativeExportOptions}){return this.request<NativeExportJob>('/native/diagrams/'+encodeURIComponent(id)+'/exports','POST',input)}
