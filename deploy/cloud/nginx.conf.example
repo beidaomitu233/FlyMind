@@ -37,6 +37,18 @@ server {
         proxy_buffering off;
         proxy_read_timeout 12m;
     }
+    # Compress only editor static text assets; keep API/auth responses and the
+    # upstream Cache-Control/revalidation policy unchanged.
+    location ~ ^/(drawio|runtime-assets)/.+\.(js|css|svg)$ {
+        proxy_pass http://127.0.0.1:5192;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto https;
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1024;
+        gzip_comp_level 5;
+        gzip_types application/javascript text/javascript text/css image/svg+xml;
+    }
     location / {
         proxy_pass http://127.0.0.1:5192;
         proxy_set_header Host $http_host;

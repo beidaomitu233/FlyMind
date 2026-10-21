@@ -13,8 +13,22 @@ import {guideData} from '../server/mcp-native/guide'
 import {inspectDrawing} from '../src/drawing/core/drawing-quality'
 import {nativeSnapshot,assertCellsPreserved} from '../scripts/probes/helpers/native-editor.mjs'
 import {businessContent} from './fixtures/native-business'
+import {projectDrawio} from '../src/drawing/engine/drawio'
 async function workspace(){const root=await mkdtemp(join(tmpdir(),'flymind-business-service-')),store=new DiagramStore(root);await store.init();const service=new NativeDiagramService(store,true);return {root,store,service,identity:service.dataRootId!}}
 async function cleanup(root:string){assert.ok(resolve(root).startsWith(resolve(tmpdir())+sep)&&root.includes('flymind-business-service-'));await rm(root,{recursive:true,force:true,maxRetries:6,retryDelay:100})}
+
+test('manual title and node wording patches persist matching native XML and reject a stale editor save',async()=>{
+ const s=await workspace();try{
+  const content=businessContent('flowchart','manual-properties'),first=await s.service.create({content,requestId:'manual-source'},s.identity)
+  const renamed=await s.service.patchContent(content.id,{expectedRevision:first.revision,requestId:'manual-title',operations:[{op:'set_title',title:'客户反馈处理'}]},s.identity)
+  const changed=await s.service.patchContent(content.id,{expectedRevision:renamed.revision,requestId:'manual-label',operations:[{op:'update_node',id:'task',changes:{label:'接收客户反馈'}}]},s.identity)
+  const saved=await s.service.get(content.id),projected=await projectDrawio(saved.document.rendering.engine.xml)
+  assert.equal(saved.document.content.title,'客户反馈处理');assert.equal(saved.document.content.nodes.find(n=>n.id==='task')?.label,'接收客户反馈')
+  assert.deepEqual(projected.content,saved.document.content);assert.equal(saved.revision,changed.revision)
+  await assert.rejects(s.service.saveEditor(content.id,{expectedRevision:first.revision,requestId:'late-old-editor',xml:first.document.rendering.engine.xml},s.identity),(e:any)=>e.code==='REVISION_CONFLICT')
+  assert.deepEqual((await s.service.get(content.id)).document,saved.document)
+ }finally{await cleanup(s.root)}
+})
 test('health, MCP schema and guide expose exactly the implemented kind/profile matrix',()=>{
  const c=drawioCapabilities();assert.deepEqual(runtimeCapabilities().supportedKinds,c.supportedKinds);assert.deepEqual(guideData.capabilities,nativeDocumentCapabilities());assert.deepEqual(runtimeCapabilities().profiles,c.profiles)
  for(const profile of c.profiles){const input=businessContent(profile.kind);assert.equal(nativeContentSchema.safeParse(input).success,c.supportedKinds.includes(profile.kind));assert.equal(inspectDrawing(input).passed,true,profile.kind)}

@@ -31,7 +31,9 @@ jobs:
       - run: npm run setup:runtime
       - run: npm run build
       - name: Cloud and local contract gates
-        run: node --import tsx --test --test-concurrency=1 tests/cloud-wire.test.ts tests/cloud-client.test.ts tests/cloud-workspaces.test.ts tests/cloud-http.test.ts tests/cloud-collaboration.test.ts tests/cloud-merge.test.ts tests/cloud-mcp.test.ts tests/cloud-oauth.test.ts tests/cloud-mcp-updates.test.ts tests/cloud-maintenance.test.ts tests/local-auth.test.ts tests/local-auth-runtime.test.ts tests/native-session.test.ts tests/native-undo-guard.test.ts tests/native-import-batch.test.ts tests/native-activity.test.ts tests/native-exports.test.ts tests/cloud-deployment.test.mjs tests/cloud-python-extract.test.mjs
+        run: node --import tsx --test --test-concurrency=1 tests/cloud-wire.test.ts tests/cloud-client.test.ts tests/cloud-workspaces.test.ts tests/cloud-http.test.ts tests/cloud-collaboration.test.ts tests/cloud-merge.test.ts tests/cloud-mcp.test.ts tests/cloud-oauth.test.ts tests/cloud-mcp-updates.test.ts tests/cloud-maintenance.test.ts tests/local-auth.test.ts tests/local-auth-runtime.test.ts tests/native-session.test.ts tests/native-text-drafts.test.ts tests/native-undo-guard.test.ts tests/native-import-batch.test.ts tests/native-activity.test.ts tests/native-exports.test.ts tests/cloud-deployment.test.mjs tests/cloud-artifact-source.test.mjs tests/cloud-python-extract.test.mjs
+      - name: Restricted artifact transfer validation (local fake source only)
+        run: python tests/cloud-artifact-fetch.test.py
       - name: Java control plane
         shell: pwsh
         run: |
@@ -107,6 +109,9 @@ jobs:
           if-no-files-found: error
           retention-days: 30
   staging:
+    permissions:
+      contents: read
+      actions: read
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.CLOUD_AUTO_STAGING == 'true' && vars.CLOUD_AUTO_PRODUCTION != 'true'
     needs: platform
     runs-on: ubuntu-24.04
@@ -126,7 +131,10 @@ jobs:
       - name: Deploy verified staging candidate
         env:
           DEPLOY_ENVIRONMENT: staging
-          DEPLOY_RELEASE_ID: run-${{ github.run_id }}-${{ github.run_attempt }}
+          DEPLOY_SOURCE_RUN_ID: ${{ github.run_id }}
+          DEPLOY_SOURCE_SHA: ${{ github.sha }}
+          DEPLOY_TRANSPORT: ${{ vars.CLOUD_ARTIFACT_HTTPS == 'true' && 'artifact-https' || 'bytes' }}
+          GITHUB_TOKEN: ${{ github.token }}
           DEPLOY_SSH_HOST: ${{ secrets.SSH_HOST }}
           DEPLOY_SSH_USER: ${{ secrets.SSH_USER }}
           DEPLOY_SSH_PORT: ${{ secrets.SSH_PORT }}
@@ -134,6 +142,9 @@ jobs:
           DEPLOY_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
         run: node scripts/upload-cloud-candidate.mjs
   production:
+    permissions:
+      contents: read
+      actions: read
     if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.CLOUD_AUTO_PRODUCTION == 'true'
     needs: platform
     runs-on: ubuntu-24.04
@@ -157,7 +168,10 @@ jobs:
       - name: Deploy exact verified production candidate
         env:
           DEPLOY_ENVIRONMENT: production
-          DEPLOY_RELEASE_ID: run-${{ github.run_id }}-${{ github.run_attempt }}
+          DEPLOY_SOURCE_RUN_ID: ${{ github.run_id }}
+          DEPLOY_SOURCE_SHA: ${{ github.sha }}
+          DEPLOY_TRANSPORT: ${{ vars.CLOUD_ARTIFACT_HTTPS == 'true' && 'artifact-https' || 'bytes' }}
+          GITHUB_TOKEN: ${{ github.token }}
           DEPLOY_SSH_HOST: ${{ secrets.SSH_HOST }}
           DEPLOY_SSH_USER: ${{ secrets.SSH_USER }}
           DEPLOY_SSH_PORT: ${{ secrets.SSH_PORT }}

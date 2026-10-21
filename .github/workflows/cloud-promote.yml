@@ -40,7 +40,7 @@ jobs:
           if(b.conclusion!=='success'||b.head_branch!=='main'||b.event==='pull_request'||b.path!=='.github/workflows/cloud-candidate.yml'||b.run_attempt!==+e.BUILD_ATTEMPT)throw Error('Expected successful main candidate run/attempt');
           const j=await fetch('https://api.github.com/repos/'+e.REPOSITORY+'/actions/runs/'+e.BUILD_RUN+'/attempts/'+e.BUILD_ATTEMPT+'/jobs?per_page=100',{headers:{Authorization:'Bearer '+e.GH_TOKEN,Accept:'application/vnd.github+json'}});
           if(!j.ok||!(await j.json()).jobs?.some(job=>job.name==='staging'&&job.conclusion==='success'))throw Error('That exact candidate must pass staging before production');
-          await appendFile(e.GITHUB_ENV,'DEPLOY_RELEASE_ID=run-'+e.BUILD_RUN+'-'+e.BUILD_ATTEMPT+'\n');
+          await appendFile(e.GITHUB_ENV,'DEPLOY_SOURCE_RUN_ID='+e.BUILD_RUN+'\nDEPLOY_SOURCE_SHA='+b.head_sha+'\n');
           JS
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -51,6 +51,8 @@ jobs:
       - name: Promote exact staging artifact
         env:
           DEPLOY_ENVIRONMENT: production
+          DEPLOY_TRANSPORT: ${{ vars.CLOUD_ARTIFACT_HTTPS == 'true' && 'artifact-https' || 'bytes' }}
+          GITHUB_TOKEN: ${{ github.token }}
           DEPLOY_SSH_HOST: ${{ secrets.SSH_HOST }}
           DEPLOY_SSH_USER: ${{ secrets.SSH_USER }}
           DEPLOY_SSH_PORT: ${{ secrets.SSH_PORT }}

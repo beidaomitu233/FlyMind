@@ -2,7 +2,7 @@
 import {shallowRef,watch,onBeforeUnmount,nextTick,computed} from 'vue'
 import DrawioHost from './DrawioHost.vue'
 import type {DrawioAppearance} from '../engine/drawio-host/appearance'
-import {DrawioHostProtocolError,type HostReady,type HostXML,type HostError,type HostSaveRequested} from '../engine/drawio-host/controller'
+import {DrawioHostProtocolError,HOST_PREPARATION_TIMEOUT_MS,type HostReady,type HostXML,type HostError,type HostSaveRequested} from '../engine/drawio-host/controller'
 
 interface DocumentInput {sessionKey:string;initialXML:string;title?:string}
 interface Slot extends DocumentInput {ready:boolean;failed?:boolean}
@@ -38,7 +38,7 @@ function prepare(input:DocumentInput):Promise<void>{
   if(existing?.ready){if(existing.initialXML!==input.initialXML)return Promise.reject(error('SESSION_CHANGED','同一会话不能替换初始内容'));return Promise.resolve()}
   discardPrepared()
   return new Promise((resolve,reject)=>{
-    const timer=setTimeout(()=>{if(pending?.key!==input.sessionKey)return;pending=undefined;slots.value=slots.value.filter(slot=>slot.sessionKey===displayedKey.value);reject(error('PREPARATION_TIMEOUT','目标画布准备超时，原画布已保留'))},40000)
+    const timer=setTimeout(()=>{if(pending?.key!==input.sessionKey)return;pending=undefined;slots.value=slots.value.filter(slot=>slot.sessionKey===displayedKey.value);reject(error('PREPARATION_TIMEOUT','目标画布准备超时，原画布已保留'))},HOST_PREPARATION_TIMEOUT_MS)
     pending={key:input.sessionKey,resolve,reject,timer}
     slots.value=[...slots.value,{...input,ready:false}]
   })

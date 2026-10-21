@@ -5,6 +5,9 @@ import {NativeRemoteUndoGuard} from '../collaboration/undo-guard'
 
 export const MAX_HOST_XML_BYTES=5*1024*1024
 export const MAX_HOST_MESSAGE_BYTES=12*1024*1024
+// Public deployments must allow the fixed editor bundle to download on a cold cache.
+export const HOST_STARTUP_TIMEOUT_MS=90_000
+export const HOST_PREPARATION_TIMEOUT_MS=100_000
 export interface HostReady {sessionKey:string}
 export interface HostXML extends HostReady {xml:string;reason:'save'|'autosave'}
 export interface HostError extends HostReady {code:string;message:string}
@@ -47,7 +50,7 @@ export class DrawioHostController {
     if(origin.origin!==options.origin||!['http:','https:'].includes(origin.protocol))throw new DrawioHostProtocolError('INVALID_ORIGIN','Host 必须使用精确 HTTP origin')
     if(!options.sessionKey||options.sessionKey.length>1000||!validXML(options.initialXML))throw new DrawioHostProtocolError('INVALID_INITIAL_DOCUMENT','会话或初始 XML 无效/超过 5 MiB')
     if(options.title!==undefined&&(typeof options.title!=='string'||options.title.length>1000))throw new DrawioHostProtocolError('INVALID_TITLE','标题过长或无效')
-    this.startup=setTimeout(()=>this.fail('STARTUP_TIMEOUT','原生编辑器初始化超时'),options.startupTimeoutMs??30000)
+    this.startup=setTimeout(()=>this.fail('STARTUP_TIMEOUT','原生编辑器初始化超时'),options.startupTimeoutMs??HOST_STARTUP_TIMEOUT_MS)
   }
   private report(code:string,message:string){this.options.onError?.({sessionKey:this.options.sessionKey,code,message})}
   private fail(code:string,message:string){this.report(code,message);this.dispose(new DrawioHostProtocolError(code,message))}

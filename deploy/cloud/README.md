@@ -61,3 +61,18 @@ Java/gateway二进制即使存在候选包，也**不会被promote自动安装�
 - 原手动生产workflow仍要求staging成功，不能用于单环境首次bootstrap。单环境首次由PM已授权受控调度器执行；后续main走自动production，不删除原手动workflow的来源检查。
 
 本次离线定向：`tests/cloud-deployment.test.mjs`配置与文件校验4/4，workflow本地YAML解析及job依赖/环境/并发检查；未执行GitHub远端pipeline或服务器命令。目标OpenCloudOS、Node绝对路径、Python及sandbox验证由PM真实部署收口。
+
+
+## 可审的 HTTPS 制品数据通道（尚未启用）
+
+当前首包已由PM通过原受限入口晋级；GitHub runner 到服务器的大包SSH传输慢，自动生产开关目前关闭。以下新增通道只有代码及本地验证，**真实签名URL传输、服务器安装与重新启用仍待授权/PM验收**，不把实现等同已上线。默认 `DEPLOY_TRANSPORT=bytes` 保留原通道；仓库变量 `CLOUD_ARTIFACT_HTTPS=true` 才令生产/staging工作流选择 `artifact-https`。不要同时开启两个环境操作同一数据根。
+
+- CI仍下载、核对tar的SHA，然后用只读 `tar -xOzf ... ./candidate.json`（2MiB输出预算）读取已验生产者releaseId/sourceCommit。失败job重跑的 `run_attempt` 不再覆盖旧制品的ID；同run但源commit或prepared/platform不符拒绝。原手动生产工作流的staging/成功run来源校验不删除，也不伪造首次staging成功。
+- 仅部署job获得 `actions:read`，通过固定GitHub API核对当前仓库、run、main commit、唯一Linux artifact及官方ZIP摘要。CI账号token仅发给 `api.github.com`，不会给存储主机、服务器或放入命令参数。下载接口手动读取302/303 Location，不自动携带Authorization跳转。GitHub文档说明下载URL一分钟过期；每次失败最多再申请一次新URL，URL只在内存中经SSH stdin传输，不落盘/输出。来源：[GitHub REST artifacts](https://docs.github.com/en/rest/actions/artifacts#download-an-artifact)。
+- 管理员单独审核并将 `ssh-command.py` 与相邻 `artifact-fetch.py` 安装在root-owned不可被部署账号写入的固定目录。forced command新增精确 `flymind-fetch <releaseId> <tarSHA256>`，仍以部署用户执行，无新增sudo/root能力；随后复用原固定promote。模块加载时校验helper及其祖先root所有、无symlink/组或其他写权限。
+- 精确主机列表放root-owned `/etc/flymind/artifact-download.json`，其祖先也不可被部署账号写入，普通文件不可是symlink。示例为 [artifact-download.json.example](artifact-download.json.example)，只含私有HEAD记录曾见的存储**主机名**，不含URL/query。CI请求不能指定/扩展allowlist；GitHub切换存储主机时需管理员重新审核配置，失败即停。
+- 接收metadata上限16KiB，字段固定，时间窗60秒。生产仅允许配置中的HTTPS443主机，拒用户信息/fragment/控制字符，DNS每个结果都须为公网；连接固定已核IP并保留TLS证书/SNI主机校验，不读取代理环境、不跟随任何服务端redirect。纯测试的localhost opener仅由测试代码注入，不存在请求或环境开启方式。
+- 外层ZIP最多2,000,000,000字节，要求官方ZIP SHA及长度一致；ZIP恰含 `flymind-linux-x64.tar.gz` 和其`.sha256`，拒重复/额外/路径/目录/符号链接/加密/未知压缩方法。只流读这两成员，**不执行ZIP extractall**。sidecar最多256字节，tar最多2GB，流式核长度与SHA。下载及展开各600秒预算，socket20秒超时；私有临时目录失败即清理，核验后以hardlink原子发布incoming。原root promote仍复制到root私有文件后完整验tar、candidate清单/权限、排空、备份、切换和回退，不因新通道放宽。
+- 新通道磁盘需额外容纳ZIP与tar（最多约4GB，另计root verifier/展开/备份）；本次不做磁盘扩容或自动清理旧发行版。同releaseId仅允许相同SHA复用。真实Linux权限、原子发布与跨网传输需要PM后续目标机验收，本地Windows测试不代替该证据。
+
+定向命令：`node --test tests/cloud-artifact-source.test.mjs tests/cloud-deployment.test.mjs`（8/8），`python tests/cloud-artifact-fetch.test.py`（4/4，本地回环假源；无真实token/签名URL）。覆盖manifest重跑身份、固定API凭据边界、URL/DNS拒绝、ZIP摘要/成员预算、302拒跟及双层摘要链。沙箱首次junction/回环因系统权限拒绝，按相同测试获准本地执行后全过；未执行服务器操作、完整构建或绘图探针。

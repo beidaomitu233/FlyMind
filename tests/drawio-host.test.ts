@@ -1,10 +1,23 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
-import {DrawioHostController,MAX_HOST_MESSAGE_BYTES,MAX_HOST_XML_BYTES,type HostXML,type HostError} from '../src/drawing/engine/drawio-host/controller'
+import {DrawioHostController,HOST_STARTUP_TIMEOUT_MS,HOST_PREPARATION_TIMEOUT_MS,MAX_HOST_MESSAGE_BYTES,MAX_HOST_XML_BYTES,type HostXML,type HostError} from '../src/drawing/engine/drawio-host/controller'
 import {businessLibraryConfiguration,drawioHostURL} from '../src/drawing/engine/drawio-host/library'
 import {hasUncommittedNativeText} from '../src/drawing/engine/drawio-host/editing'
 const xml='<mxGraphModel><root><mxCell id="0"/></root></mxGraphModel>'
 const collabXML='<mxfile><diagram id="live" name="page"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="a" parent="1" vertex="1" value="before"><mxGeometry x="20" y="20" width="100" height="40" as="geometry"/></mxCell></root></mxGraphModel></diagram></mxfile>'
+
+test('cold editor startup remains pending past 30s, requires actual load, and fails at the bounded deadline',t=>{
+ t.mock.timers.enable({apis:['setTimeout']})
+ const h=setup();try{
+  assert.equal(HOST_STARTUP_TIMEOUT_MS,90_000);assert.equal(HOST_PREPARATION_TIMEOUT_MS,100_000)
+  t.mock.timers.tick(30_001);assert.equal(h.errors.length,0);assert.equal(h.ready.length,0)
+  h.receive({event:'configure'});h.receive({event:'init'});assert.equal(h.ready.length,0)
+  t.mock.timers.tick(59_998);assert.equal(h.errors.length,0)
+  h.receive({event:'load',xml});assert.equal(h.ready.length,1)
+  t.mock.timers.tick(100_000);assert.equal(h.errors.length,0)
+  const stalled=setup();try{t.mock.timers.tick(90_000);assert.equal(stalled.errors[0]?.code,'STARTUP_TIMEOUT');assert.equal(stalled.ready.length,0)}finally{stalled.controller.dispose()}
+ }finally{h.controller.dispose();t.mock.timers.reset()}
+})
 test('cloud patch enables diff sync and waits for correlated patch/reset without a document reload',async()=>{
  const h=setup({collaboration:true,initialXML:collabXML});try{
   h.boot();assert.equal(h.sent[1].diffSync,true)

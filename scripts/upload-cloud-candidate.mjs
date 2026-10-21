@@ -4,9 +4,11 @@ import {createReadStream} from 'node:fs'
 import {createHash} from 'node:crypto'
 import {spawn} from 'node:child_process'
 import {pipeline} from 'node:stream/promises'
+import {Readable} from 'node:stream'
 import {tmpdir} from 'node:os'
 import {join,resolve,sep} from 'node:path'
 import {pathToFileURL} from 'node:url'
+import {artifactFetchMetadata,readCandidateIdentity} from './cloud-artifact-source.mjs'
 export const MAX_UPLOAD_BYTES=2_000_000_000
 export function deploymentUploadConfig(env=process.env){
  const environment=env.DEPLOY_ENVIRONMENT,id=env.DEPLOY_RELEASE_ID,host=env.DEPLOY_SSH_HOST,user=env.DEPLOY_SSH_USER,port=env.DEPLOY_SSH_PORT||'22'
@@ -14,25 +16,40 @@ export function deploymentUploadConfig(env=process.env){
  if(!env.DEPLOY_SSH_KEY?.includes('PRIVATE KEY')||!env.DEPLOY_KNOWN_HOSTS?.trim())throw Error('Pinned SSH host and deployment key are required')
  return {environment,id,host,user,port}
 }
-export async function runSSH(args,inputPath){
- const child=spawn('ssh',args,{stdio:[inputPath?'pipe':'ignore','inherit','inherit'],shell:false,windowsHide:true})
+export async function runSSH(args,inputPath,inputData){
+ const hasInput=!!inputPath||inputData!==undefined
+ const child=spawn('ssh',args,{stdio:[hasInput?'pipe':'ignore','inherit','inherit'],shell:false,windowsHide:true})
  const finished=new Promise((yes,no)=>{child.once('error',no);child.once('close',code=>code===0?yes():no(Error('ssh failed with code '+code)))})
  const timer=setTimeout(()=>child.kill('SIGTERM'),20*60*1000)
- try{const results=await Promise.allSettled([finished,...(inputPath?[pipeline(createReadStream(inputPath),child.stdin)]:[])]);for(const result of results)if(result.status==='rejected')throw result.reason}
+ try{const results=await Promise.allSettled([finished,...(hasInput?[pipeline(inputPath?createReadStream(inputPath):Readable.from([inputData]),child.stdin)]:[])]);for(const result of results)if(result.status==='rejected')throw result.reason}
  finally{clearTimeout(timer)}
 }
 export async function uploadCloudCandidate(env=process.env){
-const {environment,id,host,user,port}=deploymentUploadConfig(env)
 const archive=resolve('download/flymind-linux-x64.tar.gz'),info=await lstat(archive)
 if(!info.isFile()||info.isSymbolicLink()||info.size>MAX_UPLOAD_BYTES)throw Error('Deployment archive exceeds upload budget or is not a regular file')
 const sidecar=(await readFile(archive+'.sha256','utf8')).trim(),expected=sidecar.split(/\s+/)[0]
 if(!/^[a-f0-9]{64}$/.test(expected))throw Error('Invalid digest sidecar')
 const hash=createHash('sha256');for await(const bytes of createReadStream(archive))hash.update(bytes);if(hash.digest('hex')!==expected)throw Error('Downloaded artifact digest mismatch')
+// Failed-only reruns keep the producer's manifest id, never the current attempt.
+const identity=await readCandidateIdentity(archive,{runId:env.DEPLOY_SOURCE_RUN_ID,headSHA:env.DEPLOY_SOURCE_SHA})
+const {environment,id,host,user,port}=deploymentUploadConfig({...env,DEPLOY_RELEASE_ID:identity.releaseId})
+const transport=env.DEPLOY_TRANSPORT||'bytes'
+if(!['bytes','artifact-https'].includes(transport))throw Error('Unknown deployment transport')
 const root=await mkdtemp(join(tmpdir(),'flymind-deploy-')),key=join(root,'key'),known=join(root,'known_hosts')
 try{
  await writeFile(key,env.DEPLOY_SSH_KEY.replaceAll('\r','')+'\n',{mode:0o600});await writeFile(known,env.DEPLOY_KNOWN_HOSTS+'\n',{mode:0o600})
  const options=['-T','-i',key,'-o','RequestTTY=no','-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','StrictHostKeyChecking=yes','-o','UserKnownHostsFile='+known,'-o','ConnectTimeout=15','-o','ServerAliveInterval=30','-o','ServerAliveCountMax=3','-p',port,user+'@'+host]
- await runSSH([...options,'flymind-upload '+id+' '+expected],archive)
+ if(transport==='bytes')await runSSH([...options,'flymind-upload '+id+' '+expected],archive)
+ else{
+  // A URL expires in one minute. Each bounded retry obtains a new capability;
+  // neither the URL nor API token is stored, printed or placed in argv/env.
+  for(let attempt=0;attempt<2;attempt++){
+   const metadata=Buffer.from(JSON.stringify(await artifactFetchMetadata(env,info.size)))
+   if(metadata.length>16384)throw Error('Artifact metadata budget exceeded')
+   try{await runSSH([...options,'flymind-fetch '+id+' '+expected],undefined,metadata);break}
+   catch{if(attempt===1)throw Error('Restricted artifact transfer failed after two attempts')}
+  }
+ }
  await runSSH([...options,'sudo -n /usr/local/libexec/flymind-promote '+environment+' '+id+' '+expected])
 }finally{if(!resolve(root).startsWith(resolve(tmpdir())+sep)||!root.includes('flymind-deploy-'))throw Error('Unsafe credential cleanup path');await rm(root,{recursive:true,force:true})}
 }

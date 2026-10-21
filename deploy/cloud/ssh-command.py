@@ -8,6 +8,7 @@ import shlex
 import stat
 import sys
 import uuid
+import importlib.util
 
 INCOMING = '/var/lib/flymind/incoming'
 PROMOTE = '/usr/local/libexec/flymind-promote'
@@ -70,9 +71,33 @@ def main():
     if len(args) == 3 and args[0] == 'flymind-upload' and RELEASE.fullmatch(args[1]) and DIGEST.fullmatch(args[2]):
         receive(args[1], args[2])
         return
+    if len(args) == 3 and args[0] == 'flymind-fetch' and RELEASE.fullmatch(args[1]) and DIGEST.fullmatch(args[2]):
+        raw = sys.stdin.buffer.read(16385)
+        if len(raw) > 16384:
+            raise ValueError('Artifact metadata budget exceeded')
+        module_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'artifact-fetch.py')
+        # Helper is installed separately by root, never loaded from incoming.
+        check = module_path
+        while True:
+            info = os.lstat(check)
+            if stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022 or (check == module_path and not stat.S_ISREG(info.st_mode)):
+                raise ValueError('Artifact helper ownership invalid')
+            if check == '/':
+                break
+            check = os.path.dirname(check)
+        spec = importlib.util.spec_from_file_location('flymind_artifact_fetch', module_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        try:
+            result = module.fetch_artifact(args[1], args[2], json.loads(raw), INCOMING, existing_matches)
+        except Exception:
+            # URLs/queries/HTTP exception text are capability-bearing; no echo.
+            raise ValueError('Artifact fetch refused; no archive published') from None
+        print(json.dumps(result))
+        return
     if len(args) == 6 and args[:3] == ['sudo', '-n', PROMOTE] and args[3] in ('staging', 'production') and RELEASE.fullmatch(args[4]) and DIGEST.fullmatch(args[5]):
         os.execv('/usr/bin/sudo', ['/usr/bin/sudo', '-n', PROMOTE, *args[3:]])
-    raise ValueError('Only FlyMind archive upload and fixed promotion are allowed')
+    raise ValueError('Only FlyMind restricted artifact transfer and fixed promotion are allowed')
 
 
 if __name__ == '__main__':
