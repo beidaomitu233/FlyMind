@@ -46,6 +46,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Artifact receiver validation failed' }
           python tests/cloud-ssh-command.test.py
           if ($LASTEXITCODE -ne 0) { throw 'Forced command validation failed' }
+          python tests/cloud-control-plane-install.test.py
+          if ($LASTEXITCODE -ne 0) { throw 'Console installer validation failed' }
       - name: Java control plane
         shell: pwsh
         run: |

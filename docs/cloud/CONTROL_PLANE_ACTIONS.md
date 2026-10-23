@@ -30,6 +30,39 @@ sudo -n /usr/local/libexec/flymind-control-plane-promote staging|production run-
 
 ## 一次性控制台安装
 
+### 推荐：本次已核主机的一次安装器
+
+`deploy/cloud/install-control-plane-actions.py` 只针对 OpenCloudOS 已核路径：Python `/usr/bin/python3` 3.11.6、Node `/opt/flymind/runtime/node-v22.23.3-linux-x64/bin/node`、`/usr/bin/mysqldump`、原forced-command `/usr/local/libexec/flymind-ssh-command.py`。不替换系统Python，不启动/重启服务，不改数据库/用户密码/authorized_keys，不开启Actions生产开关。
+
+PM交接固定提交SHA、其GitHub源码archive SHA256、从该SHA成功Actions下载并审核的 `control-plane-runtime-evidence.json` 及原字节SHA256；用户无需复制secret。证据保持实际CI契约 `{schemaVersion:1,sourceCommit,jarSha256,allowedMigrations,verified:true}`，不伪造额外release字段。以下占位值由PM给出完整可复制命令：
+
+```bash
+# 只在服务器root控制台执行；不是开发机SSH。
+umask 077
+SOURCE_COMMIT=PM_APPROVED_40_HEX_COMMIT
+SOURCE_ARCHIVE_SHA256=PM_APPROVED_ARCHIVE_SHA256
+POLICY_SHA256=PM_APPROVED_EVIDENCE_SHA256
+work=$(mktemp -d /root/flymind-cp-setup.XXXXXXXX)
+curl --fail --proto '=https' --tlsv1.2 \
+  "https://codeload.github.com/beidaomitu233/FlyMind/tar.gz/$SOURCE_COMMIT" -o "$work/source.tar.gz"
+printf '%s  %s\n' "$SOURCE_ARCHIVE_SHA256" "$work/source.tar.gz" | sha256sum -c - || exit 1
+tar --no-same-owner --no-same-permissions -xzf "$work/source.tar.gz" -C "$work"
+# policy已由PM通过成功run官方artifact获取，放到root保护位置，不含secret。
+/usr/bin/python3 "$work/FlyMind-$SOURCE_COMMIT/deploy/cloud/install-control-plane-actions.py" \
+  --source-root "$work/FlyMind-$SOURCE_COMMIT" --source-commit "$SOURCE_COMMIT" \
+  --policy-json /root/control-plane-runtime-evidence.json --policy-sha256 "$POLICY_SHA256"
+```
+
+默认复用现有 `flymind-deploy` 用户；若现有受限账号实际不同，由PM在上述唯一调用补 `--deploy-user 已核账号`，不能改为root。安装器只信root保护源码及祖先；源码archive固定SHA核验由上述控制台命令完成，脚本不会联网或调用Git。
+
+安装器安全解析既有 `/etc/flymind/control-plane.env`，仅接受loopback、`fly_mind`与既有非root专用账号，生成root0600 MySQL CNF/readiness key/固定config，无source/eval、无secret输出。已有私有文件同字节复用，不同即拒绝且保留原文件。先暂存校验代码、`visudo -c/-cf`，再执行实际只读一致性dump并校验摘要；该账号权限不够则保护退出，**不自动扩大DB权限**。成功后才原子安装CP代码、同目录artifact helper、原forced-command及精确CP可执行文件sudo规则；失败回退自身代码替换，私有配置和备份保留root保护。参数限制仍由forced-command与root发布器同时严格校验，不增加通用shell/node/systemctl sudo权限。
+
+同一证据/配置可重复执行；此安装只做一次，后续相同schema的代码更新走Actions。schema变更另审root迁移政策。非标准EnvironmentFile转义/多行、路径/权限/证据不符会明确拒绝，不猜测secret含义。输出仅固定诊断阶段：validate-source/private-config/dry-run-backup/install-dispatch/sudoers-check；不会输出子进程原始错误/SQL/环境值。
+
+本地纯函数测试：`python tests/cloud-control-plane-install.test.py`，9项通过；覆盖env非执行解析、固定库、CI证据、root账号/外部地址拒绝、私有文件幂等与managed-code回退。测试使用临时文件，Windows夹具适配POSIX只读位；**未在本地执行root/systemd安装或真实dump**，实际控制台安装仍是待验收门槛。
+
+以下分项手工说明保留作审计参考，正常使用上述一次安装器，无需逐文件填路径或复制secret。
+
 由 PM 给出**已审提交的40位SHA和每个安装文件的SHA256**。以下命令只在服务器控制台运行；不索取腾讯扫码，不从开发机连接服务器。既有Node22、Python（`tarfile.data_filter`安全能力）、Java17、MySQL客户端与service先核对；不安装/升级现有数据库。
 
 ### 1. 固定来源与文件
