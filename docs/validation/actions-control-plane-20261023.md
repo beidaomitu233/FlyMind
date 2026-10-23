@@ -86,3 +86,11 @@ PM Windows完整原9项通过，新POSIX权限项明确skip（非Linux证据）�
 固定安装器维护版a1f8d60通过同一本地验证页实际执行成功：installer installed=true，SSH exit0，原policy保持，Node官方同字节/精确权限及数据库备份验证通过，服务未重启。临时配置会话及回环服务已关闭，后续不再本机SSH。
 
 已设置CLOUD_CONTROL_PLANE_DEPLOY=true，手动同包晋级run39929704421在真实服务更新前被artifact-https接收器拒绝（两次均`Artifact fetch refused; no archive published`），尚无上传或晋级。接收器精确存储host配置未被证明可用，不能把HTTPS传输称为已验收。改用既有受限flymind-upload字节流，保留同run源/平台/摘要/迁移/备份与Java先行门槛，不扩大服务器权限。CLOUD_ARTIFACT_HTTPS=false，自动生产仍false。CI上传器增加ssh -q抑制腾讯认证banner进入日志，远端固定命令stderr继续保留；PM原有13项来源/命令顺序测试全部通过。
+
+同包字节晋级已由main fbbdbac触发run39930771837，目标仍是b930048候选run39926499342/attempt1，未混用新构建。09:35 UTC仍在上传/晋级步骤，实际/readyz还是旧release run-39450074276-1，因此此时不能宣称上线成功。上传阶段没有进度日志，正在补充有界传输进度及慢链路预算，现行作业不被本机干预。
+
+独立Verify run39930757669的358项中357通过，一项Windows租约清理夹具失败：用例持有的owner为当前测试PID8936，PowerShell文件句柄200ms后只发送stdin关闭，未确认句柄已在750ms清理预算内释放。固定engine代理只读定位，未改运行时或延长其清理预算；此为有依据的夹具调度推断，尚非完全实证。当前Linux候选原四项验收全部成功，Windows夹具问题单独保留记录，不当作已修复。
+
+run39930771837于09:41:13 UTC在20分钟上传边界失败（ssh code255），没有远端上传成功收据、未调用Java或应用晋级。原脚本没有传输计数，不能据此推断远端已接收比例。新增安全的单流发送进度，明确inputBytesQueued只是本地交给SSH的字节，不是远端落盘；字节上传硬限60分钟、发送停滞5分钟、EOF后回执10分钟，总限仍60分钟；每次晋级20分钟不变，整个production job120分钟。超时区分机器码，TERM/KILL有界收口，不自动重试不明请求，不改来源/SHA或服务器权限。
+
+Windows失败夹具移除200ms调度假设：真实持锁至预算耗尽，明确验证PORT_OCCUPIED/cleanupCode及仅自有租约残留；收到Dispose和子进程退出确认后再次请求同一被占用端口，验证无清理错误、owner清空、无SQLite、原listener保留。生产运行时及750ms预算不变。固定两代理实施后，PM独立验收部署来源/命令/传输25/25及完整runtime-instance13/13，无skip。沙箱初跑因禁止临时链接/原子替换失败，在已授权的隔离夹具环境重跑通过；不将沙箱失败算作代码通过。候选仍使用原b930048/run39926499342，维护修复另行记录；未改版本/tag，未从本机SSH。

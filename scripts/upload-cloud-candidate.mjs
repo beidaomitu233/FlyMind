@@ -4,7 +4,7 @@ import {createReadStream} from 'node:fs'
 import {createHash} from 'node:crypto'
 import {spawn} from 'node:child_process'
 import {pipeline} from 'node:stream/promises'
-import {Readable} from 'node:stream'
+import {Readable,Transform} from 'node:stream'
 import {tmpdir} from 'node:os'
 import {join,resolve,sep} from 'node:path'
 import {pathToFileURL} from 'node:url'
@@ -25,13 +25,55 @@ export async function promoteUploadedCandidate(config,digest,options,controlPlan
  // A failed Java readiness/rollback command must reject before app promotion.
  for(const command of deploymentPromotionCommands(config.environment,config.id,digest,controlPlane))await ssh([...options,command])
 }
-export async function runSSH(args,inputPath,inputData){
+export const SSH_LIMITS=Object.freeze({uploadMs:60*60*1000,idleMs:5*60*1000,receiptMs:10*60*1000,commandMs:20*60*1000,progressMs:30000,terminateMs:5000})
+export async function runSSH(args,inputPath,inputData,hooks={}){
  const hasInput=!!inputPath||inputData!==undefined
- const child=spawn('ssh',args,{stdio:[hasInput?'pipe':'ignore','inherit','inherit'],shell:false,windowsHide:true})
- const finished=new Promise((yes,no)=>{child.once('error',no);child.once('close',code=>code===0?yes():no(Error('ssh failed with code '+code)))})
- const timer=setTimeout(()=>child.kill('SIGTERM'),20*60*1000)
- try{const results=await Promise.allSettled([finished,...(hasInput?[pipeline(inputPath?createReadStream(inputPath):Readable.from([inputData]),child.stdin)]:[])]);for(const result of results)if(result.status==='rejected')throw result.reason}
- finally{clearTimeout(timer)}
+ const bytesMode=!!inputPath,now=hooks.now??Date.now,log=hooks.log??console.log
+ const later=hooks.setTimeout??setTimeout,cancel=hooks.clearTimeout??clearTimeout,every=hooks.setInterval??setInterval,cancelEvery=hooks.clearInterval??clearInterval
+ const totalBytes=bytesMode?(await (hooks.stat??lstat)(inputPath)).size:0,started=now()
+ let inputBytesQueued=0,lastProgress=started,lastReport=started,inputFinishedAt,phase=bytesMode?'sending':'command',failure,source,termTimer,killTimer,settled=false
+ const child=(hooks.spawn??spawn)('ssh',args,{stdio:[hasInput?'pipe':'ignore','inherit','inherit'],shell:false,windowsHide:true})
+ let complete
+ const finished=new Promise((yes,no)=>{complete=(error)=>{if(settled)return;settled=true;error?no(error):yes()}})
+ // Local stream bytes queued toward SSH, never a claim of remote receipt/fsync.
+ const report=event=>{if(bytesMode)log(JSON.stringify({event,phase,inputBytesQueued,totalBytes,elapsedSeconds:Math.floor((now()-started)/1000),averageBytesPerSecond:Math.floor(inputBytesQueued/Math.max(1,(now()-started)/1000))}))}
+ const fail=error=>{
+  if(failure)return
+  failure=error;report('upload-failed')
+  if(settled)return
+  source?.destroy(error);if(hasInput)child.stdin?.destroy(error)
+  try{child.kill('SIGTERM')}catch{}
+  termTimer=later(()=>{if(settled)return;try{child.kill('SIGKILL')}catch{}
+   killTimer=later(()=>complete(failure),SSH_LIMITS.terminateMs)
+  },SSH_LIMITS.terminateMs)
+ }
+ child.once('error',()=>fail(Object.assign(Error('ssh could not start'),{code:'SSH_START_FAILED'})))
+ child.once('close',(code,signal)=>{
+  if(hasInput&&child.stdin?.writableFinished!==true){failure??=Object.assign(Error('SSH closed before input delivery completed; outcome is unconfirmed'),{code:'SSH_INPUT_INCOMPLETE'});source?.destroy(failure);child.stdin?.destroy(failure)}
+  complete(failure??(code===0?undefined:Object.assign(Error('ssh exited unsuccessfully ('+(signal?'signal '+signal:'code '+code)+')'),{code:'SSH_EXIT_FAILED'})))
+ })
+ const deadline=(code,description)=>fail(Object.assign(Error(`${description}; phase=${phase}; inputBytesQueued=${inputBytesQueued}/${totalBytes}; elapsedSeconds=${Math.floor((now()-started)/1000)}`),{code}))
+ const monitor=every(()=>{
+  if(settled||failure)return
+  if(now()-started>=(bytesMode?SSH_LIMITS.uploadMs:SSH_LIMITS.commandMs))return deadline(bytesMode?'SSH_UPLOAD_DEADLINE':'SSH_COMMAND_DEADLINE',bytesMode?'Byte upload hard deadline exceeded':'SSH command deadline exceeded')
+  if(bytesMode&&phase==='sending'&&now()-lastProgress>=SSH_LIMITS.idleMs)return deadline('SSH_UPLOAD_IDLE','No new upload input bytes for five minutes')
+  if(bytesMode&&phase==='awaiting-receipt'&&now()-inputFinishedAt>=SSH_LIMITS.receiptMs)return deadline('SSH_RECEIPT_DEADLINE','Upload sent; remote receipt deadline exceeded')
+  if(bytesMode&&now()-lastReport>=SSH_LIMITS.progressMs){lastReport=now();report('upload-progress')}
+ },1000)
+ report('upload-started')
+ const sending=hasInput?(async()=>{
+  source=inputPath?(hooks.readStream??createReadStream)(inputPath):Readable.from([inputData])
+  const meter=new Transform({transform(chunk,_encoding,callback){inputBytesQueued+=chunk.length;lastProgress=now();callback(null,chunk)}})
+  try{await pipeline(source,meter,child.stdin)
+   if(bytesMode&&!failure){phase='awaiting-receipt';inputFinishedAt=now();lastReport=now();report('upload-input-finished')}
+  }catch{fail(Object.assign(Error('SSH input stream failed; request outcome is unconfirmed'),{code:'SSH_INPUT_FAILED'}));throw failure}
+ })():Promise.resolve()
+ try{
+  const results=await Promise.allSettled([finished,sending])
+  if(failure)throw failure
+  for(const result of results)if(result.status==='rejected')throw result.reason
+  if(bytesMode)report('upload-confirmed')
+ }finally{cancelEvery(monitor);cancel(termTimer);cancel(killTimer)}
 }
 export async function uploadCloudCandidate(env=process.env){
 const archive=resolve('download/flymind-linux-x64.tar.gz'),info=await lstat(archive)

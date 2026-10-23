@@ -214,6 +214,7 @@ jobs:
           DEPLOY_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
         run: node scripts/upload-cloud-candidate.mjs
   production:
+    timeout-minutes: 120
     permissions:
       contents: read
       actions: read
