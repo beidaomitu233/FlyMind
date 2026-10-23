@@ -1,0 +1,34 @@
+name: Check production HTTPS from Actions
+on:
+  workflow_dispatch:
+    inputs:
+      expected_release:
+        description: Exact expected application release ID
+        required: true
+        type: string
+permissions: {}
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 4
+    steps:
+      - name: Read public readiness using DNS and the known production origin
+        env:
+          EXPECTED_RELEASE: ${{ inputs.expected_release }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_RELEASE" =~ ^run-[0-9]+-[0-9]+$ ]]
+          failed=0
+          for route in dns origin; do
+            args=()
+            if [ "$route" = origin ]; then args=(--resolve fly.hui7.fun:443:1.14.176.76); fi
+            if curl --fail --silent --show-error --connect-timeout 10 --max-time 30 --retry 1 --retry-delay 2 "${args[@]}" https://fly.hui7.fun/readyz -o "$route.json"; then
+              jq -e --arg release "$EXPECTED_RELEASE" '.ready == true and .releaseId == $release' "$route.json"
+              echo "$route: expected release ready"
+            else
+              echo "$route: HTTPS connection failed"
+              failed=1
+            fi
+          done
+          exit "$failed"
