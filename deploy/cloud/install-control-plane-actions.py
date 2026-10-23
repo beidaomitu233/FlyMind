@@ -21,6 +21,7 @@ import urllib.parse
 NODE = '/opt/flymind/runtime/node-v22.23.3-linux-x64/bin/node'
 PYTHON = '/usr/bin/python3'
 MYSQLDUMP = '/usr/bin/mysqldump'
+BASH = '/usr/bin/bash'
 ENVIRONMENT = '/etc/flymind/control-plane.env'
 PRIVATE = '/etc/flymind/production'
 BACKUPS = '/var/backups/flymind/production-mysql'
@@ -148,6 +149,12 @@ def sudoers_content(user):
             command + ' staging run-* *\n').encode()
 
 
+def backup_helper(template):
+    if not template.startswith('#!/bin/bash\n') or template.count('/AUDITED_SUPPLIED_PYTHON/bin/python3') != 1 or template.count('readonly database=AUDITED_DB_NAME') != 1:
+        raise SetupError('Reviewed backup template shape changed')
+    return template.replace('#!/bin/bash\n', '#!' + BASH + '\n', 1).replace('/AUDITED_SUPPLIED_PYTHON/bin/python3', PYTHON).replace('readonly database=AUDITED_DB_NAME', 'readonly database=fly_mind').encode()
+
+
 def check_root_path(path, *, directory=False, private=False, executable=False, allow_final_link=False):
     path = pathlib.Path(path)
     if not path.is_absolute() or str(path) != os.path.normpath(str(path)):
@@ -272,7 +279,7 @@ def install(args):
     if account.pw_uid == 0:
         raise SetupError('Deployment user must not be root')
     permissions = sudoers_content(args.deploy_user)
-    for binary in (NODE, PYTHON, MYSQLDUMP, '/usr/sbin/visudo', '/bin/bash', '/usr/bin/gzip'):
+    for binary in (NODE, PYTHON, MYSQLDUMP, '/usr/sbin/visudo', BASH, '/usr/bin/gzip'):
         check_root_path(binary, executable=True, allow_final_link=True)
     if run_checked([NODE, '--version']).strip() != b'v22.23.3':
         raise SetupError('Audited Node version required')
@@ -286,9 +293,7 @@ def install(args):
         LIBEXEC + '/artifact-fetch.py': (read_protected(source / 'deploy/cloud/artifact-fetch.py'), 0o644),
     }
     template = read_protected(source / 'deploy/cloud/control-plane-backup.sh.example').decode()
-    if template.count('/AUDITED_SUPPLIED_PYTHON/bin/python3') != 1 or template.count('readonly database=AUDITED_DB_NAME') != 1:
-        raise SetupError('Reviewed backup template shape changed')
-    helper = template.replace('/AUDITED_SUPPLIED_PYTHON/bin/python3', PYTHON).replace('readonly database=AUDITED_DB_NAME', 'readonly database=fly_mind').encode()
+    helper = backup_helper(template)
     code[LIBEXEC + '/flymind-production-mysql-backup'] = (helper, 0o755)
     code[LIBEXEC + '/flymind-control-plane-promote'] = (('#!/bin/sh\nexec ' + NODE + ' ' + LIBEXEC + '/flymind-control-plane-promote.mjs "$@"\n').encode(), 0o755)
     for path in (PRIVATE, BACKUPS, STATE, LIBEXEC, '/etc/sudoers.d'):
@@ -319,7 +324,7 @@ def install(args):
             elif target.endswith('.mjs'):
                 run_checked([NODE, '--check', str(path)])
         staged_helper = staged[LIBEXEC + '/flymind-production-mysql-backup']
-        run_checked(['/bin/bash', '-n', str(staged_helper)])
+        run_checked([BASH, '-n', str(staged_helper)])
         sudo_stage = stage / 'sudoers'
         write_exclusive(sudo_stage, permissions, 0o440)
         run_checked(['/usr/sbin/visudo', '-cf', str(sudo_stage)])
@@ -329,7 +334,7 @@ def install(args):
         # The only DB operation: consistent read-only dump, no service stop/SQL writes.
         phase = 'dry-run-backup'
         began = int(time.time() * 1000)
-        raw = run_checked(['/bin/bash', str(staged_helper)], timeout=300)
+        raw = run_checked([BASH, str(staged_helper)], timeout=300)
         receipt = json.loads(raw)
         if set(receipt) != {'file', 'sha256', 'bytes', 'startedAt', 'completedAt', 'consistent'} or not re.fullmatch(r'database-[a-zA-Z0-9_-]+\.sql\.gz', str(receipt.get('file'))) or receipt.get('consistent') is not True:
             raise SetupError('Read-only database dump receipt invalid')

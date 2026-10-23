@@ -52,6 +52,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Forced command validation failed' }
           python tests/cloud-control-plane-install.test.py
           if ($LASTEXITCODE -ne 0) { throw 'Console installer validation failed' }
+          python tests/cloud-node-ownership-repair.test.py
+          if ($LASTEXITCODE -ne 0) { throw 'Fixed Node ownership validation failed' }
       - name: Java control plane
         shell: pwsh
         run: |
@@ -113,6 +115,8 @@ jobs:
         with:
           name: cloud-source
           path: cloud-source
+      - name: Linux fixed Node ownership repair fixtures (no host changes)
+        run: python3 tests/cloud-node-ownership-repair.test.py
       - name: Actual packaged JAR, MySQL 8, Redis 7 and independent account lifecycle
         env:
           FLYMIND_CI_CONTROL_PLANE_SMOKE: '1'

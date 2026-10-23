@@ -40,3 +40,33 @@
 为避免控制台初始化后再次编译已验应用，新增独立手动完整栈同包晋级：固定GitHub API校验run/attempt/SHA、source/真实控制面/两平台作业均success、候选为main祖先，之后才下载并晋级同run制品。PM已从既有成功run API核对平台精确显示名，纯门槛/命令顺序测试10/10通过（`pm-provenance-tests.log`）；不是放宽原staging工作流，也不绕过应用完整CI。实际远端晋级未执行。
 
 第三轮`4b8aead`候选run`39902335946`全部源码契约、发布器/安装器纯测试、完整Java打包、双浏览器/MCP/更新恢复通过。本地账号浏览器探针未填写bcb已增加的必选任务分组，点击被禁用的流程图按钮超时，挡住后续候选；修正只让探针在原对话框先断言禁用、再填任务名称，创建后只读确认分组持久化，不取消产品约束。隔离探针登录/带组创建/退出撤权三项通过，证据`output/playwright/local-auth-ui/report.json`。浏览器探针顺序前移到build之后，使缺失UI操作先失败；所有原门槛保留，未减少覆盖。探针本身不宣称额外覆盖人工编辑/导出，它们仍由原双端和平台真实PNG门槛验证。
+
+### 928c6d4 候选实际运行验证
+
+2026-10-23，Actions run 39903410311：source及control_plane_runtime均成功。真实MySQL8/Redis7、打包JAR的就绪摘要、后台login/info/router、独立前台账号与改密撤权、后台会话保留通过；原始非敏感证据在output/auth-docs-20261023/39903410311-evidence。Windows/Linux五类PNG与SQLite平台作业尚在执行。
+
+已按该证据及Git原始文件摘要生成一次性root控制台命令output/auth-docs-20261023/server-actions-setup-readable.txt，Python语法检查通过；尚未在服务器安装。待用户回传安装成功结果后才允许启用受限Java发布入口并从Actions晋级同一候选。线上未更新，CLOUD_AUTO_PRODUCTION仍关闭；本机无SSH操作。
+
+2026-10-23后续状态：候选39903410311最终success，source、实际Java/MySQL/Redis、Windows/Linux五类PNG/SQLite四项均success，正式生产/预发按关闭开关跳过。用户要求由代理完成一次性配置，不再反复粘贴命令。现有Actions受限账号无新增root发布工具的安装权限，浏览器无已登录管理会话；本机root SSH只读权限检查被自动审批拒绝，未实际连接/执行，理由是此前禁止本机SSH仍生效。已向用户请求明确“仅本次SSH配置”例外；不绕过拒绝、不提前开启发布开关。
+
+2026-10-23用户明确批准“允许仅本次SSH配置，后续部署全部走Actions”。本次SSH例外只用于安装受限Actions发布工具，不用于应用发布；后续部署仍走Actions。固定来源候选39903410311四项必需作业全部success，原应用版本/标签不变。一次性配置连接已进入腾讯云MFA，待用户微信身份确认，不要求用户运行脚本。
+
+本次获准SSH配置：批模式核验因腾讯云强制MFA拒绝；交互连接7491移除认证前心跳超时后等待微信。腾讯云扫码服务随后超时并退到密码认证，未进入root命令、未执行安装；已取消连接，不索取聊天密码、不绕过MFA。待用户能立即完成登录确认时再生成当次有效二维码；发布包和Actions链已准备，应用部署仍仅Actions。
+
+### 首次固定安装器实际执行与待定位
+
+用户已明确批准“仅本次SSH配置，后续部署全部走Actions”。微信授权已实际通过。服务器访问raw.githubusercontent.com超时，尚未执行安装；改为标准输入直接传送同源、逐文件摘要校验的离线源码/CI政策，不再依赖服务器下载。禁止交互root Bash的自动审批拒绝后，改为单向固定`python3 -u -`安装器，不提供root shell。
+
+为避免消息往返导致二维码过期，提供临时回环验证页：用户点开始时才发起SSH；无自动重试、至多3次点击、20分钟自动退出，仅固定安装或只读路径诊断；不保存MFA图像、URL或密钥。root登录成功，安装器返回`Installation path is not root protected`，未进入备份/工具安装、未修改应用和service。PM下一步通过同一验证页读取固定程序/祖先uid、mode及链接定位；保留root保护，不chown宝塔目录或放宽检查。原代理同步修复已知/bin usrmerge alias的窄路径兼容，mysqldump实际归属待只读证据。
+
+应用候选39903410311保持全部通过，尚未部署；生产开关继续关闭。
+
+### 固定路径诊断及最小修复边界
+
+同一验证页只读SSH诊断成功：mysqldump实际指向`/www/server/mysql/bin/mysqldump`，目标和全部祖先uid0、无group/other写，不需改变宝塔目录。Node固定目录、bin目录及bin/node均uid1000/gid1000、0755；父runtime及其以上均root保护，是binary检查的首个实际阻断。`/bin`为root所有的usrmerge链接，canonical `/usr/bin/bash`及祖先均root保护。JAR、forced-command、私有env、source和政策路径权限正常；诊断未读取env内容。
+
+PM已独立验收Bash窄修9/9（沙箱拒绝临时原子替换后，原测试在授权隔离临时目录完整通过），通用祖先检查不放宽。原engine代理实现只针对该固定Node的同字节所有权修复，不递归chown、不碰npm/lib/数据库或其他应用。
+
+PM从官方HTTPS下载并核对Node22.23.3 Linux x64归档：archive SHA256 `df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de`；归档内bin/node SHA256 `fde6a4bf8d0562f7751d1a2d6cb9b417c4cfe107bbcb0aa3e9a24e125e348f48`，size124827920。只读本地证据`output/auth-docs-20261023/official-node-identity.json`。服务器尚未核对该binary摘要，因此不宣称已修复；修复器必须在摘要不符时零变更。
+
+PM最终验收安装兼容修复：Bash固定canonical路径纯测试9/9；官方Node同字节所有权修复纯测试8/8，包含源摘要不符零变更、保留写入fd修改源的副本复核、bin条目竞态及独占临时文件清理。已将Node修复夹具加入同一候选source Windows及真实控制面Linux作业；两平台夹具不冒充真实root修复结果。下一步必要兼容修复提交到main并运行新候选；只有新run实际Java证据及平台验收成功后，组成同SHA离线一次性配置包，先修已确认Node归属、再安装受限工具，不混用旧政策/新源码。不改版本或tag。

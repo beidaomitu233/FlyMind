@@ -34,6 +34,10 @@ sudo -n /usr/local/libexec/flymind-control-plane-promote staging|production run-
 
 `deploy/cloud/install-control-plane-actions.py` 只针对 OpenCloudOS 已核路径：Python `/usr/bin/python3` 3.11.6、Node `/opt/flymind/runtime/node-v22.23.3-linux-x64/bin/node`、`/usr/bin/mysqldump`、原forced-command `/usr/local/libexec/flymind-ssh-command.py`。不替换系统Python，不启动/重启服务，不改数据库/用户密码/authorized_keys，不开启Actions生产开关。
 
+usrmerge主机的安装器只使用固定 `/usr/bin/bash` 做校验、语法检查及dump执行；安装生成的备份helper shebang同样固定该路径。不经 `/bin` symlink，也不放宽任何祖先root保护检查。mysqldump供应路径的权限仍独立严格验证，未因此绕过。
+
+本次实机诊断发现固定Node目录及可执行文件保留官方tar的uid/gid1000。仅对此已确认情况，可在安装器之前执行同一已审源码SHA中的 `repair-node-ownership.py`，不能从未验候选的ops目录执行。该脚本没有路径/hash参数、不联网、不运行Node；其官方归档SHA及bin/node的SHA/124827920字节常量已经PM从Node官方归档核对。先校验现有文件，摘要不符时零变更；只收回该固定prefix及bin两个目录的所有权，在root保护的runtime父目录生成经再次摘要核对的独立inode，root0755原子替换相同字节的node，防止旧写入fd影响未来root执行。不递归改npm/lib、不改变其他目录、不升级版本或重启进程。最终完整路径、inode身份、root权限及摘要必须通过才继续安装器。原有MySQL供应和目录不变。
+
 PM交接固定提交SHA、其GitHub源码archive SHA256、从该SHA成功Actions下载并审核的 `control-plane-runtime-evidence.json` 及原字节SHA256；用户无需复制secret。证据保持实际CI契约 `{schemaVersion:1,sourceCommit,jarSha256,allowedMigrations,verified:true}`，不伪造额外release字段。以下占位值由PM给出完整可复制命令：
 
 ```bash

@@ -83,6 +83,10 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('/usr/local/libexec/flymind-control-plane-promote production run-* *', text)
         self.assertNotIn('/bin/sh', text)
         self.assertNotIn('ALL=(ALL)', text)
+        self.assertEqual(installer.BASH, '/usr/bin/bash')
+        helper = installer.backup_helper((SOURCE.parent / 'control-plane-backup.sh.example').read_text(encoding='utf-8'))
+        self.assertEqual(helper.splitlines()[0], b'#!/usr/bin/bash')
+        self.assertIn(b'readonly database=fly_mind', helper)
         for user in ('root', 'name;command', '../other'):
             with self.assertRaises(installer.SetupError):
                 installer.sudoers_content(user)
