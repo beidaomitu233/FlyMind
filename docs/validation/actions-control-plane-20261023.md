@@ -34,3 +34,7 @@
 用户已在服务器控制台确认：Node22.23.3为`/opt/flymind/runtime/node-v22.23.3-linux-x64/bin/node`，Python3.11.6为`/usr/bin/python3`且有data_filter；mysqldump为`/usr/bin/mysqldump`，forced-command为`/usr/local/libexec/flymind-ssh-command.py`。本机未SSH。
 
 为减少控制台手工步骤，新增仅针对该已核主机的`install-control-plane-actions.py`：安全解析现有私有env，复用专用数据库凭据，不执行source/eval；干跑只读备份验证成功后才安装固定命令及精确sudoers。保留env/JAR/service/authorized_keys，不重启服务或改数据库，已有不同私有文件拒绝覆盖。PM纯测试9/9（`pm-installer-tests.log`），未实跑root安装。实际安装仍须用户控制台执行、输入同源已验CI政策及其摘要；模板/本地测试不代替目标机证明。
+
+第二轮`0615dd8`候选run`39901502894`已通过原首次授权与超时/撤权分类测试，但被真实导出测试的原始TCP ECONNRESET挡住。原日志无法确认具体失败请求；测试使用全局空闲socket复用，而字体打包会占用同一事件循环跨越keep-alive期限，因此仅将短生命周期loopback夹具改为每请求独立连接，并增加响应aborted/error上下文；无写重试、无renderer业务修改。PM保持真实PNG、权限及单次关闭全部断言，独立10/10通过（`pm-http-lifecycle.log`）。连接复用是支持充分的推断，不称已完整实证。
+
+为避免控制台初始化后再次编译已验应用，新增独立手动完整栈同包晋级：固定GitHub API校验run/attempt/SHA、source/真实控制面/两平台作业均success、候选为main祖先，之后才下载并晋级同run制品。PM已从既有成功run API核对平台精确显示名，纯门槛/命令顺序测试10/10通过（`pm-provenance-tests.log`）；不是放宽原staging工作流，也不绕过应用完整CI。实际远端晋级未执行。

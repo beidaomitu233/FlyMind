@@ -44,7 +44,18 @@ async function setup(renderer?:NativeExportRenderer,maxQueuedTeams=4,identity?:i
  async function request(path:string,options:{method?:string;body?:unknown;token?:string;rootId?:string;cookie?:string;origin?:string|null;host?:string;userId?:string|null}={}){
   const cookieUser=Object.entries(tokens).find(([,value])=>options.cookie?.endsWith('='+value))?.[0],expectedUser=options.userId===null?undefined:options.userId??cookieUser
   const headers:Record<string,string>={Host:options.host??'localhost',...(options.origin===null?{}:{Origin:options.origin??'http://localhost'}),...(options.token?{Authorization:'Bearer '+options.token}:{}),...(options.cookie?{Cookie:options.cookie}:{}),...(expectedUser?{'X-FlyMind-User-Id':expectedUser}:{}),...(options.rootId?{'X-FlyMind-DataRoot-Id':options.rootId}:{}),...(options.body===undefined?{}:{'Content-Type':'application/json'})}
-  return await new Promise<Response>((yes,no)=>{const request=httpRequest(base+path,{method:options.method??'GET',headers},response=>{const chunks:Buffer[]=[];response.on('data',chunk=>chunks.push(chunk));response.once('end',()=>{const h=new Headers();for(const [key,value] of Object.entries(response.headers))if(value!==undefined)for(const v of Array.isArray(value)?value:[value])h.append(key,v);yes(new Response(Buffer.concat(chunks),{status:response.statusCode,headers:h}))})});request.once('error',no);request.end(options.body===undefined?undefined:JSON.stringify(options.body))})
+  // Every fixture request owns its connection. Native font packaging can block
+  // this same event loop across keep-alive expiry; don't reuse a stale global
+  // Agent socket between these short-lived loopback servers or retry a write.
+  return await new Promise<Response>((yes,no)=>{
+   const method=options.method??'GET'
+   const fail=(error:Error)=>{const contextual=new Error(`Loopback ${method} ${path}: ${error.message}`,{cause:error});if('code'in error)Object.assign(contextual,{code:error.code});no(contextual)}
+   const request=httpRequest(base+path,{method,headers,agent:false},response=>{
+    const chunks:Buffer[]=[];response.on('data',chunk=>chunks.push(chunk));response.on('error',fail)
+    response.once('aborted',()=>fail(new Error('Response aborted before completion')))
+    response.once('end',()=>{const h=new Headers();for(const [key,value] of Object.entries(response.headers))if(value!==undefined)for(const v of Array.isArray(value)?value:[value])h.append(key,v);yes(new Response(Buffer.concat(chunks),{status:response.statusCode,headers:h}))})
+   });request.once('error',fail);request.end(options.body===undefined?undefined:JSON.stringify(options.body))
+  })
  }
  const team=(id:string,path:string)=>'/cloud-api/teams/'+id+'/studio-api'+path
  async function health(id='team-a',token=tokens.alice){const r=await request(team(id,'/health'),{token});assert.equal(r.status,200);return await r.json() as any}

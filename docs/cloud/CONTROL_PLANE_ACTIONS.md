@@ -139,6 +139,8 @@ JS
 
 先保持生产自动开关关闭，通过Actions受保护environment执行完整候选：Java发布成功→Node应用晋级→真实后台login/info/router、前台改密撤权、绘图/导出验证。完整通过才启用自动生产。无本机SSH、无Actions日志里的密码/token、无在线手动重置用户密码。
 
+已有成功候选时，使用`Promote verified full-stack candidate`（`cloud-full-stack-promote.yml`），填写run_id、run_attempt和source_sha。该独立main工作流验证同仓库、精确run/attempt/commit、四项必需作业成功与main祖先关系，再下载原Linux包；不重复编译、不要求伪造staging。仍须`CLOUD_CONTROL_PLANE_DEPLOY=true`、production Environment及同一个production并发锁；不依赖自动生产开关。原双环境staging晋级流程保持原验证。自动生产只有完整初次发布验收后才开启。
+
 ## 故障与证据
 
 - 每发布目录保留不可复用的attempt、原JAR、archive、完整candidate、backup/start-intent/result收据；同run+SHA成功重放必须当前JAR/健康仍一致，不重做备份或迁移。
