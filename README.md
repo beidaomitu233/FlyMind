@@ -10,6 +10,14 @@
 
 ## 安装与使用
 
+**云端优先：** 打开 [工作台](https://fly.hui7.fun/#/cloud)，用绘图账号登录。向 Codex / WorkBuddy 发送：
+
+> 请安装并使用 FlyMind MCP 来画图：https://fly.hui7.fun/mcp。检查已有连接并复用，通过浏览器让我自己登录选团队，连接后先读 get_drawing_guide，按当前任务分组并在同一张图继续修改。
+
+[简明连接与授权说明](docs/AGENT_CONNECT.md) · [开始使用](docs/INSTALL_AND_USE.md)。云端绘图无需安装本地引擎；工具未出现时按客户端提示重连/新开会话。新版引导的发布状态见 [U29 验收](docs/validation/onboarding-20261024.md)。
+
+### 历史 Windows 本机包
+
 **[下载 Windows 安装包](https://github.com/beidaomitu233/FlyMind/releases/download/mcp-v1.0.0/FlyMind-MCP-1.0.0-Windows.zip)** · [GitHub Release](https://github.com/beidaomitu233/FlyMind/releases/tag/mcp-v1.0.0) · **[安装与使用](docs/INSTALL_AND_USE.md)**
 
 下载 ZIP → 解压 → `npm install -g ./flymind-drawing-studio-1.0.0.tgz` → `flymind setup` → `flymind doctor` → 注册 Codex。无需 clone 或构建源码；首次安装依赖与资源准备需要联网。
@@ -53,7 +61,7 @@ npm start
 
 沿用同样的原生环境变量，保持后端端口 **5179**，运行 `npm run dev`，打开 http://127.0.0.1:5178/#/native。脚本提供 5178 Vite 页面并启动或复用 5179 服务；Vite 代理当前固定指向 5179，复用前请确认该服务也是新版、同数据根原生实例。日常使用优先上面的同源 `npm start` 方式。
 
-## 连接 MCP
+## 源码本机 STDIO MCP（与云端远程接入分开）
 
 MCP 使用 STDIO；HTTP 端口是工作台与制品服务，不是 HTTP MCP 地址。npm/tgz 用户先按 [安装与使用](docs/INSTALL_AND_USE.md) 准备资源并注册 CLI；以下源码兼容入口需显式配置原生环境变量。源码构建后先执行 `node bin/flymind.mjs setup` 与 `doctor`，再运行 `npm run setup:codex`，会注册 CLI 默认原生用户目录入口；以下 `server/start.mjs` 配置仅用于显式 pilot 的兼容启动。
 
@@ -129,7 +137,7 @@ npm run build
 npm run check:runtime
 ```
 
-`npm run render`、`npm run examples` 仍为保留的旧独立渲染脚本，不是新版后台 draw.io 导出的验收入口。真实原生证据见 [文档中心](docs/README.md)内各验证报告。当前 npm 与 Registry 正在准备，尚未完成公开发布；不是公开远程 MCP 服务，也未上架插件商店。
+`npm run render`、`npm run examples` 仍为保留的旧独立渲染脚本，不是新版后台 draw.io 导出的验收入口。真实原生证据见 [文档中心](docs/README.md)内各验证报告。当前 npm 与 Registry 尚未完成公开发布，也未上架插件商店；固定云端 MCP 采用前文 HTTPS 地址与 OAuth，本机 HTTP 端口仍不是远程 MCP。
 
 | 现象 | 检查 |
 |---|---|

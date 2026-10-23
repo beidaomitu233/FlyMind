@@ -2,6 +2,7 @@
 import {computed,nextTick,onMounted,onBeforeUnmount,ref,shallowRef,watch} from 'vue'
 import {useRoute,useRouter,onBeforeRouteUpdate,type LocationQueryRaw} from 'vue-router'
 import NativeStudio from './NativeStudio.vue'
+import {cloudOnboardingKey} from '../state/onboarding'
 import Icon from './Icon.vue'
 import FlyMindDocumentation from './FlyMindDocumentation.vue'
 import {readStudioAppearance} from '../state/studio-appearance'
@@ -71,9 +72,10 @@ function canEdit(member:CloudMember){return member.userId!==me.value?.user.id&&m
 async function changeRole(member:CloudMember,event:Event){const input=event.target as HTMLSelectElement,next=input.value as Exclude<CloudRole,'owner'>;input.value=member.role;await guarded(async()=>{await api.role(team.value!.id,member.userId,next);members.value=await api.members(team.value!.id)})}
 async function removeMember(member:CloudMember){memberMore.value='';if(!confirm('移除此团队成员？'))return;await guarded(async()=>{await api.remove(team.value!.id,member.userId);members.value=await api.members(team.value!.id)})}
 async function transfer(member:CloudMember){memberMore.value='';if(!confirm('将团队所有权转交给此成员？'))return;await guarded(async()=>{await api.transfer(team.value!.id,member.userId);await refreshIdentity();members.value=await api.members(team.value!.id)})}
-async function invite(){await guarded(async()=>{const value=await api.invite(team.value!.id,invitePhone.value.trim(),inviteRole.value);inviteToken.value=value.inviteToken;invitePhone.value=''})}
+async function invite(){await guarded(async()=>{const value=await api.invite(team.value!.id,invitePhone.value.trim(),inviteRole.value);inviteToken.value=value.inviteToken;invitePhone.value='';studio.value?.onboardingTeamSucceeded()})}
 async function accept(){await guarded(async()=>{if(studio.value&&!await studio.value.prepareLeave())return;const value=await api.accept(acceptToken.value.trim());await refreshIdentity();team.value=value;await replaceQuery({team:value.id});acceptToken.value='';joinOpen.value=false;closeMenus()})}
-async function createTeam(){await guarded(async()=>{if(studio.value&&!await studio.value.prepareLeave())return;const value=await api.createTeam(teamName.value.trim());await refreshIdentity();team.value=value;await replaceQuery({team:value.id});teamName.value='';createOpen.value=false;closeMenus()})}
+async function createTeam(){await guarded(async()=>{if(studio.value&&!await studio.value.prepareLeave())return;const value=await api.createTeam(teamName.value.trim());studio.value?.onboardingTeamSucceeded();await refreshIdentity();team.value=value;await replaceQuery({team:value.id});teamName.value='';createOpen.value=false;closeMenus()})}
+function onboardingTeamAction(action:'create'|'members'){if(busy.value||suspended.value)return;if(action==='create')openDialog('create');else void showMembers()}
 async function leaveTeam(){if(!confirm('退出当前团队？'))return;await guarded(async()=>{if(studio.value&&!await studio.value.prepareLeave())return;await api.leave(team.value!.id);team.value=undefined;membersOpen.value=false;const value=await refreshIdentity();team.value=value.teams[0];await replaceQuery(team.value?{team:team.value.id}:{})})}
 onBeforeRouteUpdate(async(to,from)=>{if(!me.value||to.query.team===from.query.team&&to.query.authorize===from.query.authorize||internalNavigation)return true;if(busy.value)return false;return studio.value?studio.value.prepareLeave():true})
 watch(()=>route.query.team,id=>{if(!me.value||id===team.value?.id)return;const selected=me.value.teams.find(t=>t.id===id);if(selected)team.value=selected;else if(id){team.value=undefined;error.value='当前账号无权访问该团队'}})
@@ -118,7 +120,7 @@ onMounted(async()=>{
  <section v-else-if="authorizationId" class="cloud-login cloud-consent cloud-ui" aria-label="MCP授权">
   <h1>授权 FlyMind</h1><template v-if="consent"><p><strong>{{consent.client.name}}</strong> 请求访问您的团队</p><ul><li v-for="scope in consent.scopes" :key="scope">{{scope==='flymind:write'?'创建和修改图形':scope==='flymind:read'?'读取团队图形':scope}}</li></ul><label>授权团队<select v-model="consentTeam" :disabled="busy||consentExpired"><option v-for="item in eligibleTeams" :key="item.id" :value="item.id">{{item.name}}</option></select></label><p v-if="consentExpired" class="cloud-form-error" role="alert">请求已过期，请回到客户端重新发起</p><div class="cloud-consent-actions"><button :disabled="busy||consentExpired" @click="decide(false)">拒绝</button><button class="cloud-primary" :disabled="busy||consentExpired||!consentTeam" @click="decide(true)">授权</button></div></template><p v-if="error" class="cloud-form-error" role="alert">{{error}}</p><button :disabled="busy" @click="logout">退出登录</button>
  </section>
- <NativeStudio v-else-if="team&&context" :style="suspended?{visibility:'hidden'}:undefined" :key="context.key" ref="studio" :api-base="'/cloud-api/teams/'+encodeURIComponent(team.id)" :client-options="context.options" :draft-repository="context.repository" :interaction-locked="busy||suspended" :collaboration-user-id="me.user.id" :read-only="team.role==='viewer'">
+ <NativeStudio v-else-if="team&&context" :style="suspended?{visibility:'hidden'}:undefined" :key="context.key" ref="studio" :api-base="'/cloud-api/teams/'+encodeURIComponent(team.id)" :client-options="context.options" :draft-repository="context.repository" :interaction-locked="busy||suspended" :collaboration-user-id="me.user.id" :read-only="team.role==='viewer'" :onboarding-key="cloudOnboardingKey(me.user.id,team.id)" :team-id="team.id" :can-invite-team="manage" @team-action="onboardingTeamAction">
   <template #workspace>
    <div class="cloud-workspace cloud-ui" data-cloud-menu @click.stop>
     <button class="cloud-workspace-trigger" aria-label="切换空间" aria-haspopup="menu" :aria-expanded="workspaceOpen" :disabled="busy" @click.stop="toggleMenu('workspace')"><span class="cloud-space-symbol"><Icon name="folder" :size="16"/></span><span class="cloud-truncate">{{team.name}}</span><Icon name="chevron" :size="14"/></button>

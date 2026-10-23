@@ -1,10 +1,12 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
-import {flymindDocumentation,FLYMIND_CLOUD_ORIGIN,FLYMIND_MCP_URL} from '../src/drawing/ui/flymind-documentation'
+import {flymindDocumentation,FLYMIND_CLOUD_ORIGIN,FLYMIND_MCP_URL,type DocumentationBlock} from '../src/drawing/ui/flymind-documentation'
+
+const flatten=(blocks:readonly DocumentationBlock[]):DocumentationBlock[]=>blocks.flatMap(block=>block.kind==='advanced'?[block,...flatten(block.blocks)]:[block])
 
 test('MCP copy examples use stable HTTPS OAuth endpoint or real local CLI with same account authority; no credentials',()=>{
- const codes=flymindDocumentation.flatMap(s=>s.blocks).filter(b=>b.kind==='code')
+ const codes=flymindDocumentation.flatMap(s=>flatten(s.blocks)).filter(b=>b.kind==='code')
  const configs=codes.filter(c=>c.language==='JSON').map(c=>JSON.parse(c.code).mcpServers.flymind)
  assert.equal(configs.length,2)
  const remote=configs.find(c=>c.url),local=configs.find(c=>c.command)
@@ -24,5 +26,5 @@ test('help distinguishes local authorization from data sync, published history a
 })
 test('documentation navigation and outbound sources have unique stable IDs and safe public links',()=>{
  assert.equal(new Set(flymindDocumentation.map(s=>s.id)).size,5)
- for(const s of flymindDocumentation){assert.ok(s.title&&s.description&&s.blocks.length);for(const b of s.blocks)if(b.kind==='links')for(const link of b.items){const u=new URL(link.href);assert.equal(u.protocol,'https:');assert.ok(['github.com','fly.hui7.fun'].includes(u.hostname));assert.equal(u.username,'');assert.equal(u.password,'');assert.equal(u.search,'')}}
+ for(const s of flymindDocumentation){assert.ok(s.title&&s.description&&s.blocks.length);for(const b of flatten(s.blocks))if(b.kind==='links')for(const link of b.items){const u=new URL(link.href);assert.equal(u.protocol,'https:');assert.ok(['github.com','fly.hui7.fun'].includes(u.hostname));assert.equal(u.username,'');assert.equal(u.password,'');assert.equal(u.search,'')}}
 })

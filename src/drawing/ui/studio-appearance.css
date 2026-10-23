@@ -1,11 +1,12 @@
-/* Native adapter appearance only. Shared legacy Studio styles remain untouched. */
+/* Workspace palette: Radix Colors Iris + Slate (light). Diagram styles are separate. */
 .studio-root.native-appearance {
-  --ui-sidebar:#f6f6f8;--ui-main:#fff;--ui-canvas:#f5f5f7;--ui-raised:#fff;
-  --ui-input:#fafafa;--ui-hover:#ededf1;--ui-active:#ede9ff;--ui-border:#e6e6eb;
-  --ui-text:#29292f;--ui-muted:#77777f;--ui-subtle:#96969e;--ui-accent:#785df3;
-  --ui-danger:#b85d59;--ui-warning-bg:#fff5e9;--ui-warning:#986131;--ui-shadow:0 12px 40px #15152514;
+  --ui-sidebar:#f9f9fb;--ui-main:#fff;--ui-canvas:#fcfcfd;--ui-raised:#fff;
+  --ui-input:#f9f9fb;--ui-hover:#f0f0f3;--ui-active:#f0f1fe;--ui-border:#e0e1e6;
+  --ui-text:#1c2024;--ui-muted:#60646c;--ui-subtle:#80838d;--ui-accent:#5b5bd6;
+  --ui-danger:#b42318;--ui-warning-bg:#fff7ed;--ui-warning:#9a4c12;--ui-shadow:0 16px 48px #1c202414;
   --studio-ink:var(--ui-text);--studio-muted:var(--ui-muted);--studio-line:var(--ui-border);
   --studio-brand:var(--ui-accent);--studio-soft:var(--ui-active);
+  --fm-viewport-bg:var(--ui-canvas);--fm-viewport-text:var(--ui-muted);--fm-viewport-line:var(--ui-border);--fm-viewport-accent:var(--ui-accent);
   color-scheme:light;color:var(--ui-text);background:var(--ui-main);font-size:13px;
 }
 .studio-root.native-appearance[data-appearance="dark"] {
@@ -40,6 +41,7 @@
 .studio-root.native-appearance :is(.studio-icon,.studio-text-btn):hover {background:var(--ui-hover);color:var(--ui-text)}
 .studio-root.native-appearance .studio-icon.on {background:var(--ui-active);color:var(--ui-accent)}
 .studio-root.native-appearance .studio-primary {min-height:32px;background:var(--ui-accent);border-color:var(--ui-accent);color:#fff;padding:6px 12px;font-size:13px}
+.studio-root.native-appearance .studio-primary:disabled {background:var(--ui-hover);border-color:var(--ui-border);color:var(--ui-muted);opacity:1;box-shadow:none}
 .studio-root.native-appearance .studio-primary:hover {filter:brightness(1.08)}
 .studio-root.native-appearance .studio-secondary {border-color:var(--ui-border);background:var(--ui-raised);color:var(--ui-text);font-size:13px}
 .studio-root.native-appearance .studio-secondary:hover {background:var(--ui-hover);border-color:var(--ui-subtle);color:var(--ui-text)}

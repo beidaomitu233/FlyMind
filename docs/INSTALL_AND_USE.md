@@ -1,5 +1,17 @@
 # FlyMind：让 AI 画图，在网页继续编辑
 
+## 推荐：云端使用，发一条消息给 Agent
+
+打开 [FlyMind 云端工作台](https://fly.hui7.fun/#/cloud)，用绘图账号登录。在 Codex 或 WorkBuddy 中发送：
+
+> 请安装并使用 FlyMind MCP 来画图，地址是 https://fly.hui7.fun/mcp。检查已有连接并复用；通过浏览器发起授权，由我自己登录、选择团队。连接后先读取 get_drawing_guide，再根据当前任务分组绘图；后续修改同一张图，不重复新建。
+
+Agent 会配置连接，或告诉你客户端中最短的操作步骤。你只需在弹出的浏览器里登录并授权；不要把密码、Token 或 Cookie 发给 Agent。工具未出现时重连或新开对话。需要接着编辑网页中的图形时，从该图的“连接 Agent”入口复制带图形身份的消息。
+
+新版工作台提供“创建第一个图形 → 连接 Agent → 同图编辑 → 团队协作”的可跳过引导；发布状态见 [U29 验收](validation/onboarding-20261024.md)。首次只用云端无需安装本机绘图引擎。本地图不会自动上传；先显式导入目标云空间，才能与远程 Agent 修改同图。
+
+手动配置与详细登录步骤见 [Agent 连接指南](AGENT_CONNECT.md)。下文仅为 **历史 Windows 本机包** 的安装说明，不包含当前全部云端功能。
+
 把业务材料变成泳道、流程、架构、脑图和数据流图。AI 负责内容，你在网页调整文字、位置和连线，AI 再读取最新版本修改。图片和源文件由本机 draw.io 引擎生成，FlyMind 本身不要求额外模型 API Key；AI 对话仍由你自己的 Codex 或其他客户端提供。
 
 > **下载方式：本轮通过 [GitHub Release](https://github.com/beidaomitu233/FlyMind/releases/tag/mcp-v1.0.0) 分发 Windows 安装包。npm 在线包和 MCP Registry 暂未发布，请勿用 npx 请求未上线的包。** 应用版本为 1.0.0，下载标签为 `mcp-v1.0.0`。

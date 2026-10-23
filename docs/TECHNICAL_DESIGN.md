@@ -1,5 +1,7 @@
 # FlyMind draw.io 技术设计
 
+> 2026-10-24 R29：复用 NativeStudio/CloudStudio 与原创建、任务组、团队弹窗，增加 Welcome/Onboarding/AgentConnect 独立 UI。引导 localStorage key 使用 JSON 编码 userId/teamId，pending/completed/skipped 分离；创建/邀请依据实际 API 成功，交替编辑依据当前图形权威 activity 中不同已提交修订。Agent 安装消息仅携带固定 MCP URL 和校验过的团队/图形 ID，不携带标题指令或凭据；OAuth 仍由客户端执行，网站自确认不冒充连接检测。主题变量只影响工作台，不写入业务内容或 draw.io 节点样式。无数据库迁移，详见[本批验收](validation/onboarding-20261024.md)。
+
 > 2026-10-23 R28：新增Flyway表app_flymind_account，复用sys_user.user_id以保留归属，密码/状态单独存储；兼容导入幂等且不自动开通纯后台账号。前台改密API经Node同源cookie/身份预检代理Java，错误原密码400不撤销会话，成功撤销前台会话/OAuth/设备授权并清cookie。后台要求真实启用角色；无tenant_id的两张关系表加入租户排除，实体过滤保留。文档为共享纯内容model+覆盖dialog，不改变画布协议。已本地验收，MySQL生产迁移与线上验收仍待Actions发布；[契约](cloud/CONTRACT.md)、[证据](validation/auth-documentation-20261023.md)。
 
 > 2026-10-21 R26/R27：任务归属为内容对象之外的组织元数据，使用现有workspaceGroupId和新增create参数taskName；任务组与图形在同一SQLite事务落库，幂等回执与并发复用沿用现有服务，不在图内groups伪造文件夹。流程/泳道回流通过主方向/阶段及feedback语义识别，强制经过整体绘图区外侧通道，固定libavoid仍负责节点避障；只更新受影响边，普通文案编辑保留人工几何。本轮不改版本/不部署，证据见[本地验收](validation/task-groups-and-return-routes.md)。

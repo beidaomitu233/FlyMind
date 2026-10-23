@@ -4,11 +4,12 @@ import Icon from './Icon.vue'
 import {flymindDocumentation} from './flymind-documentation'
 
 const props=withDefaults(defineProps<{open:boolean;appearance?:'light'|'dark'}>(),{appearance:'light'})
-const emit=defineEmits<{close:[]}>()
+const emit=defineEmits<{close:[];'start-tour':[];'connect-agent':[]}>()
+function action(event:'start-tour'|'connect-agent'){emit('close');if(event==='start-tour')emit('start-tour');else emit('connect-agent')}
 const selected=ref(flymindDocumentation[0].id),panel=ref<HTMLElement>(),heading=ref<HTMLElement>(),article=ref<HTMLElement>(),copied=ref(''),copyError=ref('')
 const current=computed(()=>flymindDocumentation.find(section=>section.id===selected.value)??flymindDocumentation[0])
 let previousFocus:HTMLElement|undefined,previousOverflow:string|undefined,generation=0
-function focusable(){return [...(panel.value?.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),[tabindex="0"]')??[])].filter(e=>e.getClientRects().length>0)}
+function focusable(){return [...(panel.value?.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),summary,[tabindex="0"]')??[])].filter(e=>e.getClientRects().length>0)}
 function onKeydown(event:KeyboardEvent){
  if(!props.open)return
  if(event.key==='Escape'){event.preventDefault();event.stopPropagation();emit('close');return}
@@ -47,6 +48,13 @@ onBeforeUnmount(()=>{generation++;release();if(previousFocus?.isConnected)previo
       <div class="fm-help-article-heading"><span class="fm-help-eyebrow">{{ current.kicker }}</span><h2 ref="heading" tabindex="-1">{{ current.title }}</h2><p>{{ current.description }}</p></div>
       <template v-for="(block,index) in current.blocks" :key="current.id+'-'+index">
        <p v-if="block.kind==='paragraph'" class="fm-help-paragraph">{{ block.text }}</p>
+       <button v-else-if="block.kind==='action'" class="fm-help-action" type="button" @click="action(block.event)">{{ block.label }} <span aria-hidden="true">→</span></button>
+       <details v-else-if="block.kind==='advanced'" class="fm-help-advanced"><summary>{{ block.title }}</summary><template v-for="(detail,detailIndex) in block.blocks" :key="detailIndex">
+        <p v-if="detail.kind==='paragraph'" class="fm-help-paragraph">{{ detail.text }}</p>
+        <aside v-else-if="detail.kind==='notice'" class="fm-help-notice"><div><h3>{{ detail.title }}</h3><p>{{ detail.text }}</p></div></aside>
+        <div v-else-if="detail.kind==='code'" class="fm-help-code"><div class="fm-help-code-header"><span>{{ detail.title }}</span><button type="button" :aria-label="'复制'+detail.title" @click="copy(detail.code,'advanced-'+detailIndex)">{{ copied==='advanced-'+detailIndex?'已复制':'复制' }}</button></div><pre tabindex="0" :aria-label="detail.title"><code>{{ detail.code }}</code></pre></div>
+        <div v-else-if="detail.kind==='links'" class="fm-help-links"><a v-for="link in detail.items" :key="link.href" :href="link.href" target="_blank" rel="noopener noreferrer">{{ link.label }} ↗</a></div>
+       </template></details>
        <ol v-else-if="block.kind==='steps'" class="fm-help-steps"><li v-for="(text,step) in block.items" :key="step"><span aria-hidden="true">{{ step+1 }}</span><p>{{ text }}</p></li></ol>
        <div v-else-if="block.kind==='cards'" class="fm-help-cards"><section v-for="card in block.items" :key="card.title"><h3>{{ card.title }}</h3><p>{{ card.text }}</p></section></div>
        <aside v-else-if="block.kind==='notice'" class="fm-help-notice"><Icon name="bolt" :size="16"/><div><h3>{{ block.title }}</h3><p>{{ block.text }}</p></div></aside>
@@ -62,7 +70,8 @@ onBeforeUnmount(()=>{generation++;release();if(previousFocus?.isConnected)previo
 </template>
 
 <style scoped>
-.fm-help-backdrop{--help-bg:#fff;--help-side:#f8f9fb;--help-surface:#f4f5f8;--help-text:#252630;--help-muted:#686d7b;--help-border:#e7e8ed;--help-accent:#6256cc;--help-accent-bg:#f1efff;position:fixed;inset:0;z-index:1800;display:grid;place-items:center;padding:28px;background:rgba(16,18,27,.38);color:var(--help-text);font-family:Inter,"Noto Sans SC","Microsoft YaHei",sans-serif;font-size:14px;line-height:1.6}
+.fm-help-action{display:flex;justify-content:space-between;align-items:center;gap:30px;padding:12px 18px;border:0;border-radius:10px;background:var(--help-accent);color:white;font-weight:600}.fm-help-advanced{border-top:1px solid var(--help-border);padding-top:18px;margin-top:26px}.fm-help-advanced summary{cursor:pointer;color:var(--help-muted);font-size:12px}.fm-help summary:focus-visible{outline:2px solid var(--help-accent);outline-offset:3px}
+.fm-help-backdrop{--help-bg:var(--ui-raised,#fff);--help-side:var(--ui-sidebar,#f9f9fb);--help-surface:var(--ui-input,#f9f9fb);--help-text:var(--ui-text,#1c2024);--help-muted:var(--ui-muted,#60646c);--help-border:var(--ui-border,#e0e1e6);--help-accent:var(--ui-accent,#5b5bd6);--help-accent-bg:var(--ui-active,#f0f1fe);position:fixed;inset:0;z-index:1800;display:grid;place-items:center;padding:28px;background:rgba(16,18,27,.38);color:var(--help-text);font-family:Inter,"Noto Sans SC","Microsoft YaHei",sans-serif;font-size:14px;line-height:1.6}
 .fm-help-backdrop[data-appearance=dark]{--help-bg:#212121;--help-side:#191919;--help-surface:#292929;--help-text:#ededee;--help-muted:#aaaab1;--help-border:#38383b;--help-accent:#b5afff;--help-accent-bg:#302d43;background:rgba(0,0,0,.58);color-scheme:dark}
 .fm-help,.fm-help *{box-sizing:border-box}.fm-help{width:min(980px,100%);height:min(760px,calc(100dvh - 56px));display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--help-border);border-radius:18px;background:var(--help-bg);box-shadow:0 24px 80px #0003}.fm-help button,.fm-help a{font:inherit}.fm-help button{cursor:pointer}.fm-help button:focus-visible,.fm-help a:focus-visible,.fm-help pre:focus-visible{outline:2px solid var(--help-accent);outline-offset:3px}.fm-help h1,.fm-help h2,.fm-help h3,.fm-help p{margin:0}
 .fm-help-header{flex:none;display:flex;align-items:center;justify-content:space-between;padding:22px 28px;border-bottom:1px solid var(--help-border)}.fm-help-brand{display:flex;align-items:center;gap:13px}.fm-help-mark{display:grid;place-items:center;width:44px;height:44px;background:var(--help-accent-bg);color:var(--help-accent);border-radius:13px}.fm-help-header h1{font-size:16px;font-weight:650;letter-spacing:.01em}.fm-help-header p{font-size:12px;color:var(--help-muted);margin-top:2px}.fm-help-close{display:grid;place-items:center;width:34px;height:34px;background:none;border:0;color:var(--help-muted);border-radius:8px}.fm-help-close:hover{background:var(--help-surface);color:var(--help-text)}

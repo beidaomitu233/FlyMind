@@ -1,6 +1,24 @@
 # Codex 接入 FlyMind
 
-推广的后续方向为[固定HTTPS远程MCP](MCP_UPDATE_STRATEGY.md)：首次配置和登录后，服务端承担日常更新。该服务尚未部署，示例域名不是可用地址；下方仍为当前本地安装方式。源码/安装包升级不会凭空将既有客户切到云端或上传本地图形。
+## 推荐：固定远程 MCP
+
+将这条消息发给 Codex：
+
+> 请帮我安装并使用 FlyMind MCP：https://fly.hui7.fun/mcp。检查已有同地址连接并复用，发起浏览器授权，由我自己登录并选择团队；连接后先读取 get_drawing_guide，再按当前任务归组绘图，后续修改同一张图。
+
+如需手动操作：
+
+```sh
+codex mcp add flymind --url https://fly.hui7.fun/mcp
+codex mcp login flymind
+codex mcp list
+```
+
+已有同名连接先核对地址；工具没有出现时重新连接或新开会话。登录授权在浏览器内由你完成，无需把账号密码/Token 交给 AI。网页里继续同一张图时，用新版“连接 Agent”入口复制包含真实图形身份的消息。详见 [Agent 连接指南](AGENT_CONNECT.md)和[持久更新方案](MCP_UPDATE_STRATEGY.md)。本批新 UI 发布状态见 [U29 验收](validation/onboarding-20261024.md)，不把复制消息视为授权成功。
+
+## 历史 Windows 本机方式
+
+下方对应旧正式包。源码/安装包升级不会自动将原本地图形上传云端；使用远程 MCP 前要显式导入到目标云空间。
 
 普通用户先按 [安装与使用](INSTALL_AND_USE.md)从 [GitHub Release](https://github.com/beidaomitu233/FlyMind/releases/tag/mcp-v1.0.0) 下载 ZIP、解压并安装 tgz。npm 在线包与 MCP Registry 延期，不使用 npx 请求未发布包。
 

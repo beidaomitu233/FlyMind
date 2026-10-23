@@ -40,6 +40,25 @@ test('remote patch failures and dispose never report an unconfirmed patch as syn
   const pending=h.controller.applyRemoteXML(collabXML,collabXML);h.controller.dispose();await assert.rejects(pending,{code:'SESSION_CLOSED'})
  }finally{h.controller.dispose()}
 })
+test('explicit property load preserves collaboration diffSync so subsequent patch and reset are acknowledged',async()=>{
+ for(const collaboration of [true,false]){
+  const h=setup({collaboration,initialXML:collabXML,readViewport:()=>({scrollLeft:60,scrollTop:80})})
+  try{
+   h.boot();const human=collabXML.replace('value="before"','value="human edit"'),applying=h.controller.mergeXML(human),capture=h.sent.at(-1)!
+   assert.equal(capture.action,'export');h.receive({event:'export',format:'xml',message:capture,xml:collabXML,scale:0.5,translate:{x:2,y:3}})
+   await new Promise(resolve=>setImmediate(resolve))
+   const load=h.sent.at(-1)!;assert.equal(load.action,'load');assert.equal(load.xml,human);assert.equal(load.diffSync,collaboration?true:undefined)
+   assert.deepEqual(load.scroll,{x:118,y:157});h.receive({event:'load',xml:human});await applying
+   if(collaboration){
+    const remote=h.controller.applyRemoteXML(human,human.replace('human edit','AI edit')),patch=h.sent.at(-1)!
+    assert.equal(patch.action,'patch');h.receive({event:'patch',message:patch});await new Promise(resolve=>setImmediate(resolve))
+    const reset=h.sent.at(-1)!;assert.equal(reset.action,'resetDiff');h.receive({event:'resetDiff',message:reset});await remote
+    assert.equal(h.sent.filter(message=>message.action==='load').length,2,'Remote patch must not reload the canvas')
+   }
+   assert.equal(h.xmlEvents.length,0)
+  }finally{h.controller.dispose()}
+ }
+})
 function setup(extra:Partial<ConstructorParameters<typeof DrawioHostController>[0]>={}){
  const source={},sent:Array<Record<string,any>>=[],xmlEvents:HostXML[]=[],errors:HostError[]=[],ready:string[]=[],requests:string[]=[]
  const controller=new DrawioHostController({sessionKey:'session-a',initialXML:xml,origin:'http://localhost:5178',source:()=>source,post:(data,origin)=>{assert.equal(origin,'http://localhost:5178');sent.push(JSON.parse(data))},onReady:e=>ready.push(e.sessionKey),onXML:e=>xmlEvents.push(e),onError:e=>errors.push(e),onSaveRequested:e=>requests.push(e.reason),...extra})
