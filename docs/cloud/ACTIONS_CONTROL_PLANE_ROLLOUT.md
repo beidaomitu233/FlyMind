@@ -1,10 +1,12 @@
 # AUTH-23：通过 Actions 发布控制面
 
-2026-10-23。最小发布代码已实现并通过本地隔离验收，真实Actions和目标机控制台初始化尚待验收，不是已部署说明。用户要求停止本机直接SSH；本机扫码会话已关闭，不再以临时root密钥或手工上传替代Actions。
+2026-10-23。发布代码及真实Linux/Windows、Java/MySQL/Redis候选验收已通过。用户另行明确授权的一次性SSH配置已完成，受限发布工具与备份验证成功；配置会话已关闭。应用更新全部由Actions执行，首次完整发布与线上验收仍在进行，不能将安装成功等同于应用已上线。
 
 ## 当前缺口
 
-`cloud-candidate.yml`已测试并打包Java、admin及绘图应用；新增独立`flymind-control-plane-promote`先处理Java，成功后才调用原app/admin晋级。生产完整栈开关必须显式启用，手动部署限main同run全部检查通过；源码/真实控制面/平台互为门槛。旧服务器尚未安装新受限命令，生产自动开关保持关闭。安装细节见[控制面Actions](CONTROL_PLANE_ACTIONS.md)。
+`cloud-candidate.yml`已测试并打包Java、admin及绘图应用；独立`flymind-control-plane-promote`先处理Java，成功后才调用原app/admin晋级。生产完整栈开关已启用，手动部署限main同run全部检查通过；源码/真实控制面/平台互为门槛。目标服务器受限命令已安装，生产自动开关仍保持关闭，待首次完整发布及线上验收通过后启用。安装细节见[控制面Actions](CONTROL_PLANE_ACTIONS.md)，实际执行证据见[发布验收记录](../validation/actions-control-plane-20261023.md)。
+
+当前生产传输采用Actions至受限账号的`flymind-upload`字节流，HTTPS制品拉取因接收器拒绝而保持关闭。字节上传有60分钟总预算、5分钟发送停滞预算和EOF后10分钟回执预算；每30秒的`inputBytesQueued`只是本地交给SSH的流量，须等远端摘要/落盘收据才算上传成功。Java及应用晋级分别保留20分钟预算，整个production作业120分钟。客户端MCP地址及安装配置不因发布改变。
 
 本批本地证据见[验收记录](../validation/auth-documentation-20261023.md)。用户已授权本批提交、推送合入main并继续Actions发布；不改版本号，不从本机SSH，完整发布链验收前不启生产自动开关。不得伪造干净来源或使用旧bcb643a候选冒充本批代码。
 
@@ -22,4 +24,4 @@
 - 同一run制品来源、摘要、权限、备份、迁移及失败处置的隔离测试通过；目标主机一次性入口安装有实际证据。
 - 后台真实login→info→router成功；前台测试账号登录→自助改密→旧前台会话/OAuth/设备授权失效→新密码登录。后台凭据和后台会话不受影响。不要用真实管理员的密码测试代替隔离测试账号。
 - 原团队/图形归属保留；创建、编辑保存、PNG导出与固定MCP授权正常；维护后协同恢复。
-- 记录运行ID、source SHA、Java和应用实际release、迁移版本及就绪结果。全部通过后才开启后续无人值守生产更新。当前以上服务器条件尚未验收。
+- 记录运行ID、source SHA、Java和应用实际release、迁移版本及就绪结果。全部通过后才开启后续无人值守生产更新。当前已完成服务器工具安装与备份验证；真实应用发布和上述线上业务条件仍须分别验收。
