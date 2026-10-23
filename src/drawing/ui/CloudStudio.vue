@@ -3,6 +3,7 @@ import {computed,nextTick,onMounted,onBeforeUnmount,ref,shallowRef,watch} from '
 import {useRoute,useRouter,onBeforeRouteUpdate,type LocationQueryRaw} from 'vue-router'
 import NativeStudio from './NativeStudio.vue'
 import Icon from './Icon.vue'
+import FlyMindDocumentation from './FlyMindDocumentation.vue'
 import {readStudioAppearance} from '../state/studio-appearance'
 import {CloudClient,CloudIdentityGuard,cloudAuthorizationRedirect,cloudConsentTeams,cloudDraftDatabase,type CloudConsent,type CloudMe,type CloudTeam,type CloudMember,type CloudRole} from '../services/cloud-client'
 import {IndexedDbDraftRepository} from '../services/native-drafts'
@@ -10,16 +11,16 @@ import {NativeApiError} from '../services/native-types'
 import './cloud-studio.css'
 const authApi=new CloudClient();let api=authApi;const identity=shallowRef<CloudIdentityGuard>(),suspended=ref(false),consent=shallowRef<CloudConsent>(),consentTeam=ref(''),now=ref(Date.now());const route=useRoute(),router=useRouter(),me=shallowRef<CloudMe>(),team=shallowRef<CloudTeam>(),studio=ref<InstanceType<typeof NativeStudio>>()
 const loading=ref(true),busy=ref(false),error=ref(''),phone=ref(''),password=ref(''),accountOpen=ref(false),membersOpen=ref(false),members=ref<CloudMember[]>([]),invitePhone=ref(''),inviteRole=ref<'admin'|'editor'|'viewer'>('editor'),inviteToken=ref(''),acceptToken=ref(''),teamName=ref('')
-const passwordVisible=ref(false)
+const passwordVisible=ref(false),documentationOpen=ref(false),passwordChangeOpen=ref(false),currentPassword=ref(''),newPassword=ref(''),repeatPassword=ref('')
 const workspaceOpen=ref(false),createOpen=ref(false),joinOpen=ref(false),accountInfoOpen=ref(false),memberMore=ref(''),dialogElement=ref<HTMLElement>()
 const activeDialog=computed(()=>membersOpen.value?'members':createOpen.value?'create':joinOpen.value?'join':accountInfoOpen.value?'account':undefined)
 let restoreFocus:HTMLElement|undefined
 const roleName=(role:CloudRole)=>({owner:'所有者',admin:'管理员',editor:'编辑者',viewer:'只读成员'}[role])
 const initials=(name:string)=>Array.from(name.trim()).slice(0,1).join('').toUpperCase()||'F'
 function closeMenus(){workspaceOpen.value=false;accountOpen.value=false;memberMore.value=''}
-function closeDialog(){if(busy.value)return;membersOpen.value=false;createOpen.value=false;joinOpen.value=false;accountInfoOpen.value=false;inviteToken.value='';invitePhone.value='';acceptToken.value='';teamName.value='';memberMore.value='';error.value=''}
+function closeDialog(){if(busy.value)return;passwordChangeOpen.value=false;currentPassword.value='';newPassword.value='';repeatPassword.value='';membersOpen.value=false;createOpen.value=false;joinOpen.value=false;accountInfoOpen.value=false;inviteToken.value='';invitePhone.value='';acceptToken.value='';teamName.value='';memberMore.value='';error.value=''}
 function rememberTrigger(){const active=document.activeElement;restoreFocus=active instanceof Element?active.closest('[data-cloud-menu]')?.querySelector<HTMLElement>('button[aria-haspopup="menu"]')??(active instanceof HTMLElement?active:undefined):undefined}
-function openDialog(kind:'create'|'join'|'account'){rememberTrigger();closeMenus();error.value='';createOpen.value=kind==='create';joinOpen.value=kind==='join';accountInfoOpen.value=kind==='account'}
+function openDialog(kind:'create'|'join'|'account'|'password'){rememberTrigger();closeMenus();error.value='';currentPassword.value='';newPassword.value='';repeatPassword.value='';createOpen.value=kind==='create';joinOpen.value=kind==='join';passwordChangeOpen.value=kind==='password';accountInfoOpen.value=kind==='account'||kind==='password'}
 function toggleMemberMenu(id:string){const opening=memberMore.value!==id;memberMore.value=opening?id:'';if(opening)void nextTick(()=>document.querySelector<HTMLElement>('.cloud-member-popup button')?.focus())}
 function toggleMenu(kind:'workspace'|'account'){const open=kind==='workspace'?!workspaceOpen.value:!accountOpen.value;closeMenus();if(kind==='workspace')workspaceOpen.value=open;else accountOpen.value=open;if(open)void nextTick(()=>document.querySelector<HTMLElement>('.cloud-popup[role="menu"] button')?.focus())}
 function outside(event:PointerEvent){if(event.target instanceof Element&&!event.target.closest('[data-cloud-menu]'))closeMenus()}
@@ -45,7 +46,7 @@ let channel:BroadcastChannel|undefined
 function announce(){channel?.postMessage('identity-changed')}
 async function loseIdentity(guard:CloudIdentityGuard,cause:Error){
  if(identity.value!==guard||suspended.value)return
- suspended.value=true;membersOpen.value=false;createOpen.value=false;joinOpen.value=false;accountInfoOpen.value=false;closeMenus();members.value=[];inviteToken.value='';invitePhone.value='';acceptToken.value='';teamName.value='';consent.value=undefined;error.value=cause.message
+ suspended.value=true;currentPassword.value='';newPassword.value='';repeatPassword.value='';passwordChangeOpen.value=false;membersOpen.value=false;createOpen.value=false;joinOpen.value=false;accountInfoOpen.value=false;closeMenus();members.value=[];inviteToken.value='';invitePhone.value='';acceptToken.value='';teamName.value='';consent.value=undefined;error.value=cause.message
  try{await studio.value?.suspendForIdentityChange()}catch(e){error.value+='；本机草稿保存失败：'+(e instanceof Error?e.message:String(e))}
  if(identity.value!==guard||disposed)return
  team.value=undefined;me.value=undefined;identity.value=undefined;api=authApi;suspended.value=false
@@ -63,6 +64,7 @@ async function guarded(action:()=>Promise<unknown>){if(busy.value)return;busy.va
 async function refreshIdentity(){const guard=identity.value;if(!guard)throw Error('请重新登录');const value=await guard.check(team.value?.id);if(identity.value!==guard||suspended.value)throw Error('登录身份已改变');me.value=value;if(team.value)team.value=value.teams.find(t=>t.id===team.value!.id);return value}
 async function selectTeam(id:string){if(id===team.value?.id)return;await guarded(async()=>{const selected=me.value?.teams.find(t=>t.id===id);if(!selected)throw Error('无权访问该团队');if(studio.value&&!await studio.value.prepareLeave())return;team.value=selected;membersOpen.value=false;accountOpen.value=false;const query:LocationQueryRaw={...route.query,team:id};delete query.diagram;await replaceQuery(query)})}
 async function login(){await guarded(async()=>{try{await authApi.login(phone.value.trim(),password.value)}finally{password.value='';passwordVisible.value=false}const value=await authApi.me();bind(value);announce();if(authorizationId.value){await inspectConsent();return}const requested=typeof route.query.team==='string'?route.query.team:undefined;team.value=value.teams.find(t=>t.id===requested)??value.teams[0];if(team.value){const query:LocationQueryRaw={...route.query,team:team.value.id};if(requested&&requested!==team.value.id)delete query.diagram;await replaceQuery(query)}})}
+async function changePassword(){if(newPassword.value!==repeatPassword.value){error.value='两次输入的新密码不一致';return}if(Array.from(newPassword.value).length<6||!newPassword.value.trim()||new TextEncoder().encode(newPassword.value).length>72){error.value='新密码至少6位，最多72字节，无需混合大小写或符号';return}await guarded(async()=>{if(studio.value&&!await studio.value.prepareLeave())return;const guard=identity.value;const result=await api.changePassword(currentPassword.value,newPassword.value);if(!result.success||!result.reauthenticate)throw Error('密码修改结果未确认，请尝试用新密码重新登录');currentPassword.value='';newPassword.value='';repeatPassword.value='';passwordChangeOpen.value=false;password.value='';announce();if(guard)await loseIdentity(guard,new Error('密码已修改，请用新密码登录；其他设备和MCP需要重新授权'))})}
 async function logout(){await guarded(async()=>{if(studio.value&&!await studio.value.prepareLeave())return;await api.logout();announce();team.value=undefined;me.value=undefined;identity.value=undefined;api=authApi;members.value=[];inviteToken.value='';membersOpen.value=false;createOpen.value=false;joinOpen.value=false;accountInfoOpen.value=false;closeMenus();acceptToken.value='';teamName.value='';invitePhone.value='';await replaceQuery({})})}
 async function showMembers(){rememberTrigger();closeMenus();await guarded(async()=>{if(!team.value)return;members.value=await api.members(team.value.id);membersOpen.value=true;inviteToken.value=''})}
 function canEdit(member:CloudMember){return member.userId!==me.value?.user.id&&manage.value&&member.role!=='owner'&&(team.value?.role==='owner'||member.role!=='admin')}
@@ -129,15 +131,17 @@ onMounted(async()=>{
   <template #sidebar-footer>
    <div class="cloud-account cloud-ui" data-cloud-menu @click.stop>
     <button class="cloud-account-trigger" aria-haspopup="menu" :aria-expanded="accountOpen" :disabled="busy" @click.stop="toggleMenu('account')"><span class="cloud-avatar">{{initials(me.user.name)}}</span><span class="cloud-truncate">{{me.user.name}}</span><Icon name="chevron" :size="14"/></button>
-    <div v-if="accountOpen" class="cloud-popup cloud-account-popup" role="menu" aria-label="账号"><button role="menuitem" @click="openDialog('account')">账号信息</button><button role="menuitem" :disabled="busy" @click="closeMenus();logout()">退出登录</button></div>
+    <div v-if="accountOpen" class="cloud-popup cloud-account-popup" role="menu" aria-label="账号"><button role="menuitem" @click="openDialog('account')">账号信息</button><button role="menuitem" @click="openDialog('password')">修改密码</button><button role="menuitem" :disabled="busy" @click="closeMenus();logout()">退出登录</button></div>
    </div>
   </template>
  </NativeStudio>
  <div v-else class="cloud-login cloud-ui"><h1>FlyMind</h1><p>{{error||'暂无可用团队'}}</p><button :disabled="busy" @click="openDialog('create')">创建团队</button><button :disabled="busy" @click="openDialog('join')">加入团队</button><button :disabled="busy" @click="logout">退出登录</button></div>
+ <button v-if="!me||!context||authorizationId" class="cloud-documentation-button" type="button" aria-label="文档" title="文档" @click="documentationOpen=true"><Icon name="book"/></button>
+ <FlyMindDocumentation :open="documentationOpen" :appearance="readStudioAppearance()" @close="documentationOpen=false" />
  <div v-if="me&&error&&team&&!activeDialog" class="cloud-error cloud-ui" role="alert">{{error}}<button aria-label="关闭提示" @click="error=''"><Icon name="close" :size="14"/></button></div>
  <div v-if="me&&activeDialog" class="cloud-overlay cloud-ui" @click.self="closeDialog">
   <section ref="dialogElement" class="cloud-dialog" :class="{'cloud-members-dialog':membersOpen}" role="dialog" aria-modal="true" aria-labelledby="cloud-dialog-title">
-   <header class="cloud-dialog-heading"><h2 id="cloud-dialog-title">{{membersOpen?'团队成员':createOpen?'创建团队':joinOpen?'加入团队':'账号信息'}}</h2><button class="cloud-icon-button" aria-label="关闭" :disabled="busy" @click="closeDialog"><Icon name="close" :size="17"/></button></header>
+   <header class="cloud-dialog-heading"><h2 id="cloud-dialog-title">{{membersOpen?'团队成员':createOpen?'创建团队':joinOpen?'加入团队':passwordChangeOpen?'修改密码':'账号信息'}}</h2><button class="cloud-icon-button" aria-label="关闭" :disabled="busy" @click="closeDialog"><Icon name="close" :size="17"/></button></header>
    <template v-if="membersOpen&&team">
     <div class="cloud-section-heading"><span class="cloud-truncate">{{team.name}}</span><span>{{members.length}} 位成员</span></div>
     <div class="cloud-member-list">
@@ -152,6 +156,7 @@ onMounted(async()=>{
    </template>
    <form v-else-if="createOpen" class="cloud-dialog-form" @submit.prevent="createTeam"><label>团队名称<input v-model="teamName" required maxlength="80" :disabled="busy" autocomplete="off"></label><div class="cloud-dialog-footer"><button type="button" :disabled="busy" @click="closeDialog">取消</button><button class="cloud-primary" :disabled="busy||!teamName.trim()">创建团队</button></div></form>
    <form v-else-if="joinOpen" class="cloud-dialog-form" @submit.prevent="accept"><label>邀请令牌<input v-model="acceptToken" required :disabled="busy" autocomplete="off"></label><div class="cloud-dialog-footer"><button type="button" :disabled="busy" @click="closeDialog">取消</button><button class="cloud-primary" :disabled="busy||!acceptToken.trim()">加入团队</button></div></form>
+   <form v-else-if="passwordChangeOpen" class="cloud-dialog-form" @submit.prevent="changePassword"><label>当前密码<input v-model="currentPassword" type="password" autocomplete="current-password" required :disabled="busy"></label><label>新密码<input v-model="newPassword" type="password" autocomplete="new-password" required minlength="6" maxlength="72" :disabled="busy" placeholder="至少6位，无需大小写或符号组合"></label><label>确认新密码<input v-model="repeatPassword" type="password" autocomplete="new-password" required :disabled="busy"></label><p class="cloud-muted">仅修改前台密码。修改后需重新登录，并重新授权本地设备和MCP。</p><div class="cloud-dialog-footer"><button type="button" :disabled="busy" @click="closeDialog">取消</button><button class="cloud-primary" :disabled="busy||!currentPassword||!newPassword||!repeatPassword">保存密码</button></div></form>
    <div v-else class="cloud-account-info"><span class="cloud-avatar">{{initials(me.user.name)}}</span><strong>{{me.user.name}}</strong><span class="cloud-muted">账号 {{me.user.id}}</span></div>
    <p v-if="error" class="cloud-form-error" role="alert">{{error}}</p>
   </section>

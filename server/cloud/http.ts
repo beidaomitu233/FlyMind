@@ -125,12 +125,13 @@ export function createCloudHTTP(options:CloudHTTPOptions){
   if(!response.ok||value?.code!==200){const status=[400,401,403,404,409,429,503].includes(response.status)?response.status:503;throw new CloudAccessError(status,typeof value?.errorCode==='string'?value.errorCode:'IDENTITY_UNAVAILABLE',typeof value?.message==='string'?value.message:'授权服务暂时不可用')}
   if(login||path==='/app/flymind/auth/me'){try{value.data.expiresAt=wirePositiveInteger(value.data?.expiresAt)}catch{throw new CloudAccessError(503,'IDENTITY_INVALID_RESPONSE','授权服务响应无效')}}
   if(login){const data=value.data;if(!data||!tokenPattern.test(data.sessionToken)||data.expiresAt<=Date.now()||!data.user?.id||typeof data.user.name!=='string')throw new CloudAccessError(503,'IDENTITY_INVALID_RESPONSE','授权服务响应无效');res.cookie(cookieName,data.sessionToken,{httpOnly:true,secure,sameSite:'strict',path:'/',maxAge:data.expiresAt-Date.now()});res.json({code:200,message:value.message??'ok',data:{user:data.user,expiresAt:data.expiresAt}});return}
-  if(path==='/app/flymind/auth/logout')res.clearCookie(cookieName,{httpOnly:true,secure,sameSite:'strict',path:'/'})
+  if(path==='/app/flymind/auth/logout'||path==='/app/flymind/auth/password')res.clearCookie(cookieName,{httpOnly:true,secure,sameSite:'strict',path:'/'})
   res.json(value)
  }
  app.post('/cloud-api/auth/login',async(req,res)=>{const b=req.body;if(!b||Object.keys(b).some(k=>!['phone','password'].includes(k))||typeof b.phone!=='string'||b.phone.length>32||!b.phone.length||typeof b.password!=='string'||!b.password.length||b.password.length>200)throw new CloudAccessError(400,'INVALID_LOGIN','手机号或密码格式无效');await proxy(req,res,'/app/flymind/auth/login',true)})
  app.get('/cloud-api/auth/me',(req,res)=>proxy(req,res,'/app/flymind/auth/me'))
  app.post('/cloud-api/auth/logout',(req,res)=>proxy(req,res,'/app/flymind/auth/logout'))
+ app.post('/cloud-api/auth/password',async(req,res)=>{const b=req.body;if(!b||Array.isArray(b)||Object.keys(b).length!==2||Object.keys(b).some(k=>!['currentPassword','newPassword'].includes(k))||typeof b.currentPassword!=='string'||!b.currentPassword.length||Buffer.byteLength(b.currentPassword,'utf8')>72||typeof b.newPassword!=='string'||Array.from(b.newPassword).length<6||!b.newPassword.trim()||Buffer.byteLength(b.newPassword,'utf8')>72)throw new CloudAccessError(400,'INVALID_INPUT','新密码至少6位，最多72字节，无需混合大小写或符号');await proxy(req,res,'/app/flymind/auth/password')})
  app.get('/cloud-api/teams',(req,res)=>proxy(req,res,'/app/flymind/teams'))
  app.post('/cloud-api/teams',(req,res)=>proxy(req,res,'/app/flymind/teams'))
  const teamProxy:[string,'get'|'post'|'patch'|'delete'][]=[['/:teamId','patch'],['/:teamId/members','get'],['/:teamId/invites','post'],['/:teamId/members/:userId','patch'],['/:teamId/members/:userId','delete'],['/:teamId/transfer','post'],['/:teamId/leave','post']]

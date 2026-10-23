@@ -1,5 +1,7 @@
 # FlyMind draw.io 技术设计
 
+> 2026-10-23 R28：新增Flyway表app_flymind_account，复用sys_user.user_id以保留归属，密码/状态单独存储；兼容导入幂等且不自动开通纯后台账号。前台改密API经Node同源cookie/身份预检代理Java，错误原密码400不撤销会话，成功撤销前台会话/OAuth/设备授权并清cookie。后台要求真实启用角色；无tenant_id的两张关系表加入租户排除，实体过滤保留。文档为共享纯内容model+覆盖dialog，不改变画布协议。已本地验收，MySQL生产迁移与线上验收仍待Actions发布；[契约](cloud/CONTRACT.md)、[证据](validation/auth-documentation-20261023.md)。
+
 > 2026-10-21 R26/R27：任务归属为内容对象之外的组织元数据，使用现有workspaceGroupId和新增create参数taskName；任务组与图形在同一SQLite事务落库，幂等回执与并发复用沿用现有服务，不在图内groups伪造文件夹。流程/泳道回流通过主方向/阶段及feedback语义识别，强制经过整体绘图区外侧通道，固定libavoid仍负责节点避障；只更新受影响边，普通文案编辑保留人工几何。本轮不改版本/不部署，证据见[本地验收](validation/task-groups-and-return-routes.md)。
 
 > 2026-10-20 v1.1集成基线：按[版本计划](releases/V1_1_PLAN.md)合入冻结云端账号/团队/OAuth/协同核心与当前质量线。操作记录绑定权威身份和持久提交；目录导入复用已有结构验证/来源保留并增加批次去重与目标归档。发布同时保护MCP会话、协同未ACK编辑和不可变导出任务，服务器OS和现有服务待SSH只读核查。v1.1仍待实施/整体验收，不修改当前数据或取消本机安全边界。

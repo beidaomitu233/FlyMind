@@ -2,6 +2,7 @@
 <script setup lang="ts">
 withDefaults(defineProps<{name:string;size?:number}>(),{size:18})
 const paths:Record<string,string>={
+  book:'M12 5v16 M3 3h5a4 4 0 0 1 4 2 4 4 0 0 1 4-2h5v16h-5a4 4 0 0 0-4 2 4 4 0 0 0-4-2H3z',
   sun:'M12 3V1 M12 23v-2 M3 12H1 M23 12h-2 M4.2 4.2l1.4 1.4 M18.4 18.4l1.4 1.4 M4.2 19.8l1.4-1.4 M18.4 5.6l1.4-1.4 M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0',
   moon:'M20.5 14A9 9 0 0 1 10 3.5 9 9 0 1 0 20.5 14z',
   'folder-plus':'M3 6h6l2 2h10v12H3z M12 11v6 M9 14h6',

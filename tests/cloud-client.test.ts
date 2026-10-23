@@ -14,6 +14,14 @@ test('draft namespaces cannot collide between users or teams; local database is 
  const values=[cloudDraftDatabase('u1','t1'),cloudDraftDatabase('u1','t2'),cloudDraftDatabase('u2','t1'),cloudDraftDatabase('u:1','t1'),cloudDraftDatabase('u','1:t1')]
  assert.equal(new Set(values).size,values.length);assert.ok(values.every(v=>v!=='flymind-native-drafts-v1'))
 })
+
+test('front-end password changes use the current identity and keep correctable password errors signed in',async()=>{
+ const calls:Array<{url:string;body:unknown}>=[];let lost=0
+ const {CloudIdentityGuard}=await import('../src/drawing/services/cloud-client')
+ const guard=new CloudIdentityGuard('u1',async(input,init)=>{if(String(input).endsWith('/auth/me'))return Response.json({code:200,data:{user:{id:'u1'},teams:[]}});calls.push({url:String(input),body:JSON.parse(String(init?.body))});return Response.json({code:'INVALID_CURRENT_PASSWORD',error:'当前密码不正确'},{status:400})},()=>lost++)
+ const api=new CloudClient(guard.fetch());await assert.rejects(()=>api.changePassword('old-value','easy12'),e=>e instanceof NativeApiError&&e.code==='INVALID_CURRENT_PASSWORD')
+ await guard.check();assert.equal(lost,0);assert.deepEqual(calls,[{url:'/cloud-api/auth/password',body:{currentPassword:'old-value',newPassword:'easy12'}}])
+})
 test('viewer blocks all diagram and organization mutations while allowing a real export',async()=>{
  const calls:string[]=[];const transport=cloudTeamFetch('viewer',async(input)=>{calls.push(String(input));return Response.json({})})
  for(const [path,method] of [['/diagrams/d1/editor','POST'],['/diagrams','POST'],['/groups','POST'],['/diagrams/d1/group','PUT'],['/trash/d1','DELETE']])await assert.rejects(()=>transport('/cloud-api/teams/t1/studio-api/native'+path,{method}),e=>e instanceof NativeApiError&&e.status===403)

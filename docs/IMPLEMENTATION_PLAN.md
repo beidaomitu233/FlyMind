@@ -1,5 +1,7 @@
 # FlyMind draw.io 实施计划
 
+2026-10-23 R28本地通过：后台登录SQL复现/修复、前台独立凭据及自助改密、五章节文档入口。PM独立37项回归、前后端类型/构建、管理端构建及限定实页通过；线上未更新。后续仅GitHub Actions，禁止本机SSH。现有promote不更新Java，需先补受限控制面发布入口、一次性控制台安装及MySQL迁移/就绪验收；生产开关保持关闭。详见[本批验收](validation/auth-documentation-20261023.md)和[待实施发布步骤](cloud/ACTIONS_CONTROL_PLANE_ROLLOUT.md)。
+
 2026-10-21 当前本地优化已通过[任务分组与外围回流集成验收](validation/task-groups-and-return-routes.md)：AI新图强制当前任务归组、原新建窗口默认/取消闭环、流程/泳道横竖外围回流；PM独立75项回归和构建通过。用户已停止上线排查，本轮未提交、未推送、未改版本；不据此宣称整个v1.1已发布。
 
 2026-10-20 当前状态见 [v1.1 实施台账](releases/V1_1_EXECUTION.md)：质量已提交、协同分支已整合，继续完整 v1.1 目标。下方早期暂停/仅方案限制不阻挡本次已授权开发。

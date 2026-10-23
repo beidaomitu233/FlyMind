@@ -1,0 +1,43 @@
+#!/bin/bash
+# Install a separate root-owned, no-argument helper per environment.
+# Audit these fixed paths/database first. Do not turn them into caller arguments.
+set -euo pipefail
+umask 077
+[[ $# == 0 && $(id -u) == 0 ]] || exit 64
+readonly directory=/var/backups/flymind/production-mysql
+readonly defaults=/etc/flymind/production/mysql-backup.cnf
+readonly dump=/usr/bin/mysqldump
+readonly python=/AUDITED_SUPPLIED_PYTHON/bin/python3
+readonly database=AUDITED_DB_NAME
+[[ "$database" != AUDITED_DB_NAME && "$database" =~ ^[a-zA-Z0-9_]+$ && -x "$python" ]] || exit 65
+# Node dispatcher independently checks all ancestors and returned file ownership.
+[[ -d "$directory" && ! -L "$directory" && -f "$defaults" && ! -L "$defaults" ]] || exit 65
+[[ $(stat -c %u "$defaults") == 0 && $(stat -c %a "$defaults") == 600 ]] || exit 65
+started=$("$python" -c 'import time; print(int(time.time()*1000))')
+work=$(mktemp -d "$directory/.backup-XXXXXXXX")
+trap 'rm -rf -- "$work"' EXIT
+# --defaults-extra-file must be the first option. Password stays in root-private CNF.
+# Failure returns nonzero and never emits a success receipt.
+"$dump" --defaults-extra-file="$defaults" --single-transaction --skip-lock-tables --routines --triggers --events --hex-blob --no-tablespaces --set-gtid-purged=OFF --databases "$database" >"$work/database.sql" 2>"$work/error.log"
+[[ -s "$work/database.sql" ]] || exit 66
+/usr/bin/gzip -c -- "$work/database.sql" >"$work/database.sql.gz"
+# gzip integrity checks before immutable publication. Never publish a partial dump.
+/usr/bin/gzip -t -- "$work/database.sql.gz"
+"$python" - "$work/database.sql.gz" "$directory" "$started" <<'PY'
+import sys,os,time,json,hashlib,uuid
+source,directory,started=sys.argv[1:]
+name='database-'+uuid.uuid4().hex+'.sql.gz'
+target=os.path.join(directory,name)
+with open(source,'rb') as stream:
+ os.fsync(stream.fileno())
+ digest=hashlib.file_digest(stream,'sha256').hexdigest()
+size=os.stat(source).st_size
+os.link(source,target)
+fd=os.open(directory,os.O_RDONLY)
+try: os.fsync(fd)
+finally: os.close(fd)
+receipt={'file':name,'sha256':digest,'bytes':size,'startedAt':int(started),'completedAt':int(time.time()*1000),'consistent':True}
+with open(target+'.receipt.json','x',encoding='utf-8') as stream:
+ json.dump(receipt,stream);stream.flush();os.fsync(stream.fileno())
+print(json.dumps(receipt))
+PY

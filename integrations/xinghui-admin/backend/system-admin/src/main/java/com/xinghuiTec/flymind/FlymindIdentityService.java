@@ -43,7 +43,7 @@ public class FlymindIdentityService {
  private String role(String role){if(!Set.of("admin","editor","viewer").contains(role==null?"":role))throw bad();return role;}
  private String raw(String bearer){if(bearer==null||!bearer.matches("Bearer [A-Za-z0-9_-]{43}"))throw unauthorized();return bearer.substring(7);}
  private record Account(String id,String name,String password){}
- private List<Account> account(String phone,boolean lock){return db.query("SELECT user_id,COALESCE(NULLIF(nickname,''),username) AS display_name,password FROM sys_user WHERE mobile=? AND tenant_id=? AND status=1 AND is_deleted=0"+(lock?" FOR UPDATE":""),(r,n)->new Account(r.getString("user_id"),r.getString("display_name"),r.getString("password")),phone,tenant);}
+ private List<Account> account(String phone,boolean lock){return db.query("SELECT u.user_id,COALESCE(NULLIF(u.nickname,''),u.username) AS display_name,a.password FROM sys_user u JOIN app_flymind_account a ON a.user_id=u.user_id WHERE u.mobile=? AND u.tenant_id=? AND a.status=1 AND u.is_deleted=0"+(lock?" FOR UPDATE":""),(r,n)->new Account(r.getString("user_id"),r.getString("display_name"),r.getString("password")),phone,tenant);}
  public Login login(String phone,String password,String ip){
   if(phone==null||password==null||phone.length()>32||password.getBytes(StandardCharsets.UTF_8).length>72)throw new FlymindException(401,"INVALID_CREDENTIALS","手机号或密码错误");
   limiter.check(ip==null?"unknown":ip,phone);
@@ -58,13 +58,23 @@ public class FlymindIdentityService {
  @Transactional(noRollbackFor=FlymindException.class)
  public Actor authenticate(String bearer){
   String digest=hash(raw(bearer));
-  List<Actor> rows=db.query("SELECT s.id,s.expires_at,u.user_id,COALESCE(NULLIF(u.nickname,''),u.username) AS display_name FROM app_flymind_session s JOIN sys_user u ON u.user_id=s.user_id WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND u.tenant_id=? AND u.status=1 AND u.is_deleted=0",(r,n)->new Actor(new User(r.getString("user_id"),r.getString("display_name")),new Session(r.getString("id"),r.getLong("expires_at"))),digest,clock.getAsLong(),tenant);
+  List<Actor> rows=db.query("SELECT s.id,s.expires_at,u.user_id,COALESCE(NULLIF(u.nickname,''),u.username) AS display_name FROM app_flymind_session s JOIN sys_user u ON u.user_id=s.user_id JOIN app_flymind_account a ON a.user_id=u.user_id WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND u.tenant_id=? AND a.status=1 AND u.is_deleted=0",(r,n)->new Actor(new User(r.getString("user_id"),r.getString("display_name")),new Session(r.getString("id"),r.getLong("expires_at"))),digest,clock.getAsLong(),tenant);
   if(rows.size()!=1)throw unauthorized();return rows.get(0);
  }
  public List<Team> teams(String bearer){Actor a=authenticate(bearer);return listTeams(a);}
  private List<Team> listTeams(Actor a){return db.query("SELECT t.id,t.name,m.role FROM app_flymind_team t JOIN app_flymind_member m ON m.team_id=t.id WHERE m.user_id=? AND t.status=1 ORDER BY t.created_at,t.id",(r,n)->new Team(r.getString(1),r.getString(2),r.getString(3)),a.user().id());}
  public Map<String,Object> me(String bearer){Actor a=authenticate(bearer);return Map.of("user",a.user(),"expiresAt",a.session().expiresAt(),"teams",listTeams(a));}
  public void logout(String bearer){Actor a=authenticate(bearer);db.update("UPDATE app_flymind_session SET revoked_at=? WHERE id=?",clock.getAsLong(),a.session().id());}
+ public void changePassword(String bearer,String currentPassword,String newPassword){
+  Actor actor=authenticate(bearer);FlymindAppAccounts.validatePassword(newPassword);
+  if(currentPassword==null||currentPassword.getBytes(StandardCharsets.UTF_8).length>72)throw new FlymindException(400,"INVALID_CURRENT_PASSWORD","当前密码不正确");
+  limiter.check("password-change",actor.user().id());
+  List<String> hashes=db.query("SELECT a.password FROM app_flymind_account a JOIN sys_user u ON u.user_id=a.user_id WHERE a.user_id=? AND a.status=1 AND u.tenant_id=? AND u.is_deleted=0 FOR UPDATE",(r,n)->r.getString(1),actor.user().id(),tenant);
+  if(hashes.size()!=1)throw unauthorized();
+  if(!passwords.matches(currentPassword,hashes.get(0)))throw new FlymindException(400,"INVALID_CURRENT_PASSWORD","当前密码不正确");
+  long now=clock.getAsLong();db.update("UPDATE app_flymind_account SET password=?,updated_at=? WHERE user_id=?",passwords.encode(newPassword),now,actor.user().id());
+  FlymindAppAccounts.revoke(db,actor.user().id(),now);
+ }
  private Team membership(Actor a,String teamId,boolean lock){
   if(teamId==null||teamId.length()>36)throw bad();
   if(lock){List<String> found=db.query("SELECT id FROM app_flymind_team WHERE id=? AND status=1 FOR UPDATE",(r,n)->r.getString(1),teamId);if(found.size()!=1)throw denied();}
@@ -83,5 +93,5 @@ public class FlymindIdentityService {
  public void remove(String bearer,String tid,String uid){Actor a=authenticate(bearer);Team t=membership(a,tid,true);manager(t);String old=memberRole(tid,uid);if("owner".equals(old)||("admin".equals(old)&&!"owner".equals(t.role())))throw denied();db.update("DELETE FROM app_flymind_member WHERE team_id=? AND user_id=?",tid,uid);revokeLocalMembership(tid,uid);}
  public void leave(String bearer,String tid){Actor a=authenticate(bearer);Team t=membership(a,tid,true);if("owner".equals(t.role()))throw denied();db.update("DELETE FROM app_flymind_member WHERE team_id=? AND user_id=?",tid,a.user().id());revokeLocalMembership(tid,a.user().id());}
  private void revokeLocalMembership(String tid,String uid){db.update("UPDATE app_flymind_local_grant SET revoked_at=COALESCE(revoked_at,?) WHERE team_id=? AND user_id=?",clock.getAsLong(),tid,uid);}
- public void transfer(String bearer,String tid,String uid){Actor a=authenticate(bearer);Team t=membership(a,tid,true);if(!"owner".equals(t.role())||a.user().id().equals(uid))throw denied();memberRole(tid,uid);if("personal".equals(db.queryForObject("SELECT type FROM app_flymind_team WHERE id=?",String.class,tid)))throw denied();Integer enabled=db.queryForObject("SELECT COUNT(*) FROM sys_user WHERE user_id=? AND tenant_id=? AND status=1 AND is_deleted=0",Integer.class,uid,tenant);if(enabled==null||enabled!=1)throw denied();db.update("UPDATE app_flymind_member SET role='admin' WHERE team_id=? AND user_id=?",tid,a.user().id());db.update("UPDATE app_flymind_member SET role='owner' WHERE team_id=? AND user_id=?",tid,uid);}
+ public void transfer(String bearer,String tid,String uid){Actor a=authenticate(bearer);Team t=membership(a,tid,true);if(!"owner".equals(t.role())||a.user().id().equals(uid))throw denied();memberRole(tid,uid);if("personal".equals(db.queryForObject("SELECT type FROM app_flymind_team WHERE id=?",String.class,tid)))throw denied();Integer enabled=db.queryForObject("SELECT COUNT(*) FROM sys_user u JOIN app_flymind_account a ON a.user_id=u.user_id WHERE u.user_id=? AND u.tenant_id=? AND a.status=1 AND u.is_deleted=0",Integer.class,uid,tenant);if(enabled==null||enabled!=1)throw denied();db.update("UPDATE app_flymind_member SET role='admin' WHERE team_id=? AND user_id=?",tid,a.user().id());db.update("UPDATE app_flymind_member SET role='owner' WHERE team_id=? AND user_id=?",tid,uid);}
 }

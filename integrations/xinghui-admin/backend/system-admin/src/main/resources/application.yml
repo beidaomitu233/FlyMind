@@ -51,4 +51,6 @@ tenant:
     - sys_tenant
     - sys_tenant_package
     - sys_menu
+    - sys_user_role
+    - sys_role_menu
 # JWT_SECRET is mandatory (>=32 bytes). No default account/password is supplied.

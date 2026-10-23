@@ -30,12 +30,12 @@ public class SysPasswordUpdateDTO {
 
     /**
      * 新密码
-     * 必填，长度6-20个字符
+     * 必填，长度至少12字符且不超过72 UTF-8字节
      * 建议包含数字、字母、特殊字符
      */
     @NotBlank(message = "新密码不能为空")
-    @Size(min = 6, max = 20, message = "新密码长度必须在6-20个字符之间")
-    @Pattern(regexp = "^(?=.*[0-9])(?=.*[a-zA-Z]).{6,20}$", message = "新密码必须包含数字和字母")
+    @Size(min = 12, max = 72, message = "后台密码长度至少12字符且不超过72 UTF-8字节")
+    @Pattern(regexp = "^(?=.*[0-9])(?=.*[a-zA-Z]).{12,72}$", message = "新密码必须包含数字和字母")
     private String newPassword;
 
     /**

@@ -30,6 +30,8 @@ public class UserDetailManageImpl implements UserDetailsService {
 
     @Resource
     private SysUserRoleService roleService;
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate db;
 
     /**
      * 按手机号加载用户（不限租户）
@@ -42,6 +44,11 @@ public class UserDetailManageImpl implements UserDetailsService {
                 new LambdaQueryWrapper<SysUser>().eq(SysUser::getMobile, phone)
         ));
 
+        // Application credentials never grant admin login. Resolve only identities
+        // with an active backend role before testing phone uniqueness.
+        if(users!=null)users=users.stream().filter(user->Integer.valueOf(1).equals(user.getStatus())&&db.queryForObject(
+            "SELECT COUNT(*) FROM sys_user_role ur JOIN sys_role r ON r.role_id=ur.role_id WHERE ur.user_id=? AND r.tenant_id=? AND r.status=1 AND r.is_deleted=0",
+            Integer.class,user.getUserId(),user.getTenantId())>0).collect(Collectors.toList());
         if (users == null || users.isEmpty()) {
             throw new UsernameNotFoundException("手机号未注册");
         }

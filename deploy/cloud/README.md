@@ -1,5 +1,7 @@
 # 云端制品晋级：受限调度器与初始化边界
 
+2026-10-23最新约束：后续统一GitHub Actions，停止本机直接SSH/扫码部署。本批已实现独立Java受限发布器、真实JAR/MySQL/Redis构建门槛及显式完整栈模式；旧服务器入口尚待一次性控制台安装，线上尚未更新。执行说明见[控制面安装](../../docs/cloud/CONTROL_PLANE_ACTIONS.md)，方案与验收步骤见[发布台账](../../docs/cloud/ACTIONS_CONTROL_PLANE_ROLLOUT.md)。下方旧promote仍只更新application/admin，不能把旧入口当已具备完整栈升级。
+
 此目录是待目标机验证的 Linux 模板，**尚未部署服务器**。完整目标包括 Java 控制面、MySQL/Redis、独立 MCP 网关、绘图应用、管理端以及真正实时协作；本调度器只晋级 **绘图应用 + 与其同制品的 admin 静态文件**，不能称为全栈自动升级。
 
 ## 首次 SSH：先只读识别

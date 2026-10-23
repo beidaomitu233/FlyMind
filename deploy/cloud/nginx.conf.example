@@ -20,6 +20,9 @@ server {
         proxy_set_header Host $http_host;
     }
     location /admin/ { alias /opt/flymind/current/admin/; try_files $uri $uri/ /admin/index.html; }
+    # The release probe is for a local, key-authenticated dispatcher only.
+    location = /internal/flymind/readyz { return 404; }
+    location = /api/internal/flymind/readyz { return 404; }
     location /api/ {
         proxy_pass http://127.0.0.1:18080/;
         proxy_set_header Host $http_host;

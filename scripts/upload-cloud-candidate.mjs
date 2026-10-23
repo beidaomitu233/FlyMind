@@ -16,6 +16,15 @@ export function deploymentUploadConfig(env=process.env){
  if(!env.DEPLOY_SSH_KEY?.includes('PRIVATE KEY')||!env.DEPLOY_KNOWN_HOSTS?.trim())throw Error('Pinned SSH host and deployment key are required')
  return {environment,id,host,user,port}
 }
+export function deploymentPromotionCommands(environment,id,digest,controlPlane='false'){
+ if(!['staging','production'].includes(environment)||!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(id??'')||!/^[a-f0-9]{64}$/.test(digest??'')||!['','false','true'].includes(controlPlane))throw Error('Deployment promotion mode or identity invalid')
+ const suffix=' '+environment+' '+id+' '+digest
+ return [...(controlPlane==='true'?['sudo -n /usr/local/libexec/flymind-control-plane-promote'+suffix]:[]),'sudo -n /usr/local/libexec/flymind-promote'+suffix]
+}
+export async function promoteUploadedCandidate(config,digest,options,controlPlane='false',ssh=runSSH){
+ // A failed Java readiness/rollback command must reject before app promotion.
+ for(const command of deploymentPromotionCommands(config.environment,config.id,digest,controlPlane))await ssh([...options,command])
+}
 export async function runSSH(args,inputPath,inputData){
  const hasInput=!!inputPath||inputData!==undefined
  const child=spawn('ssh',args,{stdio:[hasInput?'pipe':'ignore','inherit','inherit'],shell:false,windowsHide:true})
@@ -33,6 +42,8 @@ const hash=createHash('sha256');for await(const bytes of createReadStream(archiv
 // Failed-only reruns keep the producer's manifest id, never the current attempt.
 const identity=await readCandidateIdentity(archive,{runId:env.DEPLOY_SOURCE_RUN_ID,headSHA:env.DEPLOY_SOURCE_SHA})
 const {environment,id,host,user,port}=deploymentUploadConfig({...env,DEPLOY_RELEASE_ID:identity.releaseId})
+const controlPlane=env.DEPLOY_CONTROL_PLANE_DEPLOY??'false'
+deploymentPromotionCommands(environment,id,expected,controlPlane) // reject invalid mode before upload
 const transport=env.DEPLOY_TRANSPORT||'bytes'
 if(!['bytes','artifact-https'].includes(transport))throw Error('Unknown deployment transport')
 const root=await mkdtemp(join(tmpdir(),'flymind-deploy-')),key=join(root,'key'),known=join(root,'known_hosts')
@@ -50,7 +61,7 @@ try{
    catch{if(attempt===1)throw Error('Restricted artifact transfer failed after two attempts')}
   }
  }
- await runSSH([...options,'sudo -n /usr/local/libexec/flymind-promote '+environment+' '+id+' '+expected])
+ await promoteUploadedCandidate({environment,id},expected,options,controlPlane)
 }finally{if(!resolve(root).startsWith(resolve(tmpdir())+sep)||!root.includes('flymind-deploy-'))throw Error('Unsafe credential cleanup path');await rm(root,{recursive:true,force:true})}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)await uploadCloudCandidate()

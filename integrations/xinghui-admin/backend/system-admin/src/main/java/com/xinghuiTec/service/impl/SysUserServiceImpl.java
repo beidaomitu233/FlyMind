@@ -161,7 +161,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         user.setUsername(sysUserAddDTO.getUsername());
 
         // 使用BCrypt加密密码
-        String encryptedPassword = passwordEncoder.encode(sysUserAddDTO.getPassword());
+        String encryptedPassword = passwordEncoder.encode(com.xinghuiTec.service.AdminPasswordPolicy.validated(sysUserAddDTO.getPassword()));
         user.setPassword(encryptedPassword);
 
         user.setNickname(sysUserAddDTO.getNickname());
@@ -245,7 +245,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
             user.setMobile(dto.getMobile());
             user.setStatus(dto.getStatus());
             // 统一加密密码
-            user.setPassword(passwordEncoder.encode(dto.getPassword()));
+            user.setPassword(passwordEncoder.encode(com.xinghuiTec.service.AdminPasswordPolicy.validated(dto.getPassword())));
 
             sysUsers.add(user);
 
@@ -336,7 +336,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 
         // 如果密码不为空，则更新密码（使用BCrypt加密）
         if (StringUtils.hasText(sysUserAddDTO.getPassword())) {
-            String encryptedPassword = passwordEncoder.encode(sysUserAddDTO.getPassword());
+            String encryptedPassword = passwordEncoder.encode(com.xinghuiTec.service.AdminPasswordPolicy.validated(sysUserAddDTO.getPassword()));
             updateUser.setPassword(encryptedPassword);
         }
 
@@ -453,7 +453,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         }
 
         // 3. 使用BCrypt加密新密码
-        String encryptedPassword = passwordEncoder.encode(newPassword);
+        String encryptedPassword = passwordEncoder.encode(com.xinghuiTec.service.AdminPasswordPolicy.validated(newPassword));
 
         // 4. 更新用户密码
         SysUser updateUser = new SysUser();
@@ -752,7 +752,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         }
 
         // 6. 加密新密码
-        String encodedNewPassword = passwordEncoder.encode(updateDTO.getNewPassword());
+        String encodedNewPassword = passwordEncoder.encode(com.xinghuiTec.service.AdminPasswordPolicy.validated(updateDTO.getNewPassword()));
 
         // 7. 更新密码到数据库
         com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<SysUser> updateWrapper = new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<>();

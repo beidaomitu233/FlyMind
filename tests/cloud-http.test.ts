@@ -32,6 +32,7 @@ async function setup(renderer?:NativeExportRenderer,maxQueuedTeams=4,identity?:i
   if(!user||revoked.has(token))return reply(401,{})
   if(req.url==='/app/flymind/auth/me')return reply(200,{user:{id:user,name:user},expiresAt:Date.now()+3600000,teams:[{id:'team-a',name:'A',role:user==='viewer'?'viewer':'editor'}]})
   if(req.url==='/app/flymind/auth/logout'){revoked.add(token);return reply(200,{success:true})}
+  if(req.url==='/app/flymind/auth/password'){if(body.currentPassword!=='test-password'){res.statusCode=400;return res.end(JSON.stringify({code:400,errorCode:'INVALID_CURRENT_PASSWORD',message:'当前密码不正确'}))}revoked.add(token);return reply(200,{success:true,reauthenticate:true})}
   if(req.url==='/app/flymind/teams')return reply(200,[{id:'team-a',name:'A',role:'editor'}])
   if(req.url==='/app/flymind/session/introspect'){
    if(user==='bob'&&body.teamId!=='team-b'||user==='viewer'&&body.teamId!=='team-a')return reply(403,{})
@@ -50,6 +51,22 @@ async function setup(renderer?:NativeExportRenderer,maxQueuedTeams=4,identity?:i
  async function close(){await stop(http);await cloud.close();await stop(authority);assert.ok(resolve(root).startsWith(resolve(tmpdir())+sep)&&root.includes('flymind-cloud-http-'));await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100})}
  return {root,cloud,request,team,health,close,calls,revoked,base}
 }
+
+test('front-end password proxy requires identity and origin, preserves cookie on wrong current password, and clears it after revocation',async()=>{
+ const s=await setup();try{
+  const cookie='fm_cloud_session='+tokens.alice,body={currentPassword:'test-password',newPassword:'easy12'}
+  let r=await s.request('/cloud-api/auth/password',{cookie,method:'POST',body,origin:null});assert.equal(r.status,403)
+  r=await s.request('/cloud-api/auth/password',{cookie,method:'POST',body,userId:'bob'});assert.equal(r.status,409)
+  r=await s.request('/cloud-api/auth/password',{cookie,method:'POST',body:{...body,newPassword:'123'}});assert.equal(r.status,400)
+  r=await s.request('/cloud-api/auth/password',{cookie,method:'POST',body:{...body,newPassword:'😀😀😀'}});assert.equal(r.status,400)
+  r=await s.request('/cloud-api/auth/password',{cookie,method:'POST',body:{...body,extra:'bad'}});assert.equal(r.status,400)
+  r=await s.request('/cloud-api/auth/password',{cookie,method:'POST',body:{...body,currentPassword:'wrong'}});assert.equal(r.status,400);assert.equal((await r.json()).code,'INVALID_CURRENT_PASSWORD');assert.equal(r.headers.get('set-cookie'),null)
+  r=await s.request('/cloud-api/auth/me',{cookie});assert.equal(r.status,200)
+  r=await s.request('/cloud-api/auth/password',{cookie,method:'POST',body});assert.equal(r.status,200);assert.match(r.headers.get('set-cookie')!,/Expires=/);assert.deepEqual((await r.json()).data,{success:true,reauthenticate:true})
+  r=await s.request('/cloud-api/auth/me',{cookie});assert.equal(r.status,401)
+  assert.equal(s.calls.filter(c=>c.path==='/app/flymind/auth/password').length,2)
+ }finally{await s.close()}
+})
 
 test('cloud login proxies only fixed authority paths, keeps token in HttpOnly cookie, protects Host/Origin and logout',async()=>{
  const s=await setup();try{

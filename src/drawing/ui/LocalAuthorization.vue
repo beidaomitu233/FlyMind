@@ -2,9 +2,13 @@
 import {onMounted,onBeforeUnmount,ref,shallowRef,computed} from 'vue'
 import {onBeforeRouteLeave,useRoute} from 'vue-router'
 import NativeStudio from './NativeStudio.vue'
+import Icon from './Icon.vue'
+import FlyMindDocumentation from './FlyMindDocumentation.vue'
+import {readStudioAppearance} from '../state/studio-appearance'
 import {IndexedDbDraftRepository} from '../services/native-drafts'
 type Principal={user:{id:string;name:string};team:{id:string;name:string;role:string};session:{id:string}}
 type Status={loginRequired:boolean;provider:string;dataRootId:string;principal?:Principal}
+const documentationOpen=ref(false)
 const route=useRoute(),status=shallowRef<Status>(),studio=ref<InstanceType<typeof NativeStudio>>(),busy=ref(true),error=ref(''),phone=ref(''),password=ref(''),selection=ref(''),team=ref(''),teams=ref<Array<{id:string;name:string}>>([])
 let disposed=false,timer:ReturnType<typeof setInterval>|undefined,losing:Promise<void>|undefined
 const authorized=computed(()=>status.value?.loginRequired===false&&!!status.value.principal)
@@ -27,6 +31,7 @@ onBeforeRouteLeave(async()=>!authorized.value||await studio.value?.prepareLeave(
     <NativeStudio ref="studio" :key="status!.principal!.session.id" :draft-repository="repository" :client-options="options" :read-only="status?.principal?.team.role==='viewer'" />
   </div>
   <main v-else class="local-authorization">
+    <button class="local-documentation-button" type="button" aria-label="文档" title="文档" @click="documentationOpen=true"><Icon name="book"/></button>
     <form @submit.prevent="login">
       <h1>登录 FlyMind</h1>
       <p v-if="status">{{ status.provider }}</p>
@@ -36,8 +41,10 @@ onBeforeRouteLeave(async()=>!authorized.value||await studio.value?.prepareLeave(
       <button :disabled="busy||!status||!!selection&&!team">{{ busy?'正在确认…':selection?'授权本地工作区':'登录' }}</button>
     </form>
   </main>
+  <FlyMindDocumentation :open="documentationOpen" :appearance="readStudioAppearance()" @close="documentationOpen=false" />
 </template>
 
 <style scoped>
+.local-authorization .local-documentation-button{position:fixed;top:24px;right:24px;width:36px;height:36px;padding:0;display:grid;place-items:center;border:1px solid #dddde5;border-radius:8px;background:#fff;color:#666;cursor:pointer}.local-documentation-button:focus-visible{outline:2px solid #7567e8;outline-offset:3px}
 .local-authorized{height:100vh}.local-account{position:fixed;right:70px;top:9px;z-index:90;border:1px solid #d9d9e2;border-radius:6px;padding:5px 9px;background:#fff;color:#333;font-size:12px}.local-authorization{min-height:100vh;display:grid;place-items:center;background:#f5f6fa;color:#292932;font:14px system-ui}.local-authorization form{width:300px;display:grid;gap:16px}.local-authorization h1{font-size:22px;margin:0}.local-authorization p{margin:0}.local-authorization label{display:grid;gap:7px}.local-authorization input,.local-authorization select,.local-authorization button{padding:10px;border:1px solid #d4d4df;border-radius:6px;font:inherit}.local-authorization button{background:#7567e8;color:white;cursor:pointer}.local-authorization [role=alert]{color:#ad3030}
 </style>

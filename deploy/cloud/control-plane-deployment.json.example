@@ -1,0 +1,16 @@
+{
+  "incomingDirectory": "/var/lib/flymind/incoming",
+  "stateDirectory": "/var/lib/flymind/production/control-plane-deployments",
+  "backupDirectory": "/var/backups/flymind/production-mysql",
+  "jarPath": "/opt/flymind/control-plane/system-admin.jar",
+  "environmentFile": "/etc/flymind/control-plane.env",
+  "readinessKeyFile": "/etc/flymind/production/control-plane-readiness.key",
+  "pythonExecutable": "/AUDITED_SUPPLIED_PYTHON/bin/python3",
+  "backupHelper": "/usr/local/libexec/flymind-production-mysql-backup",
+  "service": "flymind-control-plane.service",
+  "readinessOrigin": "http://127.0.0.1:18080",
+  "rollbackPolicy": "stop-on-failure",
+  "allowedMigrations": {
+    "V1__baseline_schema.sql": "REPLACE_WITH_AUDITED_JAR_MIGRATION_SHA256_INVENTORY"
+  }
+}

@@ -66,7 +66,7 @@ public class OAuthGrants {
     }
     public Redirect approve(String bearer, Approval input) {
         if(input==null||input.approved()==null)throw invalid();var actor=identity.authenticate(bearer);Map<String,Object> request=pending(input.requestId(),true);
-        if(input.approved()&&db.query("SELECT user_id FROM sys_user WHERE user_id=? AND tenant_id=? AND status=1 AND is_deleted=0 FOR UPDATE",(r,n)->r.getString(1),actor.user().id(),tenant).size()!=1)throw new OAuthFailure(403,"access_denied");
+        if(input.approved()&&db.query("SELECT u.user_id FROM sys_user u JOIN app_flymind_account a ON a.user_id=u.user_id WHERE u.user_id=? AND u.tenant_id=? AND a.status=1 AND u.is_deleted=0 FOR UPDATE",(r,n)->r.getString(1),actor.user().id(),tenant).size()!=1)throw new OAuthFailure(403,"access_denied");
         String redirect=text(request,"redirect_uri"),client=text(request,"client_id");clients.check(client,redirect,false);
         String result;
         if(input.approved()) {
@@ -87,7 +87,7 @@ public class OAuthGrants {
         Map<String,Object> grant=row("SELECT * FROM app_flymind_oauth_grant WHERE id=?"+(lock?" FOR UPDATE":""),id);
         if(!resource.equals(grant.get("resource_uri")))throw invalid();
         if(grant.get("revoked_at")!=null||number(grant,"expires_at")<=clock.getAsLong())throw invalid();
-        int active=db.query("SELECT u.user_id FROM sys_user u JOIN app_flymind_member m ON m.user_id=u.user_id JOIN app_flymind_team t ON t.id=m.team_id WHERE u.user_id=? AND u.tenant_id=? AND u.status=1 AND u.is_deleted=0 AND m.team_id=? AND t.status=1"+(lock?" FOR UPDATE":""),(r,n)->r.getString(1),grant.get("user_id"),tenant,grant.get("team_id")).size();
+        int active=db.query("SELECT u.user_id FROM sys_user u JOIN app_flymind_account a ON a.user_id=u.user_id JOIN app_flymind_member m ON m.user_id=u.user_id JOIN app_flymind_team t ON t.id=m.team_id WHERE u.user_id=? AND u.tenant_id=? AND a.status=1 AND u.is_deleted=0 AND m.team_id=? AND t.status=1"+(lock?" FOR UPDATE":""),(r,n)->r.getString(1),grant.get("user_id"),tenant,grant.get("team_id")).size();
         if(active!=1)throw invalid();return grant;
     }
     private List<String> effective(Map<String,Object> grant,List<String> requested) {

@@ -52,6 +52,7 @@ export class CloudClient {
  login(phone:string,password:string){return this.request('/auth/login','POST',{phone,password})}
  me(){return this.request<CloudMe>('/auth/me')}
  logout(){return this.request('/auth/logout','POST')}
+ changePassword(currentPassword:string,newPassword:string){return this.request<{success:boolean;reauthenticate:boolean}>('/auth/password','POST',{currentPassword,newPassword})}
  inspectAuthorization(value:string){return this.request<CloudConsent>('/oauth/requests/inspect','POST',{requestId:requestId(value)})}
  approveAuthorization(value:string,approved:boolean,teamId?:string){return this.request<{redirectUri:string}>('/oauth/requests/approve','POST',{requestId:requestId(value),approved,...(approved?{teamId:id(teamId??'')}:{})})}
  createTeam(name:string){return this.request<CloudTeam>('/teams','POST',{name})}

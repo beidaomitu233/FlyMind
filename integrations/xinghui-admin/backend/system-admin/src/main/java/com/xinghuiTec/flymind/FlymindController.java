@@ -16,6 +16,7 @@ public class FlymindController {
  @PostMapping("/auth/login") public ResponseEntity<Object> login(@RequestBody Map<String,Object> b,HttpServletRequest request){fields(b,"phone","password");return ok(service.login(field(b,"phone"),field(b,"password"),request.getRemoteAddr()));}
  @GetMapping("/auth/me") public ResponseEntity<Object> me(@RequestHeader("Authorization")String auth){return ok(service.me(auth));}
  @PostMapping("/auth/logout") public ResponseEntity<Object> logout(@RequestHeader("Authorization")String auth){service.logout(auth);return ok(Map.of("success",true));}
+ @PostMapping("/auth/password") public ResponseEntity<Object> password(@RequestHeader("Authorization")String auth,@RequestBody Map<String,Object>b){fields(b,"currentPassword","newPassword");service.changePassword(auth,field(b,"currentPassword"),field(b,"newPassword"));return ok(Map.of("success",true,"reauthenticate",true));}
  @PostMapping("/session/introspect") public ResponseEntity<Object> introspect(@RequestHeader("Authorization")String auth,@RequestBody Map<String,Object>b){fields(b,"teamId");return ok(service.introspect(auth,field(b,"teamId")));}
  @GetMapping("/teams") public ResponseEntity<Object> teams(@RequestHeader("Authorization")String auth){return ok(service.teams(auth));}
  @PostMapping("/teams") public ResponseEntity<Object> create(@RequestHeader("Authorization")String auth,@RequestBody Map<String,Object>b){fields(b,"name");return ok(service.createTeam(auth,field(b,"name")));}

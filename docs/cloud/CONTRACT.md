@@ -6,10 +6,12 @@
 
 ## 1. 所有权与约束
 
+2026-10-23运维探针：Java回环端口`GET /internal/flymind/readyz`要求真实loopback来源与`X-FlyMind-Gateway-Key`。仅在ApplicationReadyEvent之后、前台凭据/后台关系表可查询、Redis PING成功时返回`200 {ready:true,jarSha256}`；不就绪503，仅`{ready:false}`，错误密钥401。摘要取实际启动JAR；测试classes目录摘要为空，发布器必须拒绝空摘要或与候选不同的摘要。响应不缓存、不返回用户、密码、SQL异常或密钥。Nginx不应将此运维路径列为公开入口。此探针不代替真实后台登录及端到端授权验收。
+
 - 应用代理拥有 `../../xinghui-admin/` 中 Java/Vben 实现；主代理拥有 `server/cloud/` 的身份客户端和工作区隔离。引擎代理当前拥有同步探针及其报告。
 - 不改原始星辉路径；只在复制目录实现。Java 数据库、Node 团队数据都使用新的隔离开发目录/数据库，不连接用户原库测试。
-- 账号复用 `SysUser`；本期手机号 + 密码，受控 `FLYMIND_APP_TENANT_ID`，只允许该应用租户的已启用账号。没有登录流程的表单不开放为可用注册。
-- 现有管理端 JWT 会话保持兼容。新增 FlyMind 应用会话用于多设备及应用授权，不复制密码，不以用户 ID 一个键互相踢掉。令牌为至少 256 位随机值；数据库只存摘要，响应 `Cache-Control: no-store`，不记录密码或令牌。
+- 身份和既有ID/FK复用 `SysUser`；前台密码/状态由独立 `app_flymind_account` 管理，后台密码/状态仍在 `sys_user`。手机号 + 密码受控 `FLYMIND_APP_TENANT_ID`，不开放自助注册。既有普通应用账号及有应用成员/会话历史的双用途账号一次性导入旧哈希，之后互不覆盖；纯后台角色账号不自动获得前台凭据。
+- 管理端 JWT 保持兼容且登录必须有启用的后台角色。FlyMind 应用 opaque 会话支持多设备，不以用户 ID 一个键互相踢掉。令牌为至少 256 位随机值；数据库只存摘要，响应 `Cache-Control: no-store`，不记录密码或令牌。
 - 团队不是系统租户。可信上下文包含用户 ID、团队 ID、角色和会话 ID。每个业务请求重新检查账号、会话、团队及成员状态；停用/移除不能只靠前端生效。
 
 ## 2. 返回格式
@@ -81,9 +83,10 @@ Node 数据根：`<FLYMIND_CLOUD_DATA_DIR>/teams/<sha256(teamId)>/`。绝不使�
 - `GET /admin/flymind/users`：当前受控应用tenant内账号；`system:user:list`。
 - `POST /admin/flymind/users`：`{phone,name,password}`，管理员开通既有SysUser，固定服务端tenant，不接受tenantId；`system:user:add`。
 - `PATCH /admin/flymind/users/{id}`：`{status:0|1}`，仅精确数值0/1；`system:user:edit`。停用与该用户全部app sessions撤销在同一事务，重新启用不恢复旧token。
-- `POST /admin/flymind/users/{id}/password`：`{password}`，12字符起且不超过72 UTF-8字节，BCrypt，限定应用tenant；`system:user:edit`。同事务撤销全部app sessions；不改其他账号，不向客户端返回密码/hash，不改旧管理JWT机制。
+- `POST /admin/flymind/users/{id}/password`：`{password}`，前台密码至少6字符、非全空白且不超过72 UTF-8字节，BCrypt，限定应用tenant；`system:user:edit`。同事务撤销全部前台session/OAuth/device grants；后台密码保持至少12字符，不向客户端返回密码/hash。
+- `POST /app/flymind/auth/password`：应用Bearer，严格body `{currentPassword,newPassword}`；新密码同上6字符规则。成功 `{code:200,message:"成功",data:{success:true,reauthenticate:true}}`；原密码错误 HTTP400/`errorCode:INVALID_CURRENT_PASSWORD`，实际Bearer失效HTTP401。成功撤销该用户全部前台会话/OAuth/device grants，需要重新登录；后台凭据/状态不变。
 - bootstrap已显式赋予上述F权限与用户/团队M/C路由。管理端仅手机号+密码及实际captcha；不开放旧模板假注册、扫码、社交、验证码登录或找回入口。
 
 后续FlyMind UI薄适配仍待分配所有权：注入固定身份transport及user/team context，不重画NativeStudio；切团队沿现保存/离开保护。云端IDB草稿须同时按userId+teamId+workspace/dataRoot identity隔离，不只凭diagramId或根身份，以免退出/换账号恢复到另一主体。
 
-账号停用/密码重置还同步删除同一目标用户的既有ADMIN_LOGIN_PREFIX Redis登录态；不是仅app token失效。Redis异常返回503并回滚SQL，不宣称成功撤权。缺失的Redis key视为已撤销，不要求存在旧管理会话。仍待真实Redis/MySQL集成验证。
+AUTH-23起，前台账号停用/密码重置仅撤销前台会话/OAuth/device grants，后台状态、密码及JWT互不影响；此前共用账号时同步撤Admin Redis的行为已由独立凭据取代。旧ID、团队与图形归属不变，不默认重置任何线上密码。

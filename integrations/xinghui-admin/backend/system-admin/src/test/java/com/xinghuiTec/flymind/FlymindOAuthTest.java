@@ -48,7 +48,7 @@ class FlymindOAuthTest {
         try(var connection=source.getConnection()) { for(String sql:List.of("V20261019_01__flymind_identity.sql","V20261019_03__flymind_oauth.sql","V20261020_01__flymind_local_device.sql")) ScriptUtils.executeSqlScript(connection,new ClassPathResource("db/migration/"+sql)); }
         clock.set(1800000000000L);
         for(int i=1;i<=2;i++) db.update("INSERT INTO sys_user VALUES(?,'app-test',?,?,?, ?,1,0)",i,"account"+i,"User"+i,new BCryptPasswordEncoder(4).encode("correct-password"),"1380000000"+i);
-        bearer="Bearer "+identity.login("13800000001","correct-password","ip").sessionToken();team=identity.createTeam(bearer,"OAuth team").id();
+        FlymindCredentialFixtures.install(db);bearer="Bearer "+identity.login("13800000001","correct-password","ip").sessionToken();team=identity.createTeam(bearer,"OAuth team").id();
         clients.register(json.readTree("{\"client_id\":\"client1\",\"client_name\":\"Test MCP\",\"token_endpoint_auth_method\":\"none\",\"redirect_uris\":[\""+REDIRECT+"\"],\"grant_types\":[\"authorization_code\",\"refresh_token\"],\"response_types\":[\"code\"]}"));
         http=MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
     }
@@ -101,14 +101,14 @@ class FlymindOAuthTest {
         assertEquals(List.of("flymind:read"),((Map<?,?>)introspect(issued).get("authorization")).get("scopes"));
         db.update("DELETE FROM app_flymind_member WHERE team_id=? AND user_id=1",team);rejected(()->introspect(issued));
         db.update("INSERT INTO app_flymind_member VALUES(?,1,'owner',?)",team,clock.get());db.update("UPDATE app_flymind_team SET status=0 WHERE id=?",team);rejected(()->introspect(issued));
-        db.update("UPDATE app_flymind_team SET status=1 WHERE id=?",team);db.update("UPDATE sys_user SET status=0 WHERE user_id=1");rejected(()->introspect(issued));
+        db.update("UPDATE app_flymind_team SET status=1 WHERE id=?",team);db.update("UPDATE app_flymind_account SET status=0 WHERE user_id=1");rejected(()->introspect(issued));
     }
     @Test void logoutDoesNotRevokeGrantButAdminDisableAndResetDo() throws Exception {
         Tokens first=tokens();identity.logout(bearer);assertNotNull(introspect(first));
         http.perform(post("/admin/flymind/users/1/password").with(user("operator").authorities(()->"system:user:edit")).contentType("application/json").content("{\"password\":\"replacement-test-password\"}")).andExpect(status().isOk());rejected(()->introspect(first));
         bearer="Bearer "+identity.login("13800000001","replacement-test-password","ip").sessionToken();Tokens next=tokens();
         http.perform(patch("/admin/flymind/users/1").with(user("operator").authorities(()->"system:user:edit")).contentType("application/json").content("{\"status\":0}")).andExpect(status().isOk());
-        db.update("UPDATE sys_user SET status=1 WHERE user_id=1");rejected(()->introspect(next));
+        db.update("UPDATE app_flymind_account SET status=1 WHERE user_id=1");rejected(()->introspect(next));
     }
     @Test void secretsOnlyExistAsDigestsAndRevocationIsIdempotent() throws Exception {
         Tokens issued=tokens();assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM app_flymind_oauth_token WHERE token_hash IN (?,?)",Integer.class,issued.access_token(),issued.refresh_token()));

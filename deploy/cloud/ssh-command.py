@@ -12,6 +12,7 @@ import importlib.util
 
 INCOMING = '/var/lib/flymind/incoming'
 PROMOTE = '/usr/local/libexec/flymind-promote'
+CONTROL_PLANE_PROMOTE = '/usr/local/libexec/flymind-control-plane-promote'
 MAX_BYTES = 2_000_000_000
 RELEASE = re.compile(r'[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}\Z')
 DIGEST = re.compile(r'[a-f0-9]{64}\Z')
@@ -95,8 +96,8 @@ def main():
             raise ValueError('Artifact fetch refused; no archive published') from None
         print(json.dumps(result))
         return
-    if len(args) == 6 and args[:3] == ['sudo', '-n', PROMOTE] and args[3] in ('staging', 'production') and RELEASE.fullmatch(args[4]) and DIGEST.fullmatch(args[5]):
-        os.execv('/usr/bin/sudo', ['/usr/bin/sudo', '-n', PROMOTE, *args[3:]])
+    if len(args) == 6 and args[:2] == ['sudo', '-n'] and args[2] in (PROMOTE, CONTROL_PLANE_PROMOTE) and args[3] in ('staging', 'production') and RELEASE.fullmatch(args[4]) and DIGEST.fullmatch(args[5]):
+        os.execv('/usr/bin/sudo', ['/usr/bin/sudo', '-n', args[2], *args[3:]])
     raise ValueError('Only FlyMind restricted artifact transfer and fixed promotion are allowed')
 
 

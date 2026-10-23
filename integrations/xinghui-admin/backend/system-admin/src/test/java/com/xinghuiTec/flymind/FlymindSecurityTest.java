@@ -37,7 +37,7 @@ class FlymindSecurityTest {
  }
  @Autowired WebApplicationContext context;@Autowired JdbcTemplate db;@Autowired DataSource source;@Autowired FlymindIdentityService service;
  MockMvc http;
- @BeforeEach void init()throws Exception {db.execute("DROP ALL OBJECTS");db.execute("CREATE TABLE sys_user(user_id BIGINT PRIMARY KEY,tenant_id VARCHAR(20),username VARCHAR(50),nickname VARCHAR(50),password VARCHAR(100),mobile VARCHAR(20),status INT,is_deleted INT)");try(var c=source.getConnection()){ScriptUtils.executeSqlScript(c,new ClassPathResource("db/migration/V20261019_01__flymind_identity.sql"));ScriptUtils.executeSqlScript(c,new ClassPathResource("db/migration/V20261019_03__flymind_oauth.sql"));ScriptUtils.executeSqlScript(c,new ClassPathResource("db/migration/V20261020_01__flymind_local_device.sql"));}db.update("INSERT INTO sys_user VALUES(1,'app-test','account','name',?,'13800000001',1,0)",new BCryptPasswordEncoder(4).encode("correct-password"));http=MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();}
+ @BeforeEach void init()throws Exception {db.execute("DROP ALL OBJECTS");db.execute("CREATE TABLE sys_user(user_id BIGINT PRIMARY KEY,tenant_id VARCHAR(20),username VARCHAR(50),nickname VARCHAR(50),password VARCHAR(100),mobile VARCHAR(20),status INT,is_deleted INT)");try(var c=source.getConnection()){ScriptUtils.executeSqlScript(c,new ClassPathResource("db/migration/V20261019_01__flymind_identity.sql"));ScriptUtils.executeSqlScript(c,new ClassPathResource("db/migration/V20261019_03__flymind_oauth.sql"));ScriptUtils.executeSqlScript(c,new ClassPathResource("db/migration/V20261020_01__flymind_local_device.sql"));}db.update("INSERT INTO sys_user VALUES(1,'app-test','account','name',?,'13800000001',1,0)",new BCryptPasswordEncoder(4).encode("correct-password"));FlymindCredentialFixtures.install(db);http=MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();}
  @Test void appChainRequiresOpaqueTokenAndDoesNotTrustAdminAuthentication()throws Exception {
   http.perform(get("/app/flymind/auth/me")).andExpect(status().isUnauthorized()).andExpect(header().string("Cache-Control","no-store"));
   http.perform(get("/app/flymind/auth/me").with(user("admin").authorities(()->"flymind:team:list"))).andExpect(status().isUnauthorized());
@@ -87,19 +87,17 @@ class FlymindSecurityTest {
   db.update("UPDATE sys_user SET tenant_id='other' WHERE user_id=1");http.perform(post("/admin/flymind/users/1/password").with(user("operator").authorities(()->"system:user:edit")).contentType("application/json").content("{\"password\":\"another-test-password\"}")).andExpect(status().isNotFound());
  }
 
- @Test void adminRevocationTargetsOnlyAffectedUserAndRedisFailureRollsBack()throws Exception {
-  String key=com.xinghuiTec.constants.RedisConstants.ADMIN_LOGIN_PREFIX+"1";
+ @Test void applicationStatusAndResetLeaveAdminPasswordStatusAndRedisUntouched()throws Exception {
+  String hash=db.queryForObject("SELECT password FROM sys_user WHERE user_id=1",String.class);
   String a="Bearer "+service.login("13800000001","correct-password","ip").sessionToken();
-  org.mockito.Mockito.doThrow(new org.springframework.data.redis.RedisConnectionFailureException("controlled-unavailable")).when(redis).deleteObject(key);
-  http.perform(patch("/admin/flymind/users/1").with(user("operator").authorities(()->"system:user:edit")).contentType("application/json").content("{\"status\":0}")).andExpect(status().isServiceUnavailable());
-  org.junit.jupiter.api.Assertions.assertEquals(1,db.queryForObject("SELECT status FROM sys_user WHERE user_id=1",Integer.class));org.junit.jupiter.api.Assertions.assertNotNull(service.authenticate(a));
-  http.perform(post("/admin/flymind/users/1/password").with(user("operator").authorities(()->"system:user:edit")).contentType("application/json").content("{\"password\":\"replacement-test-password\"}")).andExpect(status().isServiceUnavailable());
-  org.junit.jupiter.api.Assertions.assertNotNull(service.login("13800000001","correct-password","ip").sessionToken());org.junit.jupiter.api.Assertions.assertNotNull(service.authenticate(a));
-  org.mockito.Mockito.verify(redis,org.mockito.Mockito.times(2)).deleteObject(key);org.mockito.Mockito.verifyNoMoreInteractions(redis);
-  org.mockito.Mockito.reset(redis);
-  http.perform(post("/admin/flymind/users/1/password").with(user("operator").authorities(()->"system:user:edit")).contentType("application/json").content("{\"password\":\"replacement-test-password\"}")).andExpect(status().isOk());
-  org.mockito.Mockito.verify(redis).deleteObject(key);org.mockito.Mockito.verifyNoMoreInteractions(redis);
-  http.perform(get("/app/flymind/auth/me").header("Authorization",a)).andExpect(status().isUnauthorized());
+  http.perform(patch("/admin/flymind/users/1").with(user("operator").authorities(()->"system:user:edit")).contentType("application/json").content("{\"status\":0}")).andExpect(status().isOk());
+  org.junit.jupiter.api.Assertions.assertEquals(1,db.queryForObject("SELECT status FROM sys_user WHERE user_id=1",Integer.class));
+  org.junit.jupiter.api.Assertions.assertThrows(FlymindException.class,()->service.authenticate(a));
+  http.perform(patch("/admin/flymind/users/1").with(user("operator").authorities(()->"system:user:edit")).contentType("application/json").content("{\"status\":1}")).andExpect(status().isOk());
+  http.perform(post("/admin/flymind/users/1/password").with(user("operator").authorities(()->"system:user:edit")).contentType("application/json").content("{\"password\":\"simple6\"}")).andExpect(status().isOk());
+  org.junit.jupiter.api.Assertions.assertEquals(hash,db.queryForObject("SELECT password FROM sys_user WHERE user_id=1",String.class));
+  org.junit.jupiter.api.Assertions.assertNotNull(service.login("13800000001","simple6","ip"));
+  org.mockito.Mockito.verifyNoInteractions(redis);
  }
 
 }

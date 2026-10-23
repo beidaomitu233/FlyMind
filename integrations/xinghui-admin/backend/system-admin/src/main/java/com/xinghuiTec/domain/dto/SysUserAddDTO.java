@@ -26,7 +26,7 @@ public class SysUserAddDTO {
 
     /** 密码（必填） */
     @NotBlank(message = "密码不能为空")
-    @Size(min = 6, max = 20, message = "密码长度必须在6-20个字符之间")
+    @Size(min = 12, max = 72, message = "后台密码长度至少12字符且不超过72 UTF-8字节")
     private String password;
 
     /** 用户昵称 */
