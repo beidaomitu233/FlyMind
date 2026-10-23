@@ -76,3 +76,13 @@ PM最终验收安装兼容修复：Bash固定canonical路径纯测试9/9；官�
 b930048候选39926499342最终source/真实JavaMySQLRedis/Windows及Linux平台全部success。离线固定安装器实机已通过Node同字节所有权修复、私有配置及一致性数据库备份，但在最终sudoers-check退出并回退代码；无服务重启/应用发布。发现write_exclusive的os.open(mode)受root umask077影响，0440变0400、0755变0700，回退也受影响。现窄修创建fd后显式fchmod精确mode；不改私有配置或迁移政策。
 
 PM Windows完整原9项通过，新POSIX权限项明确skip（非Linux证据）。新增独立Linux bootstrap workflow，实际临时文件验证umask077下0440/0755/0644/0600及0755回退，并保留8项固定Node修复夹具。应用继续使用已完整验收b930048候选；安装器维护源码及其文件SHA单独记录，不篡改candidate来源、不替换服务器已留存的同一policy。后续bootstrap同时写入root私有来源收据，区分应用候选和安装器工具源码；两者审核均通过后才执行。
+
+安装器维护commit a1f8d60696580633d74d607d8c3c7702a6cfd1f3 的独立Linux workflow39929029301成功：真实POSIX installer10/10、Node修复8/8，原日志output/auth-docs-20261023/linux-bootstrap-mode-39929029301.log，无skip。应用仍晋级已全过run39926499342/source b930048，不等新应用重编译、不篡改该run来源。
+
+一次性离线包应用源码/policy为b930048，只有临时安装器程序取a1f8d60；其余六个已审根工具源码逐字节保持b930048。两类源码和各文件SHA写入root私有bootstrap-provenance.json，Node修复安全收据也保存在该root目录；服务器既有policy原字节2f569a19...保持不变，不用新source覆盖。新包SHA7d06b27a...已本地解码逐Git blob及policy核对，临时回环页已准备，待用户MFA；应用尚未发布，自动开关仍false。
+
+### 首次配置成功与Actions传输调整
+
+固定安装器维护版a1f8d60通过同一本地验证页实际执行成功：installer installed=true，SSH exit0，原policy保持，Node官方同字节/精确权限及数据库备份验证通过，服务未重启。临时配置会话及回环服务已关闭，后续不再本机SSH。
+
+已设置CLOUD_CONTROL_PLANE_DEPLOY=true，手动同包晋级run39929704421在真实服务更新前被artifact-https接收器拒绝（两次均`Artifact fetch refused; no archive published`），尚无上传或晋级。接收器精确存储host配置未被证明可用，不能把HTTPS传输称为已验收。改用既有受限flymind-upload字节流，保留同run源/平台/摘要/迁移/备份与Java先行门槛，不扩大服务器权限。CLOUD_ARTIFACT_HTTPS=false，自动生产仍false。CI上传器增加ssh -q抑制腾讯认证banner进入日志，远端固定命令stderr继续保留；PM原有13项来源/命令顺序测试全部通过。

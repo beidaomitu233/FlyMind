@@ -49,7 +49,7 @@ if(!['bytes','artifact-https'].includes(transport))throw Error('Unknown deployme
 const root=await mkdtemp(join(tmpdir(),'flymind-deploy-')),key=join(root,'key'),known=join(root,'known_hosts')
 try{
  await writeFile(key,env.DEPLOY_SSH_KEY.replaceAll('\r','')+'\n',{mode:0o600});await writeFile(known,env.DEPLOY_KNOWN_HOSTS+'\n',{mode:0o600})
- const options=['-T','-i',key,'-o','RequestTTY=no','-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','StrictHostKeyChecking=yes','-o','UserKnownHostsFile='+known,'-o','ConnectTimeout=15','-o','ServerAliveInterval=30','-o','ServerAliveCountMax=3','-p',port,user+'@'+host]
+ const options=['-q','-T','-i',key,'-o','RequestTTY=no','-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','StrictHostKeyChecking=yes','-o','UserKnownHostsFile='+known,'-o','ConnectTimeout=15','-o','ServerAliveInterval=30','-o','ServerAliveCountMax=3','-p',port,user+'@'+host]
  if(transport==='bytes')await runSSH([...options,'flymind-upload '+id+' '+expected],archive)
  else{
   // A URL expires in one minute. Each bounded retry obtains a new capability;
