@@ -106,3 +106,13 @@ Actions39933886793最终success。实际上传389791102字节，archive SHA256 `
 后续本机HTTPS超时、浏览器ERR_TIMED_OUT，独立Actions只读检查39936790839也在域名DNS与固定1.14.176.76两个入口均SSL connection timeout。10:10 UTC本机已知22/443 TCP可连接、HTTP80请求0字节超时；尚无法区分资源负载/服务故障/防护拦截。当前生产自动开关保持false，不从本机SSH，不通过重置数据库或盲目重发解决。已请用户确认腾讯控制台资源和防护状态；新增独立只读workflow不包含凭据、SSH或远端变更。完整线上业务验收、浏览器文档验证及启用自动生产均未完成。
 
 固定engine代理只读复核：team health/open本身不启动导出；但CloudExportPool启动后会扫描并恢复历史queued/过期running任务，可能早于本次queue发生。云端为全局串行一个渲染任务；同步SQLite及全量工作区读取、单任务32M像素/较大SVG预算可能加大负载，但不能据此归因为OOM。10:13 UTC最后一次固定原主机HTTPS仍连接超时，等待控制台资源/防护状态后继续业务验收；不把Actions晋级成功等同于当前站点可用。保留原账号/团队/图形及生产开关关闭状态。
+
+### 线上恢复与本批收尾验收
+
+2026-10-23 15:49 UTC继续时固定原主机HTTPS已恢复，actual release仍为run-39926499342-1。PM执行同一内存凭据探针，14项全部通过，证据 `output/auth-docs-20261023/online-acceptance.json`：后台login/info/router均HTTP200/code200；前台登录/me/teams与Secure/HttpOnly Cookie；已有图真实PNG90249字节、SHA256 `ac99d62e5c83b31a465b63b3b7a64e7ff3ac79d1dd360ed6f556abcc7a140a97`与元数据一致，导出前后revision/updatedAt不变；OAuth发现、匿名initialize401 challenge、内部readiness保护及探针退出。没有改生产密码，没有逐字比较XML或将PNG字节验收当作全部格式/视觉验收。
+
+PM通过未固定解析的真实IAB打开线上工作台：五章逐一切换，MCP固定地址/历史npm状态/本地云端边界及独立密码说明可见；Esc关闭后焦点回到文档按钮，重新打开正常。新建分组展开后点击取消，输入行消失、焦点回到新建分组，无创建数据。使用已授权的现有后台凭据实页登录 `/admin/`，进入 `/admin/#/flymind/users`，用户管理和团队管理菜单存在、无数据库异常、登录表单消失。凭据仅在内存，随后清除变量。文档实页截图 `output/auth-docs-20261023/live-documentation-mcp.png`，未截取密码或MFA。
+
+独立公网检查Actions39982689930（job120513799263）success，DNS和固定原主机均为预期release ready。两个固定代理分别只读审查发布开关/队列及线上证据边界：main没有执行/排队/待审批候选，production Environment无变量覆盖。PM于15:59 UTC设置并读回 `CLOUD_AUTO_PRODUCTION=true`，同时保持 `CLOUD_CONTROL_PLANE_DEPLOY=true`、`CLOUD_ARTIFACT_HTTPS=false`；设置变量不触发新工作流，不重复部署同一应用。后续新增SQL仍按现有清单审核，不放宽root权限或恢复标记。
+
+本批后台修复、独立前台密码能力、文档入口及受限Actions发布收尾通过。限制：生产未执行用户改密，未实际完成外部Codex新OAuth授权/工具绘图；先前超时原因未知，不能称已修复OOM。完整v1.1的生产双端协作/全格式/回退等仍沿实施台账，不因此宣布正式版本发布。本次不改版本/tag，不从本机SSH；其他PRD文档未提交改动原样保留。

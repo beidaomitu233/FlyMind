@@ -4,6 +4,10 @@
 
 ## 最新验收（覆盖下方首批历史状态）
 
+2026-10-23 最新线上状态：Actions `39933886793` 已将同一已验候选 `b930048` / `run-39926499342-1` 的 Java、application 和 admin 实际晋级。恢复后 PM 生产探针14项全部通过：后台login/info/router、独立前台登录/me/teams、安全Cookie、已有图真实PNG字节/SHA及修订时间不变、OAuth发现/匿名MCP拒绝、内部readiness保护和探针退出。线上浏览器五章节文档、Esc焦点返回、新建分组取消、管理后台进入用户管理及团队菜单也通过。独立Actions公网检查 `39982689930` success。证据及先前超时边界见[完整发布验收](../validation/actions-control-plane-20261023.md)。
+
+`CLOUD_AUTO_PRODUCTION=true`、`CLOUD_CONTROL_PLANE_DEPLOY=true`、`CLOUD_ARTIFACT_HTTPS=false`已核对；开启时没有排队或执行中的main候选，未触发额外应用更新。后续授权main更新经完整CI后由受限Actions晋级，新增SQL迁移仍须审核服务器迁移清单；客户端固定 `/mcp` 地址不变。生产未改用户密码、未进行新的Codex OAuth授权/工具绘图；生产SVG/五制品、完整线上双端协作及全量v1.1发布验收不因此标成完成。应用仍1.0.0，未改版本、未打标签。以下为历史证据。
+
 2026-10-21 首次公网状态：Linux `run-39450074276-1` 已受控晋级，真实登录、创建/打开图形及分组取消通过。保存输入回退、冷启预算正修复；PNG 验收时目标 HTTPS/SSH 连接超时，尚未完成线上验收。最新 `33610e5` 源码及两平台 CI 成功，production按开关跳过。自动更新开关暂为false，不能宣称 GitHub 自动部署已通过。以[首次线上记录](../validation/fly-first-online.md)覆盖本文下方较早的“尚未提供服务器/未推送/未部署”状态；不改版本、不打标签。
 
 - `125101f` 已提交实时画布、批次导入与可信操作记录。原 UI、draw.io 和内容/渲染分层保留。

@@ -36,3 +36,9 @@
 - 仅修改 `scripts/local-auth-ui-probe.mjs`：打开原新建对话框，断言空任务名时流程图不可创建，填写“新图任务名称”后通过真实 UI 创建；再以只读 API 确认该任务分组确已持久化。未强制点击、绕过规则或改用 API 创建图形。
 - 本地命令：`C:/nvm4w/nodejs/node.exe --import tsx scripts/local-auth-ui-probe.mjs`。正常权限、独立临时数据根及固定隐藏浏览器，使用现有本地编译产物；三个既有链路检查通过：登录/团队授权、带任务分组的真实画布创建、退出后画布撤下及 API 401。自身 Runtime/浏览器已关闭，临时数据已清理。证据：`output/playwright/local-auth-ui/report.json`、`logged-out.png`。`node --check` 同时通过。
 - 该脚本本来未包含文字编辑与导出，不将上述三项声称为编辑/PNG验收；双浏览器编辑/MCP与五型真实导出继续由原独立 CI 门槛覆盖，本次没有删除或替代它们。CI 使用重新构建的最终产物，实际通过仍待后续 Actions。
+
+## 最新线上结果（覆盖上文历史待发布状态）
+
+2026-10-23：Actions39933886793已实际晋级同一候选b930048/run39926499342-1的Java、application和admin。恢复后PM真实生产探针14项通过，后台login/info/router数据库异常未再复现、前台登录与团队读取成功、已有图PNG及摘要验证通过，修订/修改时间不变。后台实页已进入用户管理并加载团队菜单；文档五章、Esc焦点归还与分组取消实页通过。独立公网Actions39982689930通过，自动生产开关已在全部本批验收通过后开启。
+
+密码隔离/成功改密及撤权使用同包真实Java/MySQL/Redis CI证据，不在生产修改用户密码。MCP只在生产验证OAuth发现与匿名401保护，未声称已完成新的外部Codex授权。先前服务器超时原因未定位，不将恢复称为OOM修复。完整发布来源、实际PNG摘要、截图路径和开关核对见[发布验收记录](actions-control-plane-20261023.md)；使用与日常更新见[安装使用文档](../releases/V1_1_DEPLOY_AND_USE.md)。
