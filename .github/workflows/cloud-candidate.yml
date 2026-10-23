@@ -36,6 +36,10 @@ jobs:
       - run: npm ci
       - run: npm run setup:runtime
       - run: npm run build
+      - name: Local account browser and compiled Runtime
+        run: node --import tsx scripts/local-auth-ui-probe.mjs
+      - name: Two browsers, MCP and update recovery
+        run: node --import tsx scripts/cloud-ui-probe.mjs
       - name: Cloud and local contract gates
         run: node --import tsx --test --test-concurrency=1 tests/cloud-wire.test.ts tests/cloud-client.test.ts tests/flymind-documentation.test.ts tests/cloud-workspaces.test.ts tests/cloud-http.test.ts tests/cloud-collaboration.test.ts tests/cloud-merge.test.ts tests/cloud-mcp.test.ts tests/cloud-oauth.test.ts tests/cloud-mcp-updates.test.ts tests/cloud-maintenance.test.ts tests/local-auth.test.ts tests/local-auth-runtime.test.ts tests/native-session.test.ts tests/native-text-drafts.test.ts tests/task-groups.test.ts tests/drawio-outer-return.test.ts tests/native-undo-guard.test.ts tests/native-import-batch.test.ts tests/native-activity.test.ts tests/native-exports.test.ts tests/cloud-deployment.test.mjs tests/cloud-full-stack-deploy.test.mjs tests/cloud-artifact-source.test.mjs tests/cloud-python-extract.test.mjs
       - name: Packaged control-plane smoke contract fixtures (no infrastructure)
@@ -56,10 +60,6 @@ jobs:
             mvn -f integrations/xinghui-admin/backend/pom.xml -s integrations/xinghui-admin/backend/build-settings.xml '-Dtest=Flymind*Test' '-Dsurefire.failIfNoSpecifiedTests=false' "-Dflymind.nodeExecutable=$((Get-Command node).Source)" package
             if ($LASTEXITCODE -ne 0) { throw 'Java verification failed' }
           } finally { Remove-Item Env:JWT_SECRET -ErrorAction SilentlyContinue }
-      - name: Two browsers, MCP and update recovery
-        run: node --import tsx scripts/cloud-ui-probe.mjs
-      - name: Local account browser and compiled Runtime
-        run: node --import tsx scripts/local-auth-ui-probe.mjs
       - name: Build controlled admin UI
         working-directory: integrations/xinghui-admin/frontend
         run: |

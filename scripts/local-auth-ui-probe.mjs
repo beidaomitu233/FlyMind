@@ -16,7 +16,14 @@ try{
  owned=await launchHiddenBrowser(resolveRuntimeAssets().browserExecutable);const page=await owned.browser.newPage({viewport:{width:1440,height:950}})
  await page.goto(base+'/#/native');await page.getByRole('heading',{name:'登录 FlyMind',exact:true}).waitFor();assert.equal(await page.locator('iframe.drawio-host').count(),0)
  await page.getByLabel('手机号',{exact:true}).fill('13800000001');await page.getByLabel('密码',{exact:true}).fill('fixture-password');await page.getByRole('button',{name:'登录',exact:true}).click();await page.getByRole('button',{name:'授权本地工作区',exact:true}).click();await page.getByRole('button',{name:'新建图形',exact:true}).waitFor();report.checks.push('browser-login-team-grant-opens-original-studio')
- await page.getByRole('button',{name:'新建图形',exact:true}).click();await page.getByRole('button',{name:'流程图',exact:true}).click();await page.locator('iframe.drawio-host:not(.drawio-host-pending)').waitFor({timeout:40000});await page.locator('[data-status=ready]').waitFor();report.checks.push('compiled-runtime-real-canvas-create')
+ await page.getByRole('button',{name:'新建图形',exact:true}).click()
+ const taskName='本地授权验收任务',taskField=page.getByLabel('新图任务名称',{exact:true}),flowButton=page.getByRole('button',{name:'流程图',exact:true})
+ await taskField.waitFor();assert.equal(await flowButton.isDisabled(),true,'UI must require an explicit task group/name')
+ await taskField.fill(taskName);await flowButton.click()
+ await page.locator('iframe.drawio-host:not(.drawio-host-pending)').waitFor({timeout:40000});await page.locator('[data-status=ready]').waitFor()
+ const groupsResponse=await page.request.get(base+'/studio-api/native/groups');assert.equal(groupsResponse.status(),200)
+ const groups=(await groupsResponse.json()).groups;assert.equal(groups.filter(group=>group.name===taskName).length,1,'UI creation must persist the explicit task group')
+ report.checks.push('compiled-runtime-real-canvas-create-with-explicit-task-group')
  await page.getByRole('button',{name:'Test · 退出',exact:true}).click();await page.getByRole('heading',{name:'登录 FlyMind',exact:true}).waitFor();assert.equal(await page.locator('iframe.drawio-host').count(),0);const denied=await page.request.get(base+'/studio-api/native/workspace');assert.equal(denied.status(),401);report.checks.push('logout-hides-business-ui-and-API-denies')
  await page.screenshot({path:join(output,'logged-out.png')});report.ok=true
 }catch(error){report.error=error.stack;process.exitCode=1}
