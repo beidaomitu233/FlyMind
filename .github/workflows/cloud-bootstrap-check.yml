@@ -1,0 +1,24 @@
+name: Verify fixed bootstrap tools
+on:
+  push:
+    branches: [main]
+    paths:
+      - deploy/cloud/install-control-plane-actions.py
+      - deploy/cloud/repair-node-ownership.py
+      - tests/cloud-control-plane-install.test.py
+      - tests/cloud-node-ownership-repair.test.py
+      - .github/workflows/cloud-bootstrap-check.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bootstrap:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Real POSIX temporary-file modes and fixed-path safety fixtures
+        run: |
+          python3 --version
+          python3 tests/cloud-control-plane-install.test.py -v
+          python3 tests/cloud-node-ownership-repair.test.py -v

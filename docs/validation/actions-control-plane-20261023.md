@@ -70,3 +70,9 @@ PM已独立验收Bash窄修9/9（沙箱拒绝临时原子替换后，原测试�
 PM从官方HTTPS下载并核对Node22.23.3 Linux x64归档：archive SHA256 `df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de`；归档内bin/node SHA256 `fde6a4bf8d0562f7751d1a2d6cb9b417c4cfe107bbcb0aa3e9a24e125e348f48`，size124827920。只读本地证据`output/auth-docs-20261023/official-node-identity.json`。服务器尚未核对该binary摘要，因此不宣称已修复；修复器必须在摘要不符时零变更。
 
 PM最终验收安装兼容修复：Bash固定canonical路径纯测试9/9；官方Node同字节所有权修复纯测试8/8，包含源摘要不符零变更、保留写入fd修改源的副本复核、bin条目竞态及独占临时文件清理。已将Node修复夹具加入同一候选source Windows及真实控制面Linux作业；两平台夹具不冒充真实root修复结果。下一步必要兼容修复提交到main并运行新候选；只有新run实际Java证据及平台验收成功后，组成同SHA离线一次性配置包，先修已确认Node归属、再安装受限工具，不混用旧政策/新源码。不改版本或tag。
+
+### 精确文件权限修复（安装器维护版本）
+
+b930048候选39926499342最终source/真实JavaMySQLRedis/Windows及Linux平台全部success。离线固定安装器实机已通过Node同字节所有权修复、私有配置及一致性数据库备份，但在最终sudoers-check退出并回退代码；无服务重启/应用发布。发现write_exclusive的os.open(mode)受root umask077影响，0440变0400、0755变0700，回退也受影响。现窄修创建fd后显式fchmod精确mode；不改私有配置或迁移政策。
+
+PM Windows完整原9项通过，新POSIX权限项明确skip（非Linux证据）。新增独立Linux bootstrap workflow，实际临时文件验证umask077下0440/0755/0644/0600及0755回退，并保留8项固定Node修复夹具。应用继续使用已完整验收b930048候选；安装器维护源码及其文件SHA单独记录，不篡改candidate来源、不替换服务器已留存的同一policy。后续bootstrap同时写入root私有来源收据，区分应用候选和安装器工具源码；两者审核均通过后才执行。

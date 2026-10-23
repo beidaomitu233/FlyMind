@@ -199,6 +199,12 @@ def ensure_root_directory(path):
 def write_exclusive(path, value, mode):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
     with os.fdopen(fd, 'wb') as stream:
+        # open(mode) is filtered by umask. Explicitly set the reviewed final
+        # permission for both installation and rollback, including sudoers 0440.
+        if os.name == 'nt':
+            os.chmod(path, mode)  # Pure Windows fixtures only; install requires Linux.
+        else:
+            os.fchmod(stream.fileno(), mode)
         stream.write(value)
         stream.flush()
         os.fsync(stream.fileno())

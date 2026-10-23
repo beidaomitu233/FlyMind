@@ -2,7 +2,9 @@
 import hashlib
 import importlib.util
 import json
+import os
 import pathlib
+import stat
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -108,6 +110,8 @@ class InstallerTests(unittest.TestCase):
             forced = root / 'forced.py'
             sudo = root / 'sudoers'
             forced.write_bytes(b'old forced command')
+            if os.name == 'posix':
+                forced.chmod(0o755)
             changes = []
             write = installer.write_exclusive
             # POSIX 0440 becomes Windows read-only, which would block test cleanup;
@@ -118,8 +122,23 @@ class InstallerTests(unittest.TestCase):
                 installer.atomic_code_install(sudo, b'new exact rule', 0o440, root, changes)
                 installer.restore_changes(changes)
             self.assertEqual(forced.read_bytes(), b'old forced command')
+            if os.name == 'posix':
+                self.assertEqual(stat.S_IMODE(forced.stat().st_mode), 0o755)
             self.assertFalse(sudo.exists())
             self.assertEqual((root / 'previous-0').read_bytes(), b'old forced command')
+
+    @unittest.skipUnless(os.name == 'posix', 'Requires actual POSIX permission semantics')
+    def test_explicit_modes_survive_umask_077(self):
+        previous_umask = os.umask(0o077)
+        try:
+            with tempfile.TemporaryDirectory(prefix='flymind-install-mode-test-') as directory:
+                for mode in (0o440, 0o755, 0o644, 0o600):
+                    path = pathlib.Path(directory) / oct(mode)
+                    installer.write_exclusive(path, b'non-secret fixture', mode)
+                    self.assertEqual(stat.S_IMODE(path.stat().st_mode), mode)
+                    self.assertEqual(path.read_bytes(), b'non-secret fixture')
+        finally:
+            os.umask(previous_umask)
 
 
 if __name__ == '__main__':
