@@ -47,7 +47,7 @@ Java 以下路径前缀 `/app/flymind`；浏览器代理前缀 `/cloud-api`，�
 
 新增 `V20261024_01__flymind_user_directory.sql` 与 `V20261024_02__flymind_overview_menu.sql`。菜单固定 ID 90004/90005，已符合定义的重复执行不写；其他业务占用同 ID 时拒绝，不覆盖。bootstrap 兼容迁移已建立的菜单并授权两级导航。
 
-### 新迁移发布审核（尚未应用生产）
+### 新迁移发布审核（上线前审核记录）
 
 - `_01` 仅新增用户 ID 目录、最小日访问统计表与邀请 `declined_at` 列；保持内部 user ID/FK、原密码与现存团队/图形不变。六位用户 ID 由应用目录逻辑幂等分配，不由 SQL 猜测或重建账号。
 - `_02` 仅新增固定两级看板菜单及既有平台管理员角色授权；90004/90005 被不兼容业务占用时故意失败，不覆盖原菜单。此冲突须部署前在目标环境审核，不能以忽略 SQL 错误放行。
@@ -56,6 +56,14 @@ Java 以下路径前缀 `/app/flymind`；浏览器代理前缀 `/cloud-api`，�
 - 迁移是增量 schema 变更，但 Java 启动失败不代表数据库自动回滚；仍沿用实际备份、readiness 和既有 stop-on-failure/recovery marker 策略，不能将回退旧 JAR 宣称为回退数据库。
 
 真实 MySQL/Redis JAR gate 脚本为 `scripts/control-plane-runtime-smoke.mjs`（仓库无同名 `scripts/control-plane-smoke.mjs`）。本次修正改密只发送 `{newPassword}`，增加第二个独立前台账号→六位用户 ID 邀请→受邀收件箱 pending→接受后 accepted→两成员核验→看板实际两用户/一已接受邀请及 UTC 趋势检查。无邀请令牌粘贴或旧密码前置。`node --test tests/control-plane-runtime-smoke.test.mjs` **7/7 通过**，含丢失邀请/虚假大计数必须拒绝；这是脚本协议与失败门槛测试，本次未重跑真实 MySQL/Redis，新增完整 gate 的实际执行仍由 Actions 验收。原账号与团队实页证据保留。
+
+### 发布后目录缓存兼容修复（待修复版上线复验）
+
+目标 `run-40071395983-1` ready 后，线上账号实测登录成功但默认 `/admin/#/dashboard/overview` 显示404。只读诊断：`user/router` 正常响应仅3个旧菜单、无 dashboard/overview；`user/info` 包含合法平台管理员角色却没有新增看板权限；同次新登录 JWT 直接 GET overview 成功返回 UTC 7天真实数据。因此已确认新授权生效，旧 Redis info/router 元数据缓存跨 Java 重启保留，不能误报迁移未执行或改写已批准 SQL。脱敏证据为 `output/playwright/u30-production/{account-report,route-diagnostic,permission-diagnostic}.json` 及 `admin-failure.png`。
+
+修复统一 `RedisConstants.USER_INFO_PREFIX` 与 `USER_ROUTER_PREFIX` 目录缓存命名空间为 `v20261024`，所有现有读取、写入及定向失效同步使用；`ADMIN_LOGIN_PREFIX` 不变，旧两类缓存按原1800秒 TTL 自然过期。不 flush Redis、不撤销既有登录、不硬编码放行路由/权限、不修改 SQL。后续菜单/权限目录迁移需要同步提升此 catalog revision，防止升级继续读取旧目录；它是内部缓存版本，不是应用版本。定向 Mockito 测试保留旧命名空间缓存并验证服务不读取它，重新从权威 mapper 构造含 dashboard 的目录及权限；实际同账号浏览器复验须等修复版发布，不能用当前 CI/单测替代。
+
+定向 `FlymindAdminCatalogCacheTest` **1/1 通过，0失败/错误/跳过**；固定 Maven 3.9.11/JDK17执行 `-s build-settings.xml -pl system-admin -am -Dtest=FlymindAdminCatalogCacheTest -Dsurefire.failIfNoSpecifiedTests=false test`，日志 `output/u30-admin-cache-targeted.log`。首次 fixture 发现 Mockito 对 List 返回默认空列表而非真实 Redis miss 的 null，已显式模拟新命名空间 miss；未修改产品查询/构树逻辑迎合测试。
 
 定向 Java 36/36、无跳过：HttpRuntime 10、Identity 11、OAuth 12、Bootstrap 1、AppAccounts 2；包含 Node→真实 Java Tomcat 组合。日志 `output/u30-java-verified.log`。H2/MySQL 模式、Mock Redis，不等于真实 MySQL/Redis或生产迁移验收。
 
