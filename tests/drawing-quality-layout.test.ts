@@ -12,6 +12,7 @@ import {layerHeaders,componentCollaboration,wideMindmap,compactFlow} from './fix
 for(const factory of [layerHeaders,componentCollaboration,wideMindmap,compactFlow])test(factory.name+': original semantic fields survive, native shapes/labels/header zones are clear',async()=>{
  const content=factory(),engine=await compileDrawio(content),n=parseNative(engine.xml)
  assert.deepEqual((await projectDrawio(engine.xml)).content,content)
+ if(content.kind==='architecture'){const source=absoluteRouteBox(n,mainEntry(n,'node','model')),target=absoluteRouteBox(n,mainEntry(n,'node','cache'));assert.ok(target.x-source.x-source.w>=72+16,'same-row labelled dependencies need a real label corridor');assert.equal(styleValue(mainEntry(n,'edge','admit'),'entryY'),'0');assert.equal(styleValue(mainEntry(n,'edge','write'),'exitX'),'1')}
  assert.deepEqual(inspectNativeLayout(n).filter(i=>i.code!=='UNREADABLE_ASPECT_RATIO'),[])
 })
 test('flow descriptions stay complete in business attributes without inflating cards; patch preserves unrelated manual geometry',async()=>{
@@ -40,7 +41,7 @@ test('flow property marker is strict without base; acknowledged marker restores 
  assert.deepEqual((await projectDrawio(normalized.xml)).content,normalized.content)
 })
 test('machine gate diagnoses actual node/header/label collision without changing manual XML',async()=>{
- const engine=await compileDrawio(layerHeaders()),n=parseNative(engine.xml),node=mainEntry(n,'node','model');setBox(node,{y:0});const before=serialize(n.document)
+ const engine=await compileDrawio(layerHeaders()),n=parseNative(engine.xml),node=mainEntry(n,'node','model');setBox(node,{x:0});const before=serialize(n.document)
  assert.ok(inspectNativeLayout(n).some(i=>i.code==='NODE_HEADER_OVERLAP'));assert.equal(serialize(n.document),before)
  const duplicate=mainEntry(n,'node','cache');setBox(duplicate,box(node));assert.ok(inspectNativeLayout(n).some(i=>i.code==='NODE_OVERLAP'))
 })

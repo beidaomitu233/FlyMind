@@ -32,11 +32,11 @@ export function createFragment(d:DiagramDocument,scene:DiagramScene,ids:string[]
 export function parseFragment(text:string):SelectionFragment {
   if(text.length>2_000_000)throw new Error('剪贴板片段不能超过 2 MB')
   const f=JSON.parse(text) as SelectionFragment
-  if(!f||f.format!=='flymind.selection'||f.version!==1||typeof f.sourceId!=='string'||!['swimlane','flowchart','architecture','mindmap','dataflow'].includes(f.kind)||Object.keys(f).some(k=>!['format','version','sourceId','kind','content','rendering'].includes(k)))throw new Error('剪贴板不是 FlyMind 节点片段')
+  if(!f||f.format!=='flymind.selection'||f.version!==1||typeof f.sourceId!=='string'||!['swimlane','flowchart','architecture','mindmap','dataflow','technical'].includes(f.kind)||Object.keys(f).some(k=>!['format','version','sourceId','kind','content','rendering'].includes(k)))throw new Error('剪贴板不是 FlyMind 节点片段')
   if(!f.content||Object.keys(f.content).some(k=>!['nodes','edges','lanes','phases','groups'].includes(k)))throw new Error('片段内容无效')
   // A selection can contain several root topics. Validate graph fields and
   // references without requiring a complete mindmap or complete lanes.
-  const d=composeDocument({schemaVersion:1,id:'clipboard',title:'selection',kind:'flowchart',...f.content})
+  const d=composeDocument({schemaVersion:1,id:'clipboard',title:'selection',kind:f.kind==='technical'?'technical':'flowchart',...f.content})
   replaceRendering(d,f.rendering)
   if(f.content.nodes.some(n=>!f.rendering.positions?.[n.id]||['x','y','width','height'].some(k=>!Number.isFinite((f.rendering.positions[n.id] as any)[k]))))throw new Error('片段缺少节点几何')
   return copy(f)
@@ -48,11 +48,11 @@ export function pasteFragment(d:DiagramDocument,fragment:SelectionFragment,point
     const mapping=new Map<string,string>()
     for(const c of f.content[key]){const existing=d[key].find(x=>(f.sourceId===d.id&&x.id===c.id)||x.label===c.label);if(existing)mapping.set(c.id,existing.id);else{const id=newId(key);d[key].push({...copy(c),id});mapping.set(c.id,id)}}return mapping
   }
-  const lanes=d.kind==='swimlane'?mapContainers('lanes'):new Map<string,string>(),phases=d.kind==='swimlane'?mapContainers('phases'):new Map<string,string>(),groups=d.kind==='architecture'?mapContainers('groups'):new Map<string,string>()
-  for(const original of f.content.nodes){const n=copy(original);n.id=map.get(original.id)!;delete n.laneId;delete n.phaseId;delete n.groupId;delete n.parentId
+  const lanes=d.kind==='swimlane'?mapContainers('lanes'):new Map<string,string>(),phases=d.kind==='swimlane'?mapContainers('phases'):new Map<string,string>(),groups=['architecture','technical'].includes(d.kind)?mapContainers('groups'):new Map<string,string>()
+  for(const original of f.content.nodes){const n=copy(original);n.id=map.get(original.id)!;if(d.kind!=='technical')delete n.technology;delete n.laneId;delete n.phaseId;delete n.groupId;delete n.parentId
     if(d.kind==='swimlane'){n.laneId=lanes.get(original.laneId||'')||anchor?.laneId||d.lanes[0]?.id;n.phaseId=phases.get(original.phaseId||'')||anchor?.phaseId||d.phases[0]?.id}
-    if(d.kind==='architecture')n.groupId=groups.get(original.groupId||'')||anchor?.groupId||d.groups[0]?.id
-    if(n.kind!=='note'){if(d.kind==='architecture')n.kind='module';else if(d.kind==='mindmap')n.kind='topic';else if(d.kind==='dataflow')n.kind='card';else if(['module','topic','card'].includes(n.kind))n.kind='task'}
+    if(['architecture','technical'].includes(d.kind))n.groupId=groups.get(original.groupId||'')||anchor?.groupId||d.groups[0]?.id
+    if(n.kind!=='note'){if(['architecture','technical'].includes(d.kind))n.kind='module';else if(d.kind==='mindmap')n.kind='topic';else if(d.kind==='dataflow')n.kind='card';else if(['module','topic','card'].includes(n.kind))n.kind='task'}
     if(d.kind==='mindmap'&&n.kind!=='note')n.parentId=map.get(original.parentId||'')||anchor?.id||d.nodes.find(x=>x.kind!=='note'&&!x.parentId)!.id
     d.nodes.push(n)
     const b=f.rendering.positions[original.id] as any;d.presentation.positions[n.id]={x:b.x+dx,y:b.y+dy,width:b.width,height:b.height}

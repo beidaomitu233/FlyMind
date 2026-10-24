@@ -18,13 +18,14 @@ test('整体缩放的最小节点尺寸保留对角，Shift 仍保持比例',()=
   assert.ok(Math.abs(bounds.width/bounds.height-300/160)<.001)
 })
 
-test('五类选择片段互相粘贴：新 ID、完整关系、目标归属、两层数据均合法',()=>{
+test('六类选择片段互相粘贴：新 ID、完整关系、目标归属、两层数据均合法',()=>{
   for(const source of samples){const fragment=createFragment(source,layoutDocument(source),source.nodes.map(n=>n.id));assert.ok(!JSON.stringify(fragment.content).includes('positions'));parseFragment(JSON.stringify(fragment))
     for(const sample of samples){const target=copy(sample),oldIds=new Set(target.nodes.map(n=>n.id)),newIds=pasteFragment(target,fragment,{x:700,y:700});validateDocument(target);const scene=layoutDocument(target)
       assert.equal(newIds.length,source.nodes.length);assert.ok(newIds.every(id=>!oldIds.has(id)));assert.equal(new Set(target.nodes.map(n=>n.id)).size,target.nodes.length);assert.equal(scene.nodes.length,target.nodes.length)
       assert.ok(target.edges.every(e=>target.nodes.some(n=>n.id===e.source)&&target.nodes.some(n=>n.id===e.target)))
       if(target.kind==='mindmap')assert.ok(scene.edges.length>=source.edges.length)
       assert.ok(newIds.every(id=>target.presentation.positions[id].width!>=32))
+      if(target.kind==='technical'&&source.kind==='technical')assert.deepEqual(newIds.map(id=>target.nodes.find(n=>n.id===id)!.technology),source.nodes.map(n=>n.technology));else if(target.kind!=='technical')assert.ok(newIds.every(id=>target.nodes.find(n=>n.id===id)!.technology===undefined))
     }
   }
 })
