@@ -4,9 +4,10 @@ import {readFile} from 'node:fs/promises'
 import {spawnSync} from 'node:child_process'
 
 test('promote accepts backported Python data_filter and still rejects missing capability, traversal and external links',async()=>{
- const source=await readFile(new URL('../deploy/cloud/promote.mjs',import.meta.url),'utf8'),literal=source.match(/const extract=("(?:\\.|[^"\\])*")/)
+ const source=await readFile(new URL('../deploy/cloud/materialize-candidate.mjs',import.meta.url),'utf8'),literal=source.match(/const EXTRACT=String\.raw`([\s\S]*?)`\r?\n/)
  assert.ok(literal,'exercise the exact production extraction program')
- const extraction=JSON.parse(literal[1]),program=String.raw`
+ for(const caller of ['promote.mjs','control-plane-promote.mjs'])assert.match(await readFile(new URL('../deploy/cloud/'+caller,import.meta.url),'utf8'),/await materializeCandidate\(/,'both publishers must use the tested extraction')
+ const extraction=literal[1],program=String.raw`
 import sys,tarfile,tempfile,pathlib,io,json
 extract=sys.argv[1]
 assert hasattr(tarfile,'data_filter'), 'test requires the real safe tarfile implementation'
@@ -30,12 +31,12 @@ with tempfile.TemporaryDirectory(prefix='flymind-safe-tar-') as directory:
  original=tarfile.data_filter;del tarfile.data_filter
  try:
   try: run(good,root/'missing')
-  except AssertionError: pass
+  except ValueError: pass
   else: raise AssertionError('missing data_filter accepted')
  finally: tarfile.data_filter=original
  bad=archive('bad.tar.gz','../escaped.txt')
  try: run(bad,root/'bad')
- except AssertionError: pass
+ except ValueError: pass
  else: raise AssertionError('traversal accepted')
  assert not (root/'escaped.txt').exists()
  linked=archive('linked.tar.gz','external-link',str(root.parent/'not-owned'))

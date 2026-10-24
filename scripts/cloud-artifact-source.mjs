@@ -6,14 +6,23 @@ export function candidateIdentity(value,{runId,headSHA}={}){
  return {releaseId:value.releaseId,sourceCommit:value.sourceCommit}
 }
 export async function readCandidateIdentity(archive,expected){
- const child=spawn('tar',['-xOzf',archive,'./candidate.json'],{shell:false,windowsHide:true,stdio:['ignore','pipe','ignore']})
- const chunks=[];let bytes=0
- const timer=setTimeout(()=>child.kill(),30000)
- try{
-  await new Promise((yes,no)=>{child.on('error',()=>no(Error('Cannot read candidate manifest')));child.stdout.on('data',chunk=>{bytes+=chunk.length;if(bytes>2*1024*1024){child.kill();no(Error('Candidate manifest budget exceeded'))}else chunks.push(chunk)});child.on('close',code=>code===0?yes():no(Error('Cannot read candidate manifest')))})
-  let value;try{value=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{throw Error('Candidate manifest JSON invalid')}
-  return candidateIdentity(value,expected)
- }finally{clearTimeout(timer)}
+ const deadline=Date.now()+30000
+ const capture=(args,limit)=>new Promise((yes,no)=>{
+  const child=spawn('tar',args,{shell:false,windowsHide:true,stdio:['ignore','pipe','ignore']})
+  const chunks=[];let bytes=0,failure,killTimer
+  const stop=message=>{if(failure)return;failure=Error(message);child.kill('SIGTERM');killTimer=setTimeout(()=>child.kill('SIGKILL'),1000)}
+  const timer=setTimeout(()=>stop('Candidate manifest read timed out'),Math.max(1,deadline-Date.now()))
+  child.once('error',()=>{failure??=Error('Cannot read candidate manifest')})
+  child.stdout.on('data',chunk=>{if(failure)return;bytes+=chunk.length;if(bytes>limit)stop('Candidate manifest budget exceeded');else chunks.push(chunk)})
+  child.once('close',code=>{clearTimeout(timer);clearTimeout(killTimer);if(failure)no(failure);else if(code!==0)no(Error('Cannot read candidate manifest'));else yes(Buffer.concat(chunks).toString('utf8'))})
+ })
+ const listing=await capture(['-tzf',archive],16*1024*1024),names=listing.split(/\r?\n/).filter(Boolean)
+ if(names.length>=100000)throw Error('Candidate archive member budget exceeded')
+ const manifests=names.filter(name=>name==='candidate.json'||name==='./candidate.json')
+ if(manifests.length!==1)throw Error('Candidate manifest missing or duplicated')
+ const raw=await capture(['-xOzf',archive,manifests[0]],2*1024*1024)
+ let value;try{value=JSON.parse(raw)}catch{throw Error('Candidate manifest JSON invalid')}
+ return candidateIdentity(value,expected)
 }
 export function validateArtifactURL(value){
  if(typeof value!=='string'||value.length>12000||!/^[\x21-\x7e]+$/.test(value))throw Error('Artifact redirect invalid')

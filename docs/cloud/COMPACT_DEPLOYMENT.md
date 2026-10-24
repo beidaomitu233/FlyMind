@@ -72,4 +72,8 @@ await materializeCandidate({archive, destination, environment, python, run, requ
 
 ## 实际体积核查
 
-PM已下载并核对旧、新Linux原始tar的SHA，流式读取原manifest及JAR。目标原包389,872,360字节；实际变化214项，除JAR外4,370,108字节。目标JAR128,173,347字节中，127,854,716字节压缩区可直接复用，仅318,631字节literal、927项操作；重放完整JAR SHA与目标原字节一致。此结果是实际原包数据，不是合成fixture。完整精简tar大小及Linux全树重放仍待Actions实测，不能提前宣布上线。
+PM已下载并核对旧、新Linux原始tar的SHA，流式读取原manifest及JAR。目标原包389,872,360字节；实际变化214项，除JAR外4,370,108字节。目标JAR128,173,347字节中，127,854,716字节压缩区可直接复用，仅318,631字节literal、927项操作；重放完整JAR SHA与目标原字节一致。
+
+Actions [40085197513](https://github.com/beidaomitu233/FlyMind/actions/runs/40085197513) 已成功完成真实 Linux 原始包构建与重放：精简 tar **2,066,654字节**，为原包0.53%；9309个目标文件通过完整验证，原manifest字节不变，基线再次验证通过。证据在该run的 `compact-verification` 制品（`source-proof.json`、`build-report.json`、`roundtrip-report.json`）。这是非特权Linux还原验收；服务器静态工具安装、实际晋级与线上业务验收仍未完成。
+
+旧全量自动生产开关 `CLOUD_AUTO_PRODUCTION=false`；精简生产仍需 `CLOUD_COMPACT_ENABLED=true` 和人工dispatch的 `deploy=true`。当前push仅验证，不会自动发布；首次成功前不把此路线描述为已上线或已实现push全自动发布。

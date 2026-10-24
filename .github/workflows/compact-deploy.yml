@@ -7,8 +7,13 @@ on:
       - scripts/check-compact-source.mjs
       - scripts/verify-compact-roundtrip.mjs
       - deploy/cloud/materialize-candidate.mjs
+      - deploy/cloud/install-compact-publisher.py
       - tests/compact-builder.test.py
       - tests/compact-materializer.test.mjs
+      - tests/install-compact-publisher.test.py
+      - scripts/cloud-artifact-source.mjs
+      - tests/cloud-artifact-source.test.mjs
+      - tests/cloud-python-extract.test.mjs
       - .github/workflows/compact-deploy.yml
   workflow_dispatch:
     inputs:
@@ -47,7 +52,8 @@ jobs:
         run: |
           python tests/compact-builder.test.py
           python tests/cloud-control-plane-install.test.py
-          node --test tests/compact-materializer.test.mjs tests/cloud-control-plane.test.mjs tests/cloud-deployment.test.mjs
+          python tests/install-compact-publisher.test.py
+          node --test tests/compact-materializer.test.mjs tests/cloud-control-plane.test.mjs tests/cloud-deployment.test.mjs tests/cloud-artifact-source.test.mjs tests/cloud-python-extract.test.mjs
       - name: Verify immutable main source and baseline gates
         id: provenance
         env:
