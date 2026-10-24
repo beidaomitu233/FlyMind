@@ -9,6 +9,7 @@ const profiles:Record<DiagramKind,RenderingProfile>={
  architecture:{id:'architecture-standard',version:'1'},
  mindmap:{id:'mindmap-standard',version:'1'},
  dataflow:{id:'dataflow-standard',version:'1'},
+ technical:{id:'technical-standard',version:'1'},
 }
 export function defaultProfileForKind(kind:DiagramKind):RenderingProfile {
  if(!Object.hasOwn(profiles,kind))throw new Error('UNSUPPORTED_DIAGRAM_KIND');return {...profiles[kind]}

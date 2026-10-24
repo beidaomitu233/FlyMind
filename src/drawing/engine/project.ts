@@ -86,7 +86,7 @@ export interface CreateDrawingProjectOptions {
 /** Build a detached v3 project; never writes a store or migrates an existing workspace. */
 export async function createDrawingProject(content:DiagramContent,engine:DrawioEngineDocument,options:CreateDrawingProjectOptions={}):Promise<DrawingProjectV3> {
   const selected={...exact(options,['profile','preferences','createdAt','updatedAt'],[],'options')}
-  if(content.kind==='mindmap'&&(options.preferences?.orientation===undefined)){
+  if(['mindmap','technical'].includes(content.kind)&&(options.preferences?.orientation===undefined)){
     const title=[...parseNative(engine.xml).cells.values()].find(e=>attr(e.object,'fmRole')==='title'&&attr(e.object,'fmType')==='decoration'&&attr(e.object,'fmAutoOrientation')==='1')
     const orientation=title&&attr(title.object,'fmOrientation');if(orientation==='vertical'||orientation==='horizontal')selected.preferences={...options.preferences,orientation}
   }

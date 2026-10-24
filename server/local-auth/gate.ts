@@ -7,7 +7,7 @@ const identifier=z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/),opaque=z.string().re
 // Existing Java Jackson configuration serializes Long timestamps as decimal strings.
 const wireTimestamp=z.union([z.number(),z.string().regex(/^[1-9][0-9]{0,15}$/).transform(Number)]).pipe(z.number().int().positive().max(Number.MAX_SAFE_INTEGER))
 const team=z.strictObject({id:identifier,name:z.string().min(1).max(200),role:z.enum(['owner','admin','editor','viewer'])})
-const user=z.strictObject({id:identifier,name:z.string().min(1).max(200)})
+const user=z.strictObject({id:identifier,name:z.string().min(1).max(200),userCode:z.string().regex(/^[A-Z0-9]{6}$/).optional()})
 const meSchema=z.strictObject({user,expiresAt:wireTimestamp,teams:z.array(team).max(1000)})
 const principalSchema=z.strictObject({user,session:z.strictObject({id:identifier,expiresAt:wireTimestamp}),team,binding:z.strictObject({deviceId:opaque,dataRootId:identifier})})
 const stateSchema=z.strictObject({schemaVersion:z.literal(1),controlPlaneOrigin:z.string(),dataRootId:identifier,deviceId:opaque,generation:z.string().uuid(),userId:identifier.optional(),teamId:identifier.optional(),credential:z.strictObject({token:z.string().regex(/^fm_local_[A-Za-z0-9_-]{43}$/),expiresAt:z.number().int().positive()}).optional()})

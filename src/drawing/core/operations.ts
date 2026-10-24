@@ -39,7 +39,7 @@ export function applyOperations(input:DiagramDocument,ops:DiagramOperation[]):Di
   if(!Array.isArray(ops)||!ops.length||ops.length>500)throw new Error('一次修改需要 1–500 个操作')
   for(const o of ops){switch(o.op){
     case 'add_node':assertNoNullFields(o.node);d.nodes.push(copy(o.node));if(o.position)d.presentation.positions[o.node.id]=copy(o.position);if(o.style)(d.presentation.styles??={})[o.node.id]=copy(o.style);break
-    case 'update_node':applyChanges(exists(d.nodes,o.id),o.changes,['label','kind'],['laneId','phaseId','groupId','parentId','color','description','items','badge']);if(['laneId','phaseId','groupId','parentId','kind'].some(k=>Object.hasOwn(o.changes,k)))delete d.presentation.positions[o.id];break
+    case 'update_node':applyChanges(exists(d.nodes,o.id),o.changes,['label','kind'],['laneId','phaseId','groupId','parentId','color','description','items','badge','technology']);if(['laneId','phaseId','groupId','parentId','kind'].some(k=>Object.hasOwn(o.changes,k)))delete d.presentation.positions[o.id];break
     case 'remove_node':exists(d.nodes,o.id);removeNodes(d,[o.id]);break
     case 'add_edge':assertNoNullFields(o.edge);d.edges.push(copy(o.edge));if(o.style)(d.presentation.edges??={})[o.edge.id]=copy(o.style);break
     case 'update_edge':applyChanges(exists(d.edges,o.id),o.changes,['source','target'],['label','kind']);break

@@ -16,7 +16,7 @@ for(const name of required)await access(join(root,name))
 await mkdir(output,{recursive:false})
 const application=join(output,'application');await mkdir(application)
 async function copy(from,to){await cp(join(root,from),join(output,to),{recursive:true,errorOnExist:true,force:false,dereference:false,filter:async path=>{if((await lstat(path)).isSymbolicLink())throw Error('Unexpected source build symlink: '+relative(root,path));return true}})}
-for(const name of ['lib','dist','server/start.mjs','scripts/setup-drawio-runtime.mjs','resources/drawio/LICENSE','resources/drawio/supply.json','resources/fonts','docs/DRAWING_STANDARD.md','docs/AI_DRAWING_GUIDE.md','LICENSE','THIRD_PARTY_NOTICES.md'])await copy(name,'application/'+name)
+for(const name of ['lib','dist','server/start.mjs','scripts/setup-drawio-runtime.mjs','resources/drawio/LICENSE','resources/drawio/supply.json','resources/fonts','resources/technology-icons','docs/DRAWING_STANDARD.md','docs/AI_DRAWING_GUIDE.md','LICENSE','THIRD_PARTY_NOTICES.md'])await copy(name,'application/'+name)
 await copy('integrations/xinghui-admin/frontend/apps/web-ele/dist','admin')
 await copy('integrations/xinghui-admin/backend/system-admin/target/system-admin.jar','control-plane/system-admin.jar')
 for(const name of ['README.md','control-plane.env.example','flymind-control-plane.service','start-control-plane.ps1'])await copy('integrations/xinghui-admin/backend/deploy/'+name,'control-plane/deploy/'+name)

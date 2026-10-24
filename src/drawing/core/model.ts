@@ -1,4 +1,4 @@
-export type DiagramKind = 'swimlane' | 'flowchart' | 'architecture' | 'mindmap' | 'dataflow'
+export type DiagramKind = 'swimlane' | 'flowchart' | 'architecture' | 'mindmap' | 'dataflow' | 'technical'
 export type NodeKind = 'task' | 'decision' | 'start' | 'end' | 'module' | 'topic' | 'card' | 'note'
 export interface CardStyle { icon?: 'database' | 'network' | 'check' | 'none'; tone?: 'blue' | 'teal'; variant?: 'card' | 'band' }
 export interface Point { x:number; y:number }
@@ -15,6 +15,7 @@ export interface DiagramNode {
   groupId?: string
   parentId?: string
   color?: string
+  technology?: string
   description?: string
   items?: string[]
   badge?: string
@@ -45,7 +46,7 @@ export interface SceneNode extends Box { node: DiagramNode; color: string; fill:
 export interface SceneContainer extends Box { id: string; label: string; kind: 'title' | 'lane' | 'phase' | 'corner' | 'layer' | 'governance'; tone?: string; vertical?: boolean }
 export interface SceneEdge { edge: DiagramEdge; path: string; labelX: number; labelY: number; color: string; points?:Point[];labelBox?:Box }
 export interface DiagramScene { width: number; height: number; nodes: SceneNode[]; edges: SceneEdge[]; containers: SceneContainer[] }
-export const kindLabels: Record<DiagramKind, string> = { swimlane: '泳道图', flowchart: '流程图', architecture: '架构图', mindmap: '思维导图', dataflow: '数据流架构图' }
+export const kindLabels: Record<DiagramKind, string> = { swimlane: '泳道图', flowchart: '流程图', architecture: '架构图', mindmap: '思维导图', dataflow: '数据流架构图', technical:'技术架构图' }
 export function cardStyle(d:DiagramDocument,id:string):Required<CardStyle> { return {icon:'none',tone:'blue',variant:'card',...d.presentation.cards?.[id]} }
 export const palette = {
   blue: { brand:'#3278ae', dark:'#194c70', soft:'#edf5fb', accent:'#249568', accentSoft:'#edf8f2', edge:'#557185' },
@@ -77,6 +78,7 @@ export function validateDocument(input: unknown): DiagramDocument {
     if(['x','y','width','height','style','icon','tone','variant','fill','stroke','textColor','fontSize'].some(key=>Object.hasOwn(n,key)))throw new Error('节点层不存放坐标和样式，请使用 presentation.positions、presentation.styles 或 presentation.cards')
     if(typeof n.label!=='string'||!n.label.trim()||n.label.length>500) throw new Error('节点文字应为 1–500 字')
     if(!['task','decision','start','end','module','topic','card','note'].includes(n.kind)) throw new Error(`节点 ${n.id} 的类型无效`)
+    if(n.technology!==undefined&&(d.kind!=='technical'||typeof n.technology!=='string'||!/^[a-z0-9][a-z0-9-]{0,63}$/.test(n.technology)))throw new Error('technology 仅技术架构图使用小写技术标识，不接受URL或样式')
     if(n.color!==undefined&&!/^#[0-9a-f]{6}$/i.test(n.color))throw new Error('可选节点颜色应为 #RRGGBB')
     if(n.items!==undefined&&(!Array.isArray(n.items)||n.items.length>30||n.items.some(x=>typeof x!=='string'||x.length>200))) throw new Error('模块条目应为不超过 30 项的文字数组')
     if(n.badge!==undefined&&(typeof n.badge!=='string'||n.badge.length>30))throw new Error('标记应为 30 字以内的文字')

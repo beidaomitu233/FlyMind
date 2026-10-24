@@ -2,32 +2,34 @@ import { z } from 'zod'
 
 // Discovery schemas are contracts, not layout instructions. Cross-reference and
 // graph invariants remain in the platform-independent core validator.
-export const diagramKind=z.enum(['swimlane','flowchart','architecture','mindmap','dataflow'])
+export const diagramKind=z.enum(['swimlane','flowchart','architecture','mindmap','dataflow','technical'])
 export const diagramId=z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/).describe('工作区图形 ID；创建时唯一，修改时沿用读取的 ID')
 export const revision=z.number().int().positive().describe('刚读取的 revision；冲突后重新读取，不能盲目重试')
 const ref=z.string().min(1),color=z.string().regex(/^#[0-9a-f]{6}$/i)
 const nodeKind=z.enum(['task','decision','start','end','module','topic','card','note'])
 const node=z.strictObject({
-  id:ref,label:z.string().trim().min(1).max(500),kind:nodeKind.describe('流程/泳道仅start/end/task/decision；架构module；脑图topic；数据流card；note仅明确要求的短批注，不替代业务步骤'),
+  id:ref,label:z.string().trim().min(1).max(500),kind:nodeKind.describe('流程/泳道仅start/end/task/decision；架构/技术架构module；脑图topic；数据流card；note仅明确要求的短批注，不替代业务步骤'),
   laneId:z.string().optional().describe('泳道图角色归属'),phaseId:z.string().optional().describe('泳道图阶段归属'),
-  groupId:z.string().optional().describe('架构图分层归属'),parentId:z.string().optional().describe('思维导图父主题；根主题不填'),
-  color:color.optional().describe('可选语义颜色；自动美化无需填写'),description:z.string().max(4000).optional().describe('结构上限不等于AI质量预算：流程/泳道/脑图/批注最多120字符短属性，架构/数据卡片240；不塞参数预算或连续步骤'),
-  items:z.array(z.string().max(200)).max(30).optional().describe('仅架构module使用；质量上限12条，每项32中文/100纯外文字符'),badge:z.string().max(30).optional().describe('仅架构module/数据流card短标记；12中文/30纯外文字符')
+  groupId:z.string().optional().describe('架构图必填分层归属；technical可选逻辑组归属，不是工作区任务组'),parentId:z.string().optional().describe('思维导图父主题；根主题不填'),
+  technology:z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/).optional().describe('technical技术架构图技术标识，如vue/nginx/mysql；未知用通用图标，不填URL或坐标'),
+  color:color.optional().describe('可选语义颜色；自动美化无需填写'),description:z.string().max(4000).optional().describe('结构上限不等于AI质量预算：流程/泳道/脑图/技术架构/批注最多120字符短属性，架构/数据卡片240；不塞参数预算或连续步骤'),
+  items:z.array(z.string().max(200)).max(30).optional().describe('仅架构/技术架构module；架构最多12条、单条32中文/100纯外文；technical最多6条、单条24中文/64纯外文，节点总文字最多160字符'),badge:z.string().max(30).optional().describe('仅架构/技术架构module及数据流card短标记；12中文/30纯外文字符')
 })
-const edge=z.strictObject({id:ref,source:ref,target:ref,label:z.string().max(200).optional(),kind:z.enum(['flow','feedback']).optional().describe('流程/泳道的flow表示执行先后；架构flow表示模块依赖，允许依赖箭头但不是流程步骤；数据流表示数据方向。退回/驳回/重试/回写用feedback')})
+const edge=z.strictObject({id:ref,source:ref,target:ref,label:z.string().max(200).optional(),kind:z.enum(['flow','feedback']).optional().describe('流程/泳道的flow表示执行先后；架构/技术架构flow表示模块依赖，允许依赖箭头但不是流程步骤；数据流表示数据方向。退回/驳回/重试/回写用feedback')})
 const container=z.strictObject({id:ref,label:z.string().trim().min(1).max(160)})
 const group=container.extend({kind:z.enum(['layer','governance']).optional(),color:color.optional()})
 export const contentSchema=z.strictObject({
   schemaVersion:z.literal(1).optional(),id:diagramId.optional(),title:z.string().trim().min(1).max(160),kind:diagramKind,
   nodes:z.array(node).min(1).max(500),edges:z.array(edge).max(2000).optional().describe('完整业务前置关系；独立分支分别连出，汇合分别接入；不用节点数组顺序或描述文字代替依赖'),
-  lanes:z.array(container).max(30).optional(),phases:z.array(container).max(30).optional().describe('泳道图真实业务阶段，按业务先后排序'),groups:z.array(group).max(30).optional()
-}).describe('纯业务内容；禁止 order、坐标、尺寸、字体、图标、线型和 presentation。渲染器自动布局美化')
+  lanes:z.array(container).max(30).optional(),phases:z.array(container).max(30).optional().describe('泳道图真实业务阶段，按业务先后排序'),groups:z.array(group).max(30).optional().describe('图内架构分层/technical逻辑组；technical可为空，不等于工作区taskName/workspaceGroupId')
+}).describe('纯业务内容；禁止 order、坐标、尺寸、字体、图标URL/图标数据、线型和 presentation；technical只接受语义technology标识。渲染器自动布局美化')
 
 const collection=z.enum(['lanes','phases','groups']),index=z.number().int().min(0)
 // Nullable only in update commands. Full content and add schemas remain non-null.
 const nodeChanges=node.omit({id:true}).partial().extend({
   laneId:node.shape.laneId.unwrap().nullable().optional(),phaseId:node.shape.phaseId.unwrap().nullable().optional(),
   groupId:node.shape.groupId.unwrap().nullable().optional(),parentId:node.shape.parentId.unwrap().nullable().optional(),
+  technology:node.shape.technology.unwrap().nullable().optional(),
   color:node.shape.color.unwrap().nullable().optional(),description:node.shape.description.unwrap().nullable().optional(),
   items:node.shape.items.unwrap().nullable().optional(),badge:node.shape.badge.unwrap().nullable().optional()
 }).describe('null 仅清除可选业务字段，存档省略该字段；label、kind 不可清除')

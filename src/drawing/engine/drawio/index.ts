@@ -25,7 +25,7 @@ const cellId=(type:string,id:string)=>`${PREFIX}${type}:${encodeURIComponent(id)
 type Attributes=Record<string,string|number|undefined>
 const mainTypes=new Set(['node','annotation','edge','lane','phase','layer'])
 function compatible(content:DiagramContent){
-  if(!['swimlane','flowchart','architecture','mindmap','dataflow'].includes(content.kind))fail('UNSUPPORTED_DIAGRAM_KIND','当前模板批次尚未启用此类型')
+  if(!['swimlane','flowchart','architecture','mindmap','dataflow','technical'].includes(content.kind))fail('UNSUPPORTED_DIAGRAM_KIND','当前模板批次尚未启用此类型')
   if(content.kind==='swimlane'&&content.groups.length)fail('UNSUPPORTED_SWIMLANE_GROUPS','当前泳道不接受额外业务分层')
 }
 function object(doc:Document,root:Element,id:string,label:string,metadata:Attributes,cellAttributes:Attributes,box?:{x:number;y:number;width:number;height:number}){
@@ -145,7 +145,7 @@ function bindings(native:NativeDocument):Bindings{
     if(!id)fail('INVALID_BINDING','业务对象缺少 fmId')
     const index=attr(entry.object,'fmIndex');if(index!==undefined&&(!Number.isInteger(Number(index))||Number(index)<0||Number(index)>10000))fail('INVALID_BINDING','业务序列索引无效')
     const key=bindingKey(type==='annotation'?'node':type,id)
-    if(role==='title'&&type==='phase'){if(attr(entry.cell,'vertex')!=='1')fail('INVALID_BINDING','受控标题必须为顶点');if(titles.has(key))fail('DUPLICATE_BINDING','受控阶段标题重复');titles.set(key,entry);continue}
+    if(role==='title'&&['phase','layer'].includes(type)){if(attr(entry.cell,'vertex')!=='1')fail('INVALID_BINDING','受控标题必须为顶点');if(titles.has(key))fail('DUPLICATE_BINDING','受控阶段标题重复');titles.set(key,entry);continue}
     if(isControlled(entry)){if(attr(entry.cell,'vertex')!=='1')fail('INVALID_BINDING','受控文本必须是原生顶点');continue}
     if(role!=='main')fail('INVALID_BINDING','未知业务子元素角色')
     if(main.has(key))fail('DUPLICATE_BINDING','同类业务 ID 重复主绑定')
@@ -166,7 +166,7 @@ export async function projectDrawio(xml:string,baseContent?:DiagramContent):Prom
   // Custom mxGraphModel attributes are not a dependable native-save contract.
   // Document identity lives on the visible title UserObject, not a hidden JSON copy.
   const id=attr(map.title.object,'fmDocumentId'),kind=attr(map.title.object,'fmKind')
-  if(!id||!['swimlane','flowchart','architecture','mindmap','dataflow'].includes(kind??''))fail('UNSUPPORTED_DIAGRAM_KIND','缺少受支持的文档业务身份')
+  if(!id||!['swimlane','flowchart','architecture','mindmap','dataflow','technical'].includes(kind??''))fail('UNSUPPORTED_DIAGRAM_KIND','缺少受支持的文档业务身份')
   if(base&&(base.id!==id||base.kind!==kind))fail('DOCUMENT_IDENTITY_MISMATCH','XML 与内容不属于同一图形')
   const content:DiagramContent={schemaVersion:1,id,title:cellText(map.title),kind:kind as DiagramContent['kind'],nodes:[],edges:[],lanes:[],phases:[],groups:[]}
   const nodeByCell=new Map<string,string>()
@@ -178,7 +178,7 @@ export async function projectDrawio(xml:string,baseContent?:DiagramContent):Prom
       optionalNode(entry,node);const visible=readControlledNode(native,entry);if(visible)Object.assign(node,visible);content.nodes.push(node);nodeByCell.set(entry.id,businessId)
     }else if(type==='lane')content.lanes.push({id:businessId,label})
     else if(type==='phase')content.phases.push({id:businessId,label:map.titles.has(bindingKey('phase',businessId))?cellText(map.titles.get(bindingKey('phase',businessId))!):label})
-    else if(type==='layer'){const group:DiagramContent['groups'][number]={id:businessId,label};for(const key of ['kind','color'] as const){const value=attr(entry.object,key==='kind'?'fmKind':'fmColor');if(value!==undefined)(group as unknown as Record<string,unknown>)[key]=value}content.groups.push(group)}
+    else if(type==='layer'){const group:DiagramContent['groups'][number]={id:businessId,label:map.titles.has(bindingKey('layer',businessId))?cellText(map.titles.get(bindingKey('layer',businessId))!):label};for(const key of ['kind','color'] as const){const value=attr(entry.object,key==='kind'?'fmKind':'fmColor');if(value!==undefined)(group as unknown as Record<string,unknown>)[key]=value}content.groups.push(group)}
   }
   for(const entry of map.main.values())if(attr(entry.object,'fmType')==='edge'){
     const source=nodeByCell.get(attr(entry.cell,'source')??''),target=nodeByCell.get(attr(entry.cell,'target')??'')
@@ -202,7 +202,7 @@ export async function projectDrawio(xml:string,baseContent?:DiagramContent):Prom
     if(!intersection)fail('UNASSIGNED_NODE','业务节点须在明确的角色/阶段交叉容器内')
     if(node.laneId!==attr(intersection.object,'fmLaneId')||(node.phaseId??'')!==(attr(intersection.object,'fmPhaseId')??''))fail('OWNERSHIP_MISMATCH','节点业务归属与原生交叉容器不一致')
   }
-  if(content.kind==='architecture')for(const node of content.nodes.filter(n=>n.kind!=='note')){const entry=map.main.get(bindingKey('node',node.id))!;let parent=attr(entry.cell,'parent'),groupId:string|undefined;while(parent){const p=native.cells.get(parent)!;if(attr(p.object,'fmType')==='layer'&&(attr(p.object,'fmRole')??'main')==='main'){groupId=attr(p.object,'fmId');break}parent=attr(p.cell,'parent')}if(groupId!==node.groupId)fail('OWNERSHIP_MISMATCH','架构模块归层与原生容器不一致')}
+  if(['architecture','technical'].includes(content.kind))for(const node of content.nodes.filter(n=>n.kind!=='note')){const entry=map.main.get(bindingKey('node',node.id))!;let parent=attr(entry.cell,'parent'),groupId:string|undefined;while(parent){const p=native.cells.get(parent)!;if(attr(p.object,'fmType')==='layer'&&(attr(p.object,'fmRole')??'main')==='main'){groupId=attr(p.object,'fmId');break}parent=attr(p.cell,'parent')}if(groupId!==node.groupId)fail('OWNERSHIP_MISMATCH','架构模块归层与原生容器不一致')}
   content.nodes=sorted(content.nodes,map,'node',base?.nodes);content.edges=sorted(content.edges,map,'edge',base?.edges);content.lanes=sorted(content.lanes,map,'lane',base?.lanes);content.phases=sorted(content.phases,map,'phase',base?.phases);content.groups=sorted(content.groups,map,'layer',base?.groups)
   if(content.kind==='mindmap'){const expected=content.nodes.filter(n=>n.parentId),derived=[...native.cells.values()].filter(e=>attr(e.object,'fmRole')==='parent-edge');if(derived.length!==expected.length)fail('MISSING_PARENT_EDGE','脑图派生父子线数量不一致');const seen=new Set<string>();for(const e of derived){const child=attr(e.object,'fmChildId'),node=expected.find(n=>n.id===child);if(!node||seen.has(child!)||nodeByCell.get(attr(e.cell,'source')??'')!==node.parentId||nodeByCell.get(attr(e.cell,'target')??'')!==node.id)fail('PARENT_EDGE_MISMATCH','脑图派生线与父子语义不一致');seen.add(child!)}}
   const checked=validateContent(content);compatible(checked)

@@ -16,11 +16,11 @@ export interface DocumentationSection {id:string;title:string;kicker:string;desc
 export const flymindDocumentation:readonly DocumentationSection[]=[
  {id:'introduction',title:'认识 FlyMind',kicker:'从业务到图形',description:'让 AI 整理关系，在熟悉的画布上继续完成你的表达。',blocks:[
   {kind:'paragraph',text:'FlyMind 将图形内容与视觉布局分开：你和 AI 负责真实的步骤、模块与关系，绘图引擎负责排版、连线和原生编辑。无需在对话中提供坐标，也无需额外向 FlyMind 提供模型 API Key；AI 对话由你使用的客户端提供。'},
-  {kind:'cards',items:[{title:'泳道图',text:'角色、阶段、交接与退回。'},{title:'流程图',text:'动作、判断、分支与汇合。'},{title:'架构图',text:'模块、分层及系统依赖。'},{title:'脑图',text:'主题与有顺序的父子分支。'},{title:'数据流图',text:'数据来源、处理与输出。'}]},
+  {kind:'cards',items:[{title:'泳道图',text:'角色、阶段、交接与退回。'},{title:'流程图',text:'动作、判断、分支与汇合。'},{title:'架构图',text:'模块、分层及系统依赖。'},{title:'技术架构图',text:'技术图标、简短名称与逻辑分组，原生组件可自由调整。'},{title:'脑图',text:'主题与有顺序的父子分支。'},{title:'数据流图',text:'数据来源、处理与输出。'}]},
   {kind:'notice',title:'内容真实，图形可改',text:'来源不明确的关系应标记待确认。AI 的质量检查帮助发现结构问题，不能替代你核对业务。'}]},
  {id:'getting-started',title:'开始使用',kicker:'一个工作台，两种编辑方式',description:'先画出关系，再用网页或 AI 逐步完善。',blocks:[
   {kind:'action',label:'带我熟悉工作台',event:'start-tour'},
-  {kind:'steps',items:['在侧栏新建图形，选择合适的类型和任务分组。列表中的文件夹用于整理图形，不是画布中的架构分层。','双击修改文字，拖动节点、尺寸或连线；等待“已保存”后再离开或导出。','自动排版和横竖切换会调整人工位置、折点，确认后才执行；普通保存不自动重排。“适合画布”只调整视角。','继续让 AI 修改时，要求先读取这张图的最新修订，保留无关的人工布局与样式。','从导出菜单下载所需格式。导出仍在运行时等待原任务，不重复新建同一张图。']},
+  {kind:'steps',items:['在侧栏新建图形，输入名称并选择类型即可，分组可选。列表和分组旁都有导入入口；也能直接拖入文件。Agent 新建图形必须按当前任务归组。','双击修改文字，拖动节点、尺寸或连线；等待“已保存”后再离开或导出。','自动排版和横竖切换会调整人工位置、折点，确认后才执行；普通保存不自动重排。“适合画布”只调整视角。','继续让 AI 修改时，要求先读取这张图的最新修订，保留无关的人工布局与样式。','从导出菜单下载所需格式。导出仍在运行时等待原任务，不重复新建同一张图。']},
   {kind:'cards',items:[{title:'PNG / SVG',text:'实际生成的图片与矢量文件。'},{title:'draw.io',text:'保留原生图元，可继续编辑。'},{title:'JSON 内容数据',text:'仅业务内容，适合交给 AI。'},{title:'工作区文件',text:'单图完整 project.json，含内容与人工渲染。'}]},
   {kind:'paragraph',text:'业务图有 PNG、SVG、drawio、json、project.json 五种制品。仅画布图没有业务内容 JSON，需显式业务映射后才能让 AI 按业务字段修改。'},
   {kind:'notice',title:'删除节点时保留一致关系',text:'若普通 Delete 留下关联悬空线导致保存被拒，先撤销，再用 Ctrl+Delete 一并删除节点和关联线。脑图使用“删除当前分支”时先核对确认范围。'}]},

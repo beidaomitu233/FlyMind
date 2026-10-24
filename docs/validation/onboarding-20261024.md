@@ -1,5 +1,13 @@
 # U29 首用引导与简化 MCP 接入验收
 
+## 2026-10-24 发布复核（覆盖下方早期未发布状态）
+
+用户已明确授权本批通过 Actions 上线。U29 独立提交 `3bd9582`，首轮 CI 发现首用引导遮挡旧浏览器探针，最小兼容修复 `955c04b` 后，Verify 与候选运行 [39994902799](https://github.com/beidaomitu233/FlyMind/actions/runs/39994902799) 全部成功；Windows/Linux 包、实际 JAR/MySQL/Redis 验证及 production 均成功。生产发布于北京时间 2026-10-24 02:32 完成，`/readyz` 实测 ready=true、pendingWrites=0、releaseId=`run-39994902799-1`。
+
+发布实页已看到首用四步引导、关闭后三卡首页、Codex/WorkBuddy 简短连接消息和高级说明折叠入口。只检查并关闭引导/连接面板，未修改线上图形或创建授权。截图：`output/u30-review/u29-live-home.png`、`u29-live-connect.png`；Actions 日志 `output/u29-production-final.log`。上传389,808,698字节耗时约2900秒，是本次部署主要耗时；不将它计为图形生成耗时。应用版本仍1.0.0，无新标签。
+
+U30 技术/应用架构视觉、账号ID/新邀请/看板迁移等仍在本地，未混入该发布。
+
 日期：2026-10-24。PM 复用原 dev_engine/dev_application（gpt-6.1-sol / medium），未创建替代代理。当前为**本地指定范围已验收，未提交、未推送、未部署**；新功能发布待用户明确授权。应用版本保持 1.0.0。
 
 ## 实际改动

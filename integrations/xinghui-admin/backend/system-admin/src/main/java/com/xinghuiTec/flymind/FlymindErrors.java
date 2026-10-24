@@ -3,7 +3,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.http.*;
 import org.springframework.dao.DataAccessException;
 import java.util.Map;
-@RestControllerAdvice(assignableTypes={FlymindLocalGrantController.class,FlymindController.class,FlymindAdminController.class,FlymindAdminUserController.class})
+@RestControllerAdvice(assignableTypes={FlymindOverviewController.class,FlymindLocalGrantController.class,FlymindController.class,FlymindAdminController.class,FlymindAdminUserController.class})
 public class FlymindErrors {
  @ExceptionHandler(FlymindException.class) public ResponseEntity<Object> expected(FlymindException e){return response(e.status,e.code,e.getMessage());}
  @ExceptionHandler(DataAccessException.class) public ResponseEntity<Object> unavailable(DataAccessException e){return response(503,"IDENTITY_UNAVAILABLE","身份服务暂时不可用");}

@@ -90,9 +90,15 @@ export class NativeSaveSession {
     this.persistTail=task.catch(()=>{})
     return task
   }
+  /** Wait for the latest queued journal write without retrying a failed backup. */
+  async waitForBackup():Promise<void>{
+    this.assertOpen()
+    for(;;){const pending=this.persistTail;await pending;this.assertOpen();if(pending===this.persistTail)break}
+    if(!this.backedUp)throw this.error instanceof NativeDraftError?this.error:new NativeDraftError('草稿未能保存，请下载恢复数据')
+  }
   async edit(xml:string):Promise<void>{
     this.assertOpen();if(typeof xml!=='string')throw new NativeApiError('编辑内容应为 XML 字符串',400,'INVALID_XML')
-    if(xml===this.latestXML)return
+    if(xml===this.latestXML){await this.waitForBackup();return}
     this.latestXML=xml;this.latestSeq++;this.touch()
     if(!this.reconcileBlocked&&!['conflict','deleted','offline'].includes(this.status)){this.status=this.inflight?'saving':this.dirty?'dirty':'ready';this.error=undefined}
     this.emit();await this.persist()
@@ -113,7 +119,7 @@ export class NativeSaveSession {
   }
   private async pump(generation:number):Promise<void>{
     while(this.active(generation)){
-      if(!this.inflight&&!this.dirty){this.status='ready';this.emit();return}
+      if(!this.inflight&&!this.dirty){await this.waitForBackup();if(!this.active(generation))return;this.status='ready';this.emit();return}
       if(!this.inflight){this.inflight={seq:this.latestSeq,request:{xml:this.latestXML,expectedRevision:this.baseRevision,requestId:this.options.requestId?.()||uuid()}};this.touch()}
       const pending=this.inflight
       this.status='saving';this.error=undefined;this.emit()

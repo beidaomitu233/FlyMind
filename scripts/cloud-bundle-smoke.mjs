@@ -14,6 +14,7 @@ import {resolveRuntimeAssets} from '../lib/server/rendering/assets.js'
 import {createCloudReleaseManifest} from '../lib/server/cloud/mcp-compat.js'
 import {sampleFor} from '../lib/src/drawing/core/samples.js'
 import {extractContent} from '../lib/src/drawing/core/layers.js'
+import {drawioCapabilities} from '../lib/src/drawing/engine/profiles.js'
 const application=resolve(fileURLToPath(new URL('../',import.meta.url))),bundle=resolve(application,'..'),candidatePath=join(bundle,'candidate.json'),candidate=JSON.parse(await readFile(candidatePath,'utf8'))
 if(candidate.prepared)throw Error('Candidate already finalized; do not modify an immutable release')
 if(!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(candidate.releaseId))throw Error('Candidate identity invalid')
@@ -23,8 +24,10 @@ const report={platform:process.platform,arch:process.arch,node:process.version,a
 try{
  const release=await createCloudReleaseManifest({releaseId:candidate.releaseId});await renderer.ready()
  const store=new DiagramStore(join(root,'data'));await store.init({seedExamples:false});const diagrams=new NativeDiagramService(store,true),exports=new NativeExportService(store,true,Promise.resolve(release));worker=new NativeExportWorker(store,renderer,{release:Promise.resolve(release)})
- for(const kind of ['swimlane','flowchart','architecture','mindmap','dataflow']){
-  const content={...extractContent(sampleFor(kind)),id:'bundle-'+kind};const record=await diagrams.create({content,requestId:'create-'+kind},diagrams.dataRootId)
+ // Every advertised native kind must render from this candidate's own code.
+ const kinds=drawioCapabilities().supportedKinds;assert.ok(kinds.length>0);assert.equal(new Set(kinds).size,kinds.length);report.supportedKinds=kinds
+ for(const kind of kinds){
+  const content={...extractContent(sampleFor(kind)),id:'bundle-'+kind};assert.equal(content.kind,kind,'A published kind must have its own smoke sample');const record=await diagrams.create({content,requestId:'create-'+kind},diagrams.dataRootId)
   const task=await exports.create(content.id,{expectedRevision:record.revision,requestId:'export-'+kind},diagrams.dataRootId),result=await worker.runOnce();assert.equal(result?.id,task.id);assert.equal(result?.status,'succeeded',JSON.stringify(result?.error))
   for(const format of ['png','svg','drawio','json','project.json']){const file=await exports.file(task.id,format);assert.ok(file.buffer.length>0);if(format==='png')assert.equal(file.buffer.subarray(1,4).toString(),'PNG')}
   report.cases.push({kind,revision:record.revision,exportId:task.id,png:true,sources:true})

@@ -14,6 +14,6 @@ export const overridesPreferences = defineOverridesPreferences({
     enableRefreshToken: false,
     loginExpiredMode: 'page',
     // 登录后默认跳转路径
-    defaultHomePath: '/flymind/users',
+    defaultHomePath: '/dashboard/overview',
   },
 });

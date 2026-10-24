@@ -13,6 +13,7 @@ const paths:Record<string,string>={
   diagram:'M4 4h6v6H4z M14 14h6v6h-6z M14 4h6v6h-6z M7 10v7h7 M10 7h4',
   swimlane:'M3 4h18v16H3z M3 8h18 M9 4v16 M15 4v16 M5 12h2 M11 15h2 M17 11h2',
   architecture:'M3 3h18v5H3z M3 11h8v5H3z M14 11h7v5h-7z M3 19h18 M7 8v3 M17 8v3',
+  technical:'M3 9h6v6H3z M15 3h6v6h-6z M15 15h6v6h-6z M9 12h3V6h3 M12 12v6h3',
   dataflow:'M3 3h5v5H3z M16 3h5v5h-5z M3 13h18v5H3z M5 8v5 M18 8v5 M18 18v4H6v-4',
   flowchart:'M9 3h6v4H9z M12 7v3 M12 10l4 3-4 3-4-3z M12 16v4 M4 19h5 M15 19h5',
   mindmap:'M8 9h8v6H8z M3 4h5 M3 20h5 M16 4h5 M16 20h5 M8 12H5V4 M5 12v8 M16 12h3V4 M19 12v8',

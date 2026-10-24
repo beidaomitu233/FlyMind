@@ -191,6 +191,28 @@ test('network send waits for persistence; close during that wait never starts th
   assert.equal(transport.calls.length,0);assert.equal(session.snapshot().status,'closed');assert.ok((await repo.list())[0].inflight)
 })
 
+test('duplicate native capture and clean flush wait for the saved journal instead of exposing a transient unbacked state',async()=>{
+  const {session,transport,repo}=await setup()
+  // Native save event returns to the acknowledged model while its IDB cleanup is delayed.
+  await session.edit('XML-A');repo.gate=deferred<void>()
+  const nativeEvent=session.edit('XML-0');await until(()=>repo.writes.length===2)
+  assert.equal(session.snapshot().dirty,false);assert.equal(session.snapshot().backedUp,false)
+  let captured=false,flushed=false
+  const capture=session.edit('XML-0').then(()=>{captured=true}),flush=session.flush().then(()=>{flushed=true})
+  await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(captured,false);assert.equal(flushed,false)
+  repo.gate.resolve();await Promise.all([nativeEvent,capture,flush]);await session.waitForBackup()
+  assert.equal(session.snapshot().backedUp,true);assert.equal(session.snapshot().dirty,false);assert.equal(transport.calls.length,0)
+})
+
+test('backup barrier retains actual IDB failure for duplicate capture and never submits or retries it',async()=>{
+  const {session,transport,repo}=await setup();repo.fail=true
+  await assert.rejects(session.edit('XML-A'),(e:any)=>e.code==='DRAFT_QUOTA')
+  const writes=repo.writes.length
+  await assert.rejects(session.edit('XML-A'),(e:any)=>e.code==='DRAFT_QUOTA')
+  await assert.rejects(session.waitForBackup(),(e:any)=>e.code==='DRAFT_QUOTA')
+  assert.equal(repo.writes.length,writes);assert.equal(transport.calls.length,0);assert.equal(session.snapshot().backedUp,false)
+})
+
 test('closed session late ack cannot clear a new diagram session or change its latest XML',async()=>{
   const repo=new MemoryDraftRepository(),old=await setup('diagram-1',repo)
   await old.session.edit('old-A');const oldFlush=old.session.flush();await until(()=>old.transport.calls.length===1)

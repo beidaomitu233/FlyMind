@@ -55,8 +55,10 @@ interface TeamSummary {id:string; name:string; role:'owner'|'admin'|'editor'|'vi
 | POST `/app/flymind/teams` | `{name}` | TeamSummary，创建者为 owner |
 | PATCH `/app/flymind/teams/{teamId}` | `{name}` | TeamSummary，owner/admin |
 | GET `/app/flymind/teams/{teamId}/members` | Bearer | `{userId,name,role}[]`，有效成员可读 |
-| POST `/app/flymind/teams/{teamId}/invites` | `{phone,role:'editor'|'viewer'|'admin'}` | `{id,inviteToken,expiresAt}`，admin 不可邀请 admin；token 仅返回一次 |
-| POST `/app/flymind/invites/accept` | `{inviteToken}` | TeamSummary，必须登录匹配被邀请账号 |
+| POST `/app/flymind/teams/{teamId}/invites` | `{userCode,role:'editor'|'viewer'|'admin'}` | `{id,expiresAt}`；userCode为6位字母数字公共用户ID，admin不可邀请admin，不返回邀请令牌 |
+| GET `/app/flymind/invites` | 当前应用会话 | 当前收件人的邀请记录，含邀请人/团队/角色/状态；不枚举其他用户 |
+| POST `/app/flymind/invites/{id}/accept` | 当前应用会话，无业务body | TeamSummary；检查接收人、有效期、团队/邀请人权限与现有成员关系 |
+| POST `/app/flymind/invites/{id}/decline` | 当前应用会话，无业务body | 标记拒绝并保留记录 |
 | PATCH `/app/flymind/teams/{teamId}/members/{userId}` | `{role:'admin'|'editor'|'viewer'}` | `{success:true}`，owner 才可授予/变更 admin；禁止改变 owner |
 | DELETE `/app/flymind/teams/{teamId}/members/{userId}` | Bearer | `{success:true}`，禁止移除 owner、管理员不能移除同级/更高级 |
 | POST `/app/flymind/teams/{teamId}/transfer` | `{userId}` | `{success:true}`，事务转移所有权，原 owner 变 admin |
@@ -84,7 +86,9 @@ Node 数据根：`<FLYMIND_CLOUD_DATA_DIR>/teams/<sha256(teamId)>/`。绝不使�
 - `POST /admin/flymind/users`：`{phone,name,password}`，管理员开通既有SysUser，固定服务端tenant，不接受tenantId；`system:user:add`。
 - `PATCH /admin/flymind/users/{id}`：`{status:0|1}`，仅精确数值0/1；`system:user:edit`。停用与该用户全部app sessions撤销在同一事务，重新启用不恢复旧token。
 - `POST /admin/flymind/users/{id}/password`：`{password}`，前台密码至少6字符、非全空白且不超过72 UTF-8字节，BCrypt，限定应用tenant；`system:user:edit`。同事务撤销全部前台session/OAuth/device grants；后台密码保持至少12字符，不向客户端返回密码/hash。
-- `POST /app/flymind/auth/password`：应用Bearer，严格body `{currentPassword,newPassword}`；新密码同上6字符规则。成功 `{code:200,message:"成功",data:{success:true,reauthenticate:true}}`；原密码错误 HTTP400/`errorCode:INVALID_CURRENT_PASSWORD`，实际Bearer失效HTTP401。成功撤销该用户全部前台会话/OAuth/device grants，需要重新登录；后台凭据/状态不变。
+- `POST /app/flymind/auth/password`：应用Bearer，严格body `{newPassword}`；新密码同上6字符规则，不要求原密码或重复输入。成功 `{code:200,message:"成功",data:{success:true,reauthenticate:true}}`；实际Bearer失效HTTP401。成功撤销该用户全部前台会话/OAuth/device grants，需要重新登录；后台凭据/状态不变。
+
+2026-10-24：user/me/members额外返回 `userCode`，6位大写字母数字且两类均存在；内部 `id`/`userId` 和授权外键不变。Node旧夹具可无该字段，真实新旧前台账号由目录幂等分配。后台 `GET /admin/flymind/overview?days=7|30` 要求 `flymind:dashboard:view`，真实UTC统计与各字段口径见 [U30契约](U30_ACCOUNT_TEAMS_OVERVIEW.md)。正式受控源码路径为 `integrations/xinghui-admin/`，上级历史复制目录不作为构建入口。
 - bootstrap已显式赋予上述F权限与用户/团队M/C路由。管理端仅手机号+密码及实际captcha；不开放旧模板假注册、扫码、社交、验证码登录或找回入口。
 
 后续FlyMind UI薄适配仍待分配所有权：注入固定身份transport及user/team context，不重画NativeStudio；切团队沿现保存/离开保护。云端IDB草稿须同时按userId+teamId+workspace/dataRoot identity隔离，不只凭diagramId或根身份，以免退出/换账号恢复到另一主体。

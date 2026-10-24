@@ -23,3 +23,6 @@ The locally inspected direct dependency declarations include:
 Each dependency's installed package contains its authoritative license and any notices. Native binaries and transitive dependencies, including SQLite bindings, sharp/libvips and Chromium components, can have additional terms. This summary is not a complete replacement for those files. Maintainers must inspect the actual release tarball, dependency versions and downloaded supply before publishing; do not describe all dependencies as MIT.
 
 No third-party trademark ownership is claimed. This inventory records the current distribution inputs and does not resolve rights in any external business material imported by users.
+# Technical diagram icons
+
+The locally bundled technology symbols in `resources/technology-icons/` are from [Simple Icons](https://github.com/simple-icons/simple-icons), fixed commit `30053a0f492fd192740ad001031b3091be060986`, under CC0-1.0. The upstream SVG bytes, source URLs, hashes and full license are included in that directory. Brand colors are applied in the compiled static registry. Brand names and marks identify the corresponding technology; unknown technologies use a generic native symbol. Rendering does not request a third-party CDN.

@@ -56,7 +56,7 @@ export async function normalizeDrawioEdits(xml:string,input:DrawingProjectV3):Pr
       entry.object.setAttribute('fmType',kind==='note'?'annotation':'node')
       const intersection=ancestorIntersection(native,entry)
       if(content.kind==='swimlane'&&!intersection&&kind!=='note')fail('UNASSIGNED_NODE','新建或移动业务节点须进入明确交叉容器')
-      if(content.kind==='architecture'&&kind!=='note'){let parent=attr(entry.cell,'parent'),layer:NativeCell|undefined;while(parent){const p=native.cells.get(parent)!;if(businessType(p)==='layer'){layer=p;break}parent=attr(p.cell,'parent')}if(!layer)fail('UNASSIGNED_NODE','架构模块须进入明确分层');entry.object.setAttribute('fmGroupId',attr(layer.object,'fmId')!)}
+      if(['architecture','technical'].includes(content.kind)&&kind!=='note'){let parent=attr(entry.cell,'parent'),layer:NativeCell|undefined;while(parent){const p=native.cells.get(parent)!;if(businessType(p)==='layer'){layer=p;break}parent=attr(p.cell,'parent')}if(!layer&&content.kind==='architecture')fail('UNASSIGNED_NODE','架构模块须进入明确分层');if(layer)entry.object.setAttribute('fmGroupId',attr(layer.object,'fmId')!);else entry.object.removeAttribute('fmGroupId')}
       if(content.kind==='swimlane'&&intersection){for(const field of ['fmLaneId','fmPhaseId']){const value=attr(intersection.object,field);if(value)entry.object.setAttribute(field,value);else entry.object.removeAttribute(field)}}
       nodeByCell.set(entry.id,entry)
     }

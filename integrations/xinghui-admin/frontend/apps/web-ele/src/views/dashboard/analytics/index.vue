@@ -1,90 +1,23 @@
-<script lang="ts" setup>
-import type { AnalysisOverviewItem } from '@vben/common-ui';
-import type { TabOption } from '@vben/types';
-
-import {
-  AnalysisChartCard,
-  AnalysisChartsTabs,
-  AnalysisOverview,
-} from '@vben/common-ui';
-import {
-  SvgBellIcon,
-  SvgCakeIcon,
-  SvgCardIcon,
-  SvgDownloadIcon,
-} from '@vben/icons';
-
+<script setup lang="ts">
+import {computed,onMounted,ref,watch} from 'vue';
+import {getFlymindOverview,type FlymindOverview,type MetricValue} from '#/api/system/flymind';
 import AnalyticsTrends from './analytics-trends.vue';
-import AnalyticsVisitsData from './analytics-visits-data.vue';
-import AnalyticsVisitsSales from './analytics-visits-sales.vue';
-import AnalyticsVisitsSource from './analytics-visits-source.vue';
-import AnalyticsVisits from './analytics-visits.vue';
-
-const overviewItems: AnalysisOverviewItem[] = [
-  {
-    icon: SvgCardIcon,
-    title: '用户量',
-    totalTitle: '总用户量',
-    totalValue: 120_000,
-    value: 2000,
-  },
-  {
-    icon: SvgCakeIcon,
-    title: '访问量',
-    totalTitle: '总访问量',
-    totalValue: 500_000,
-    value: 20_000,
-  },
-  {
-    icon: SvgDownloadIcon,
-    title: '下载量',
-    totalTitle: '总下载量',
-    totalValue: 120_000,
-    value: 8000,
-  },
-  {
-    icon: SvgBellIcon,
-    title: '使用量',
-    totalTitle: '总使用量',
-    totalValue: 50_000,
-    value: 5000,
-  },
-];
-
-const chartTabs: TabOption[] = [
-  {
-    label: '流量趋势',
-    value: 'trends',
-  },
-  {
-    label: '月访问量',
-    value: 'visits',
-  },
-];
+const days=ref<7|30>(30),data=ref<FlymindOverview>(),loading=ref(false),error=ref('');let generation=0;
+const number=(v:MetricValue|undefined)=>v===undefined||v===null||!Number.isFinite(Number(v))?'—':Number(v).toLocaleString('zh-CN');
+const stamp=(v:MetricValue|null|undefined)=>v&&Number.isFinite(Number(v))?new Date(Number(v)).toISOString().slice(0,16).replace('T',' ')+' UTC':'尚无采集';
+const today=computed(()=>data.value?.trend.at(-1));
+const invitations=computed(()=>[{label:'待处理',value:data.value?.invites.pending,color:'#e9a23b'},{label:'已加入',value:data.value?.invites.accepted,color:'#12a594'},{label:'已拒绝',value:data.value?.invites.declined,color:'#80838d'},{label:'已过期',value:data.value?.invites.expired,color:'#c7c9d1'}]);
+const inviteTotal=computed(()=>invitations.value.reduce((n,row)=>n+Number(row.value??0),0));
+async function load(){const token=++generation;loading.value=true;error.value='';try{const result=await getFlymindOverview(days.value);if(token===generation)data.value=result}catch(e){if(token===generation)error.value=e instanceof Error?e.message:'数据加载失败'}finally{if(token===generation)loading.value=false}}
+watch(days,load);onMounted(load);
 </script>
-
-<template>
-  <div class="p-5">
-    <AnalysisOverview :items="overviewItems" />
-    <AnalysisChartsTabs :tabs="chartTabs" class="mt-5">
-      <template #trends>
-        <AnalyticsTrends />
-      </template>
-      <template #visits>
-        <AnalyticsVisits />
-      </template>
-    </AnalysisChartsTabs>
-
-    <div class="mt-5 w-full md:flex">
-      <AnalysisChartCard class="mt-5 md:mr-4 md:mt-0 md:w-1/3" title="访问数量">
-        <AnalyticsVisitsData />
-      </AnalysisChartCard>
-      <AnalysisChartCard class="mt-5 md:mr-4 md:mt-0 md:w-1/3" title="访问来源">
-        <AnalyticsVisitsSource />
-      </AnalysisChartCard>
-      <AnalysisChartCard class="mt-5 md:mt-0 md:w-1/3" title="访问来源">
-        <AnalyticsVisitsSales />
-      </AnalysisChartCard>
-    </div>
-  </div>
-</template>
+<template><main class="flymind-overview" :aria-busy="loading"><header class="overview-heading"><div><h1>应用概览</h1><p>FlyMind 用户、空间与协作</p></div><div class="overview-controls"><select v-model="days" aria-label="统计周期"><option :value="7">最近 7 天</option><option :value="30">最近 30 天</option></select><button :disabled="loading" @click="load">{{loading?'更新中…':'刷新数据'}}</button></div></header>
+ <div v-if="error" role="alert" class="overview-error">{{error}}<span v-if="data"> · 当前保留上次成功数据</span></div>
+ <section class="overview-metrics" aria-label="核心指标"><article><span>用户总数</span><strong>{{number(data?.users.total)}}</strong><small>已启用 {{number(data?.users.enabled)}} · 已停用 {{number(data?.users.disabled)}}</small></article><article><span>今日活跃用户</span><strong>{{number(today?.activeUsers)}}</strong><small>成功登录 {{number(today?.loginCount)}} 次 · UTC 日</small></article><article><span>空间总数</span><strong>{{number(data?.teams.total)}}</strong><small>含个人空间 · 成员关系 {{number(data?.teams.members)}}</small></article><article><span>有效 MCP 授权</span><strong>{{number(data?.authorizations.activeMcpGrants)}}</strong><small>有效本地设备 {{number(data?.authorizations.activeDevices)}}</small></article></section>
+ <section class="overview-panel overview-trend"><header><div><h2>用户增长与活跃</h2><p>按 UTC 日统计</p></div><small>{{data?'更新于 '+stamp(data.generatedAt):'等待服务端数据'}}</small></header><AnalyticsTrends v-if="data" :rows="data.trend"/><div v-else class="overview-placeholder">{{loading?'正在读取数据…':'暂无可显示数据'}}</div></section>
+ <section class="overview-bottom"><article class="overview-panel"><h2>团队邀请</h2><div v-for="item in invitations" :key="item.label" class="overview-distribution"><span>{{item.label}}</span><div><i :style="{width:inviteTotal?Number(item.value??0)/inviteTotal*100+'%':'0%',background:item.color}"/></div><strong>{{number(item.value)}}</strong></div></article><article class="overview-panel"><h2>运营状态</h2><dl class="overview-status"><div><dt>今日新增用户</dt><dd>{{number(today?.newUsers)}}</dd></div><div><dt>今日登录用户</dt><dd>{{number(today?.loginUsers)}}</dd></div><div><dt>启用 / 停用空间</dt><dd>{{number(data?.teams.enabled)}} / {{number(data?.teams.disabled)}}</dd></div><div><dt>最早活跃采集</dt><dd>{{stamp(data?.activitySince)}}</dd></div></dl></article></section>
+ <details v-if="data" class="overview-definitions"><summary>统计口径</summary><dl><template v-for="(value,key) in data.definitions" :key="key"><dt>{{key}}</dt><dd>{{value}}</dd></template></dl><p>活跃数据从采集启用后累计。此前日期没有已采集事件，不代表真实历史活跃为零；授权数不等于在线人数。</p></details>
+</main></template>
+<style scoped>
+.flymind-overview{padding:28px;max-width:1600px;margin:auto;color:hsl(var(--foreground))}.overview-heading,.overview-controls,.overview-panel>header{display:flex;align-items:center;justify-content:space-between;gap:14px}.overview-heading{margin-bottom:24px}.overview-heading h1{font-size:24px;font-weight:650;margin:0}.overview-heading p,.overview-panel p{margin:5px 0 0;font-size:13px;color:hsl(var(--muted-foreground))}.overview-controls select,.overview-controls button{border:1px solid hsl(var(--border));background:hsl(var(--card));border-radius:8px;padding:8px 13px;font:inherit;font-size:13px}.overview-controls button:disabled{opacity:.55}.overview-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;margin-bottom:22px}.overview-metrics article,.overview-panel{background:hsl(var(--card));border:1px solid hsl(var(--border));border-radius:12px;padding:22px}.overview-metrics article{display:flex;flex-direction:column;gap:12px}.overview-metrics article>span{font-size:13px;color:hsl(var(--muted-foreground))}.overview-metrics strong{font-size:32px;line-height:1.2;letter-spacing:-.04em;font-weight:650;font-variant-numeric:tabular-nums}.overview-metrics small,.overview-panel small{font-size:12px;color:hsl(var(--muted-foreground))}.overview-panel h2{margin:0;font-size:15px;font-weight:600}.overview-trend{margin-bottom:22px}.overview-trend>header{margin-bottom:18px}.overview-bottom{display:grid;grid-template-columns:1fr 1fr;gap:22px}.overview-distribution{display:flex;align-items:center;gap:18px;font-size:13px;margin-top:23px}.overview-distribution>span{width:50px;color:hsl(var(--muted-foreground))}.overview-distribution>div{flex:1;height:7px;background:hsl(var(--muted));border-radius:20px;overflow:hidden}.overview-distribution i{display:block;height:100%;min-width:0;border-radius:20px}.overview-distribution strong{width:40px;text-align:right;font-variant-numeric:tabular-nums}.overview-status{margin:8px 0 0}.overview-status>div{display:flex;justify-content:space-between;gap:18px;padding:14px 0;border-bottom:1px solid hsl(var(--border));font-size:13px}.overview-status>div:last-child{border:0;padding-bottom:0}.overview-status dt{color:hsl(var(--muted-foreground))}.overview-status dd{margin:0;font-variant-numeric:tabular-nums}.overview-error{background:#fff4ed;color:#b42318;border:1px solid #ffd6bf;border-radius:8px;padding:12px;margin-bottom:18px}.overview-placeholder{height:300px;display:grid;place-items:center;color:hsl(var(--muted-foreground))}.overview-definitions{margin:24px 0 0;font-size:12px;color:hsl(var(--muted-foreground))}.overview-definitions summary{cursor:pointer}.overview-definitions dl{display:grid;grid-template-columns:140px 1fr;gap:10px;margin:18px 0}.overview-definitions dt{font-family:monospace}.overview-definitions dd{margin:0}.overview-definitions p{line-height:1.7}@media(max-width:1000px){.overview-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:650px){.flymind-overview{padding:18px}.overview-heading{align-items:flex-start;flex-direction:column}.overview-bottom{grid-template-columns:1fr}.overview-metrics{gap:10px}.overview-metrics article{padding:16px}.overview-trend>header{align-items:flex-start;flex-direction:column}.overview-status>div{flex-wrap:wrap}}
+</style>

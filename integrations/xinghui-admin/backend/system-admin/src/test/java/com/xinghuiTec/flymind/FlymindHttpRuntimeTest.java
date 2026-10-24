@@ -45,9 +45,46 @@ class FlymindHttpRuntimeTest {
  String login(String phone)throws Exception {var reply=app("POST","/auth/login",null,Map.of("phone",phone,"password",PASSWORD));assertEquals(200,reply.status());return "Bearer "+reply.body().path("data").path("sessionToken").asText();}
  @BeforeEach void seed()throws Exception {
   db.execute("DROP ALL OBJECTS");db.execute("CREATE TABLE sys_user(user_id BIGINT PRIMARY KEY,tenant_id VARCHAR(20),username VARCHAR(50),nickname VARCHAR(50),password VARCHAR(100),mobile VARCHAR(20),status INT,is_deleted INT)");
-  try(var c=source.getConnection()){for(String sql:List.of("V20261019_01__flymind_identity.sql","V20261019_02__flymind_account_uniqueness.sql","V20261019_03__flymind_oauth.sql","V20261020_01__flymind_local_device.sql"))ScriptUtils.executeSqlScript(c,new ClassPathResource("db/migration/"+sql));}
+  try(var c=source.getConnection()){for(String sql:List.of("V20261019_01__flymind_identity.sql","V20261019_02__flymind_account_uniqueness.sql","V20261019_03__flymind_oauth.sql","V20261020_01__flymind_local_device.sql"))ScriptUtils.executeSqlScript(c,new org.springframework.core.io.support.EncodedResource(new ClassPathResource("db/migration/"+sql),StandardCharsets.UTF_8));}
   for(int i=1;i<=2;i++)db.update("INSERT INTO sys_user VALUES(?,'app-http-test',?,?,?, ?,1,0)",i,"user"+i,"User"+i,new BCryptPasswordEncoder(4).encode(PASSWORD),"1380000000"+i);
-  FlymindCredentialFixtures.install(db);admin=JwtUtil.createJWT("99","app-http-test");SysUser user=new SysUser();user.setUserId(99L);user.setMobile("13800000099");user.setStatus(1);LoginUser cached=new LoginUser(user,List.of("system:user:list","system:user:add","system:user:edit","flymind:team:list","flymind:team:edit"));cached.setToken(admin);cached.setTenantId("app-http-test");when(cache.getCacheObject(RedisConstants.ADMIN_LOGIN_PREFIX+"99")).thenReturn(cached);
+  FlymindCredentialFixtures.install(db);admin=JwtUtil.createJWT("99","app-http-test");SysUser user=new SysUser();user.setUserId(99L);user.setMobile("13800000099");user.setStatus(1);LoginUser cached=new LoginUser(user,List.of("system:user:list","system:user:add","system:user:edit","flymind:team:list","flymind:team:edit","flymind:dashboard:view"));cached.setToken(admin);cached.setTenantId("app-http-test");when(cache.getCacheObject(RedisConstants.ADMIN_LOGIN_PREFIX+"99")).thenReturn(cached);
+ }
+ /** Opt-in manual UI fixture; never runs as part of the normal automated suite. */
+ @Test @org.junit.jupiter.api.condition.EnabledIfSystemProperty(named="flymind.uiHarness",matches="true")
+ void serveIsolatedUiFixture()throws Exception {
+  String executable=System.getProperty("flymind.nodeExecutable");assertNotNull(executable,"Explicit Node20 executable required");
+  java.nio.file.Path root=java.nio.file.Path.of(System.getProperty("user.dir")).toAbsolutePath();
+  while(root!=null&&!java.nio.file.Files.isRegularFile(root.resolve("tests/fixtures/u30-ui-harness.mjs")))root=root.getParent();
+  assertNotNull(root,"Product root not found");
+  var output=root.resolve("output/u30-ui-private");java.nio.file.Files.createDirectory(output);ownerOnly(output);
+  for(String column:List.of("email VARCHAR(50)","avatar VARCHAR(200)","login_ip VARCHAR(128)","login_date TIMESTAMP","create_time TIMESTAMP","update_time TIMESTAMP","create_by VARCHAR(64)","update_by VARCHAR(64)"))db.execute("ALTER TABLE sys_user ADD "+column);
+  db.execute("CREATE TABLE sys_role(role_id BIGINT PRIMARY KEY,tenant_id VARCHAR(20),role_name VARCHAR(30),role_key VARCHAR(50),data_scope CHAR(1),status INT,is_deleted INT,create_time TIMESTAMP,update_time TIMESTAMP,create_by VARCHAR(64),update_by VARCHAR(64))");
+  db.execute("CREATE TABLE sys_user_role(user_id BIGINT,role_id BIGINT,PRIMARY KEY(user_id,role_id))");db.execute("CREATE TABLE sys_role_menu(role_id BIGINT,menu_id BIGINT,PRIMARY KEY(role_id,menu_id))");
+  db.execute("CREATE TABLE sys_menu(menu_id BIGINT PRIMARY KEY,menu_name VARCHAR(50),parent_id BIGINT,order_num INT,path VARCHAR(200),component VARCHAR(255),is_frame INT,menu_type CHAR(1),visible CHAR(1),status CHAR(1),perms VARCHAR(100),icon VARCHAR(100),create_time TIMESTAMP,update_time TIMESTAMP,create_by VARCHAR(64),update_by VARCHAR(64),is_deleted INT)");
+  String frontPassword="Fixture-"+UUID.randomUUID(),adminPassword="AdminFixture-"+UUID.randomUUID();var encoder=new BCryptPasswordEncoder(4);
+  db.update("UPDATE app_flymind_account SET password=?",encoder.encode(frontPassword));db.update("UPDATE sys_user SET nickname='Alice' WHERE user_id=1");db.update("UPDATE sys_user SET nickname='Bob' WHERE user_id=2");
+  db.update("INSERT INTO sys_user(user_id,tenant_id,username,nickname,password,mobile,status,is_deleted) VALUES(99,'app-http-test','fixture-admin','验收管理员',?,'13800000099',1,0)",encoder.encode(adminPassword));
+  db.update("INSERT INTO sys_role(role_id,tenant_id,role_name,role_key,status,is_deleted) VALUES(10,'app-http-test','平台管理员','flymind-platform-admin',1,0)");db.update("INSERT INTO sys_user_role VALUES(99,10)");
+  try(var c=source.getConnection()){ScriptUtils.executeSqlScript(c,new org.springframework.core.io.support.EncodedResource(new ClassPathResource("db/migration/V20261024_02__flymind_overview_menu.sql"),StandardCharsets.UTF_8));}
+  db.update("INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,menu_type,status,visible,is_deleted) VALUES(90001,'FlyMind管理',0,0,'flymind','M','0','0',0)");
+  db.update("INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,menu_type,status,visible,perms,is_deleted) VALUES(90002,'用户管理',90001,0,'users','system/user/index','C','0','0','system:user:list',0),(90003,'团队管理',90001,1,'teams','system/team/index','C','0','0','flymind:team:list',0)");
+  for(long menu:List.of(90001L,90002L,90003L))db.update("INSERT INTO sys_role_menu VALUES(10,?)",menu);
+  long menu=90100;for(String permission:List.of("system:user:list","system:user:query","system:user:add","system:user:edit","system:user:remove","flymind:team:list","flymind:team:query","flymind:team:edit")){db.update("INSERT INTO sys_menu(menu_id,menu_name,menu_type,status,perms,is_deleted) VALUES(?,?,'F','0',?,0)",menu,permission,permission);db.update("INSERT INTO sys_role_menu VALUES(10,?)",menu++);}
+  captchaProperties.setEnabled(false);var rate=mock(org.redisson.api.RRateLimiter.class);when(redisson.getRateLimiter(anyString())).thenReturn(rate);when(rate.tryAcquire()).thenReturn(true);
+  Map<String,Object> redis=new java.util.concurrent.ConcurrentHashMap<>();doAnswer(inv->{redis.put(inv.getArgument(0),inv.getArgument(1));return null;}).when(cache).setCacheObject(anyString(),any(),anyInt(),any(java.util.concurrent.TimeUnit.class));when(cache.getCacheObject(anyString())).thenAnswer(inv->redis.get(inv.getArgument(0)));when(cache.getCacheList(anyString())).thenReturn(null);doAnswer(inv->{redis.remove(inv.getArgument(0));return null;}).when(cache).deleteObject(anyString());
+  var adminLogin=send("POST","/user/login",null,Map.of("phone","13800000099","password",adminPassword),false);assertEquals(200,adminLogin.body().path("code").asInt());String adminJWT=adminLogin.body().path("data").asText();assertEquals(200,send("GET","/user/info",adminJWT,null,false).body().path("code").asInt());assertEquals(200,send("GET","/user/router",adminJWT,null,false).body().path("code").asInt());assertEquals(200,send("GET","/admin/flymind/overview?days=7",adminJWT,null,false).status());
+  var details=new LinkedHashMap<String,Object>();details.put("controlPlaneURL","http://127.0.0.1:"+port);details.put("authority","real Tomcat + isolated H2; Mock Redis only");details.put("alice",Map.of("phone","13800000001","password",frontPassword,"userCode",db.queryForObject("SELECT user_code FROM app_flymind_user_code WHERE user_id=1",String.class)));details.put("bob",Map.of("phone","13800000002","password",frontPassword,"userCode",db.queryForObject("SELECT user_code FROM app_flymind_user_code WHERE user_id=2",String.class)));details.put("admin",Map.of("phone","13800000099","password",adminPassword));details.put("stopFile",output.resolve("stop").toString());details.put("maxLifetimeHours",4);
+  var connection=output.resolve("connection.json");java.nio.file.Files.createFile(connection);ownerOnly(connection);java.nio.file.Files.writeString(connection,json.writeValueAsString(details));
+  Process child=new ProcessBuilder(executable,"--import","tsx",root.resolve("tests/fixtures/u30-ui-harness.mjs").toString()).directory(root.toFile()).redirectOutput(output.resolve("node.log").toFile()).redirectError(output.resolve("node-error.log").toFile()).start();
+  try {try(var input=child.getOutputStream()){input.write(json.writeValueAsBytes(Map.of("controlPlaneURL",details.get("controlPlaneURL"),"gatewayKey",KEY,"outputDirectory",output.toString())));}
+   long end=System.currentTimeMillis()+4L*60*60*1000;while(child.isAlive()&&!java.nio.file.Files.exists(output.resolve("stop"))&&System.currentTimeMillis()<end)Thread.sleep(500);
+   if(child.isAlive()){java.nio.file.Files.writeString(output.resolve("stop"),"stop");assertTrue(child.waitFor(40,java.util.concurrent.TimeUnit.SECONDS),"Own Node harness did not stop gracefully");}assertEquals(0,child.exitValue(),"Own Node fixture failed; see private node-error.log");
+  }finally{if(child.isAlive()){child.destroy();if(!child.waitFor(5,java.util.concurrent.TimeUnit.SECONDS))child.destroyForcibly();}}
+ }
+ private static void ownerOnly(java.nio.file.Path path)throws Exception {
+  var acl=java.nio.file.Files.getFileAttributeView(path,java.nio.file.attribute.AclFileAttributeView.class);
+  if(acl!=null){var entry=java.nio.file.attribute.AclEntry.newBuilder().setType(java.nio.file.attribute.AclEntryType.ALLOW).setPrincipal(acl.getOwner()).setPermissions(java.util.EnumSet.allOf(java.nio.file.attribute.AclEntryPermission.class)).build();acl.setAcl(List.of(entry));}
+  else java.nio.file.Files.setPosixFilePermissions(path,java.nio.file.Files.isDirectory(path)?java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"):java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
  }
  @Test void deploymentReadinessRequiresGatewayAndActualDependencies()throws Exception {
   assertEquals(401,send("GET",FlymindReadiness.PATH,null,null,false).status());
@@ -67,18 +104,34 @@ class FlymindHttpRuntimeTest {
  @Test void accountsTeamsInvitationsAndDisableOverHttp()throws Exception {
   assertEquals(401,app("GET","/auth/me",null,null).status());assertEquals(401,app("GET","/unknown",null,null).status());String a=login("13800000001"),b=login("13800000002");
   var created=app("POST","/teams",a,Map.of("name","HTTP团队"));assertEquals(200,created.status());String team=created.body().path("data").path("id").asText();
-  var invited=app("POST","/teams/"+team+"/invites",a,Map.of("phone","13800000002","role","editor"));assertEquals(200,invited.status());String invitation=invited.body().path("data").path("inviteToken").asText();
-  assertEquals(200,app("POST","/invites/accept",b,Map.of("inviteToken",invitation)).status());assertEquals(409,app("POST","/invites/accept",b,Map.of("inviteToken",invitation)).status());assertEquals(2,app("GET","/teams/"+team+"/members",a,null).body().path("data").size());
+  var invited=app("POST","/teams/"+team+"/invites",a,Map.of("userCode",db.queryForObject("SELECT user_code FROM app_flymind_user_code WHERE user_id=2",String.class),"role","editor"));assertEquals(200,invited.status());String invitation=invited.body().path("data").path("id").asText();
+  assertEquals(200,app("POST","/invites/"+invitation+"/accept",b,null).status());assertEquals(409,app("POST","/invites/"+invitation+"/accept",b,null).status());assertEquals(2,app("GET","/teams/"+team+"/members",a,null).body().path("data").size());
   assertEquals(200,send("GET","/admin/flymind/users",admin,null,false).status());assertEquals(401,send("GET","/admin/flymind/users",a,null,false).status());assertEquals(200,send("PATCH","/admin/flymind/users/2",admin,Map.of("status",0),false).status());assertEquals(401,app("GET","/auth/me",b,null).status());verify(cache,never()).deleteObject(RedisConstants.ADMIN_LOGIN_PREFIX+"2");
+ }
+ @Test void directoryInboxAndRealOverviewHaveAuthoritativeCounts()throws Exception {
+  String a=login("13800000001"),b=login("13800000002");
+  String code=app("GET","/auth/me",b,null).body().path("data").path("user").path("userCode").asText();assertTrue(code.matches("(?=.*[A-Z])(?=.*[0-9])[A-Z0-9]{6}"));
+  assertEquals(code,app("GET","/auth/me",b,null).body().path("data").path("user").path("userCode").asText());
+  String tid=app("POST","/teams",a,Map.of("name","编号邀请团队")).body().path("data").path("id").asText();
+  var invitation=app("POST","/teams/"+tid+"/invites",a,Map.of("userCode",code.toLowerCase(Locale.ROOT),"role","editor"));assertEquals(200,invitation.status());assertFalse(invitation.body().path("data").has("inviteToken"));String iid=invitation.body().path("data").path("id").asText();
+  assertEquals(iid,app("POST","/teams/"+tid+"/invites",a,Map.of("userCode",code,"role","editor")).body().path("data").path("id").asText());
+  var inbox=app("GET","/invites",b,null);assertEquals(200,inbox.status());assertEquals(1,inbox.body().path("data").size());assertEquals(tid,inbox.body().path("data").get(0).path("teamId").asText());
+  assertEquals(409,app("POST","/invites/"+iid+"/accept",a,null).status());
+  assertEquals(200,app("POST","/invites/"+iid+"/decline",b,null).status());assertEquals("declined",app("GET","/invites",b,null).body().path("data").get(0).path("status").asText());assertEquals(409,app("POST","/invites/"+iid+"/accept",b,null).status());
+  var overview=send("GET","/admin/flymind/overview?days=7",admin,null,false);assertEquals(200,overview.status());var data=overview.body().path("data");assertEquals(2,data.path("users").path("total").asInt());assertEquals(3,data.path("teams").path("total").asInt());assertEquals(1,data.path("invites").path("declined").asInt());assertEquals(7,data.path("trend").size());assertEquals(2,data.path("trend").get(6).path("loginCount").asInt());assertTrue(Long.parseLong(data.path("activitySince").asText())>0);assertEquals("UTC",data.path("timezone").asText());
+  String personal=app("GET","/auth/me",b,null).body().path("data").path("teams").get(0).path("id").asText();localGrant(b,"d".repeat(43),"directory-test-root",personal);
+  assertEquals(1,send("GET","/admin/flymind/overview?days=7",admin,null,false).body().path("data").path("authorizations").path("activeDevices").asInt());app("POST","/auth/logout",b,null);
+  assertEquals(0,send("GET","/admin/flymind/overview?days=7",admin,null,false).body().path("data").path("authorizations").path("activeDevices").asInt());
+  assertEquals(401,send("GET","/admin/flymind/overview",a,null,false).status());assertEquals(400,send("GET","/admin/flymind/overview?days=8",admin,null,false).status());
  }
  @Test void applicationPasswordChangeUsesIndependentCredentialAndRevokesAllSessions()throws Exception {
   String before=db.queryForObject("SELECT password FROM sys_user WHERE user_id=1",String.class);
   String first=login("13800000001"),second=login("13800000001");
   var wrong=app("POST","/auth/password",first,Map.of("currentPassword","wrong","newPassword","easy12"));
-  assertEquals(400,wrong.status());assertEquals("INVALID_CURRENT_PASSWORD",wrong.body().path("errorCode").asText());
+  assertEquals(400,wrong.status());assertEquals("INVALID_INPUT",wrong.body().path("errorCode").asText());
   assertEquals(200,app("GET","/auth/me",first,null).status());
-  assertEquals(400,app("POST","/auth/password",first,Map.of("currentPassword",PASSWORD,"newPassword","     ")).status());
-  var changed=app("POST","/auth/password",first,Map.of("currentPassword",PASSWORD,"newPassword","easy12"));
+  assertEquals(400,app("POST","/auth/password",first,Map.of("newPassword","     ")).status());
+  var changed=app("POST","/auth/password",first,Map.of("newPassword","easy12"));
   assertEquals(200,changed.status());assertTrue(changed.body().path("data").path("reauthenticate").asBoolean());
   assertEquals(401,app("GET","/auth/me",first,null).status());assertEquals(401,app("GET","/auth/me",second,null).status());
   assertEquals(before,db.queryForObject("SELECT password FROM sys_user WHERE user_id=1",String.class));
@@ -156,16 +209,16 @@ class FlymindHttpRuntimeTest {
  @Test void localRotationExpiryPasswordResetAndMembershipRevocationArePersistent()throws Exception {
   String owner=login("13800000001"),member=login("13800000002"),device="r".repeat(43),root="local-security-root";
   String team=app("POST","/teams",owner,Map.of("name","本地安全团队")).body().path("data").path("id").asText();
-  String invite=app("POST","/teams/"+team+"/invites",owner,Map.of("phone","13800000002","role","viewer")).body().path("data").path("inviteToken").asText();
-  assertEquals(200,app("POST","/invites/accept",member,Map.of("inviteToken",invite)).status());
+  String invite=app("POST","/teams/"+team+"/invites",owner,Map.of("userCode",db.queryForObject("SELECT user_code FROM app_flymind_user_code WHERE user_id=2",String.class),"role","viewer")).body().path("data").path("id").asText();
+  assertEquals(200,app("POST","/invites/"+invite+"/accept",member,null).status());
   var binding=Map.of("deviceId",device,"dataRootId",root);
   String old=localGrant(member,device,root,team),current=localGrant(member,device,root,team);
   assertEquals(401,app("POST","/local/introspect",old,binding).status());
   assertEquals("viewer",app("POST","/local/introspect",current,binding).body().path("data").path("team").path("role").asText());
   assertEquals(200,app("DELETE","/teams/"+team+"/members/2",owner,null).status());
   // Rejoining without an intervening introspection cannot resurrect the old device grant.
-  invite=app("POST","/teams/"+team+"/invites",owner,Map.of("phone","13800000002","role","editor")).body().path("data").path("inviteToken").asText();
-  assertEquals(200,app("POST","/invites/accept",member,Map.of("inviteToken",invite)).status());
+  invite=app("POST","/teams/"+team+"/invites",owner,Map.of("userCode",db.queryForObject("SELECT user_code FROM app_flymind_user_code WHERE user_id=2",String.class),"role","editor")).body().path("data").path("id").asText();
+  assertEquals(200,app("POST","/invites/"+invite+"/accept",member,null).status());
   assertEquals(401,app("POST","/local/introspect",current,binding).status());
   current=localGrant(member,device,root,team);
   assertEquals(200,send("PATCH","/admin/flymind/teams/"+team,admin,Map.of("status",0),false).status());

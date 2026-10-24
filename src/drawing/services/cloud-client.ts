@@ -1,8 +1,9 @@
 import {NativeApiError} from './native-types'
 export type CloudRole='owner'|'admin'|'editor'|'viewer'
 export interface CloudTeam {id:string;name:string;role:CloudRole}
-export interface CloudMember {userId:string;name:string;role:CloudRole}
-export interface CloudMe {user:{id:string;name:string};expiresAt:number;teams:CloudTeam[]}
+export interface CloudMember {userId:string;userCode?:string;name:string;role:CloudRole}
+export interface CloudMe {user:{id:string;userCode?:string;name:string};expiresAt:number;teams:CloudTeam[]}
+export interface CloudInvitation {status:'pending'|'accepted'|'declined'|'expired';id:string;teamId:string;teamName:string;inviterName:string;inviterCode:string;role:CloudRole;createdAt:number;expiresAt:number}
 export interface CloudConsent {client:{id:string;name:string};scopes:string[];teams:CloudTeam[];expiresAt:number}
 export function cloudConsentTeams(consent:CloudConsent):CloudTeam[]{return consent.teams.filter(team=>!consent.scopes.includes('flymind:write')||team.role!=='viewer')}
 const id=(value:string)=>{if(!/^[a-zA-Z0-9_-]{1,100}$/.test(value))throw new Error('团队或用户标识无效');return encodeURIComponent(value)}
@@ -52,13 +53,15 @@ export class CloudClient {
  login(phone:string,password:string){return this.request('/auth/login','POST',{phone,password})}
  me(){return this.request<CloudMe>('/auth/me')}
  logout(){return this.request('/auth/logout','POST')}
- changePassword(currentPassword:string,newPassword:string){return this.request<{success:boolean;reauthenticate:boolean}>('/auth/password','POST',{currentPassword,newPassword})}
+ changePassword(newPassword:string){return this.request<{success:boolean;reauthenticate:boolean}>('/auth/password','POST',{newPassword})}
  inspectAuthorization(value:string){return this.request<CloudConsent>('/oauth/requests/inspect','POST',{requestId:requestId(value)})}
  approveAuthorization(value:string,approved:boolean,teamId?:string){return this.request<{redirectUri:string}>('/oauth/requests/approve','POST',{requestId:requestId(value),approved,...(approved?{teamId:id(teamId??'')}:{})})}
  createTeam(name:string){return this.request<CloudTeam>('/teams','POST',{name})}
  members(team:string){return this.request<CloudMember[]>('/teams/'+id(team)+'/members')}
- invite(team:string,phone:string,role:Exclude<CloudRole,'owner'>){return this.request<{id:string;inviteToken:string;expiresAt:number}>('/teams/'+id(team)+'/invites','POST',{phone,role})}
- accept(inviteToken:string){return this.request<CloudTeam>('/invites/accept','POST',{inviteToken})}
+ invite(team:string,userCode:string,role:Exclude<CloudRole,'owner'>){return this.request<{id:string;expiresAt:number}>('/teams/'+id(team)+'/invites','POST',{userCode:userCode.trim().toUpperCase(),role})}
+ invitations(){return this.request<CloudInvitation[]>('/invites')}
+ accept(inviteId:string){return this.request<CloudTeam>('/invites/'+id(inviteId)+'/accept','POST')}
+ decline(inviteId:string){return this.request('/invites/'+id(inviteId)+'/decline','POST')}
  role(team:string,user:string,role:Exclude<CloudRole,'owner'>){return this.request('/teams/'+id(team)+'/members/'+id(user),'PATCH',{role})}
  remove(team:string,user:string){return this.request('/teams/'+id(team)+'/members/'+id(user),'DELETE')}
  transfer(team:string,userId:string){return this.request('/teams/'+id(team)+'/transfer','POST',{userId})}

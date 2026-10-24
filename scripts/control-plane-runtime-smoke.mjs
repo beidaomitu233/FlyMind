@@ -25,6 +25,26 @@ export function runtimeEvidence(sourceCommit,jarSha256,allowedMigrations){
  verifyMigrationInventory(allowedMigrations,allowedMigrations)
  return {schemaVersion:1,sourceCommit,jarSha256,allowedMigrations,verified:true}
 }
+export async function verifyAccountTeamOverview(request,{admin,session}){
+ const app=token=>({token:'Bearer '+token}),me=envelope(await request('/app/flymind/auth/me',app(session)))
+ const code=me.user?.userCode;if(!/^(?=.*[A-Z])(?=.*[0-9])[A-Z0-9]{6}$/.test(code??''))fail('USER_CODE_REQUIRED')
+ const bob=envelope(await request('/admin/flymind/users',{method:'POST',token:admin,body:{phone:'13800000002',name:'CI受邀账号',password:'easy34'}}))
+ if(!/^(?=.*[A-Z])(?=.*[0-9])[A-Z0-9]{6}$/.test(bob.userCode??'')||bob.userCode===code)fail('INVITEE_CODE_INVALID')
+ const bobSession=appToken(await request('/app/flymind/auth/login',{method:'POST',body:{phone:'13800000002',password:'easy34'}}))
+ const team=envelope(await request('/app/flymind/teams',{method:'POST',...app(session),body:{name:'CI用户ID邀请'}}))
+ const invitation=envelope(await request(`/app/flymind/teams/${team.id}/invites`,{method:'POST',...app(session),body:{userCode:bob.userCode,role:'editor'}}))
+ if(!invitation.id||Object.hasOwn(invitation,'inviteToken')||Object.hasOwn(invitation,'token'))fail('INVITATION_ID_REQUIRED')
+ const inbox=envelope(await request('/app/flymind/invites',app(bobSession)))
+ if(!Array.isArray(inbox)||!inbox.some(i=>String(i.id)===String(invitation.id)&&i.status==='pending'&&String(i.teamId)===String(team.id)))fail('INVITATION_NOT_PENDING')
+ const accepted=envelope(await request(`/app/flymind/invites/${invitation.id}/accept`,{method:'POST',...app(bobSession)}))
+ if(String(accepted.id)!==String(team.id)||accepted.role!=='editor')fail('INVITATION_NOT_ACCEPTED')
+ const finalInbox=envelope(await request('/app/flymind/invites',app(bobSession)))
+ if(!finalInbox.some(i=>String(i.id)===String(invitation.id)&&i.status==='accepted'))fail('INVITATION_STATUS_NOT_PERSISTED')
+ const members=envelope(await request(`/app/flymind/teams/${team.id}/members`,app(session)))
+ if(!Array.isArray(members)||members.length!==2||!members.some(m=>m.userCode===bob.userCode&&m.role==='editor'))fail('TEAM_MEMBERS_MISMATCH')
+ const overview=envelope(await request('/admin/flymind/overview?days=7',{token:admin}))
+ if(overview.timezone!=='UTC'||Number(overview.days)!==7||Number(overview.users?.total)!==2||Number(overview.invites?.accepted)!==1||overview.activitySince==null||!Array.isArray(overview.trend)||overview.trend.length!==7||!overview.definitions?.activeUsers)fail('OVERVIEW_FACTS_MISMATCH')
+}
 async function freePort(){const server=createServer();await new Promise((yes,no)=>{server.once('error',no);server.listen(0,'127.0.0.1',yes)});const port=server.address().port;await new Promise(yes=>server.close(yes));return port}
 async function hashFile(file){const hash=createHash('sha256');for await(const chunk of createReadStream(file))hash.update(chunk);return hash.digest('hex')}
 async function waitExit(exited,ms){return Promise.race([exited.then(()=>true),delay(ms, false,{ref:false})])}
@@ -55,12 +75,12 @@ export async function runSmoke(env=process.env){
   envelope(await request('/user/info',{token:admin}));if(!Array.isArray(envelope(await request('/user/router',{token:admin}))))fail('INVALID_ADMIN_ROUTER')
   stage='create-independent-app-account';const account=envelope(await request('/admin/flymind/users',{method:'POST',token:admin,body:{phone:'13800000001',name:'CI前台账号',password:'easy12'}}));if(account.phone!=='13800000001')fail('ACCOUNT_IDENTITY_MISMATCH')
   stage='app-login';const session=appToken(await request('/app/flymind/auth/login',{method:'POST',body:{phone:'13800000001',password:'easy12'}}))
-  envelope(await request('/app/flymind/auth/me',{token:'Bearer '+session}))
-  stage='app-change-password';const changed=envelope(await request('/app/flymind/auth/password',{method:'POST',token:'Bearer '+session,body:{currentPassword:'easy12',newPassword:nextPassword}}));if(changed.success!==true||changed.reauthenticate!==true)fail('PASSWORD_CHANGE_NOT_ACKNOWLEDGED')
+  stage='user-id-invitation-overview';await verifyAccountTeamOverview(request,{admin,session})
+  stage='app-change-password';const changed=envelope(await request('/app/flymind/auth/password',{method:'POST',token:'Bearer '+session,body:{newPassword:nextPassword}}));if(changed.success!==true||changed.reauthenticate!==true)fail('PASSWORD_CHANGE_NOT_ACKNOWLEDGED')
   await request('/app/flymind/auth/me',{token:'Bearer '+session,expected:401})
   stage='app-new-password';const renewed=appToken(await request('/app/flymind/auth/login',{method:'POST',body:{phone:'13800000001',password:nextPassword}}));envelope(await request('/app/flymind/auth/me',{token:'Bearer '+renewed}))
   stage='admin-still-valid';envelope(await request('/user/info',{token:admin}));envelope(await request('/user/router',{token:admin}))
-  return {ok:true,jarSha256:sha,checks:['packaged-ready-mysql-redis','admin-login-info-router','independent-app-account','app-password-session-revocation','admin-session-preserved']}
+  return {ok:true,jarSha256:sha,checks:['packaged-ready-mysql-redis','admin-login-info-router','independent-app-account','user-id-invitation-acceptance','overview-real-facts','app-password-session-revocation','admin-session-preserved']}
  }catch(error){const code=/^[A-Z][A-Z0-9_]+$/.test(error.message??'')?error.message:'SMOKE_FAILED';throw new Error(`${stage}:${code}`)}
  finally{
   try{if(child&&!closed){child.kill('SIGTERM');if(!await waitExit(exited,25000)){child.kill('SIGKILL');if(!await waitExit(exited,5000))fail('OWNED_JAVA_DID_NOT_EXIT')}}}finally{await log.close();if(!child||closed)await rm(root,{recursive:true,force:true,maxRetries:3,retryDelay:100})}

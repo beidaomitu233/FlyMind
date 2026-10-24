@@ -2,7 +2,7 @@
 
 ## 原生 pilot（D05）
 
-仅在 `FLYMIND_NATIVE_PILOT=1` 与显式隔离数据根下启用；G2 前默认仍走旧入口。本节优先于下文旧引擎参数。实际支持集合以 get_drawing_guide 的 capabilities 为准，当前五类已适配。get_rendering_config 返回原生 profile/preferences；configure_rendering 先读取 get_rendering_config 及实际工具 schema，仅提交支持且需要修改的字段；切换方向需 relayout:true，不默认传坐标。
+仅在 `FLYMIND_NATIVE_PILOT=1` 与显式隔离数据根下启用；G2 前默认仍走旧入口。本节优先于下文旧引擎参数。实际支持集合以 get_drawing_guide 的 capabilities 为准，当前六类已适配（新增technical技术架构图）。get_rendering_config 返回原生 profile/preferences；configure_rendering 先读取 get_rendering_config 及实际工具 schema，仅提交支持且需要修改的字段；切换方向需 relayout:true，不默认传坐标。
 
 原工具名保持。content 必须有 `schemaVersion:1`、稳定 `id` 和全部业务数组（`groups:[]`）。create/patch/update 必须有稳定 `requestId`；同一请求重试保持 payload 不变。AI 新建须质量合格，历史人工草稿的修改不得新增或加重 error 或 warning，只有明确批注才用 annotation；来源缺口不得猜边修复。网页人工保存仍允许结构合法草稿。
 
@@ -20,13 +20,13 @@ AI 提供内容，FlyMind 自动布局并渲染。普通绘图只提交 `content
 
 流程/泳道只用动作/判断；架构module可有依赖箭头，不能因有箭头就当流程；脑图topic表达分类，数据流card表达来源/处理/去向。流程图需明确起终点和可达结果；泳道允许task入口与明确交付结果，不强造start/end。纯技术组件名、性能/成本预算不能伪装task。
 
-items仅架构，badge仅架构/数据卡；其余类型不借字段藏说明。流程标题硬上限24中文/80纯外文，description120字符；架构/数据卡正文240，其他正文120。note标题80中文/240纯外文且总量200，数量max(2,ceil(业务节点×15%))；各字段和节点总预算详见唯一正式标准，不靠分字段绕过。人工网页草稿不受AI准入阻断；旧新MCP均不能新增/加重error或warning。
+items仅架构/技术架构，badge仅架构/技术架构/数据卡；其余类型不借字段藏说明。流程标题硬上限24中文/80纯外文，description120字符；架构/数据卡正文240，其他正文120；technical最多6项短能力（每项24中文/64纯外文），label/description/items/badge总量最多160字符。note标题80中文/240纯外文且总量200，数量max(2,ceil(业务节点×15%))；各字段和节点总预算详见唯一正式标准，不靠分字段绕过。人工网页草稿不受AI准入阻断；旧新MCP均不能新增/加重error或warning。
 
 ## 1. 两层职责
 
 | 层 | 负责 | 不负责 |
 |---|---|---|
-| 内容 content | 节点内容、节点类型、连接关系、角色/阶段/分组、可选语义颜色 | 坐标、布局行、尺寸、形状、字体、图标、线型 |
+| 内容 content | 节点内容、节点类型、连接关系、角色/阶段/分组、可选语义颜色、technical的technology标识 | 坐标、布局行、尺寸、形状、字体、图标URL/数据、线型 |
 | 渲染 rendering | 标准节点配置、主题、大小、形状、配色、连线类型、自动布局及手动覆盖 | 修改业务文字、角色职责、连接关系 |
 
 内容 JSON 不包含 `presentation`、`rendering`、`updatedAt`，节点不包含 `order`。内容工具会拒绝这些字段。普通 AI 绘图也不需要写 `ranks` 或手动位置。渲染层根据关系排序、分支排布、避开同泳道节点和反馈循环、换行、撑开卡片，采用标准配色与形状。
@@ -76,6 +76,7 @@ items仅架构，badge仅架构/数据卡；其余类型不借字段藏说明。
 | swimlane | 泳道图 | lanes 是角色，phases 是阶段；节点有 laneId，有阶段时必须有 phaseId；edges 表达交接与分支 |
 | flowchart | 流程图 | start/end/task/decision；edges 表达方向、判断出口与回流 |
 | architecture | 分层架构图 | groups 为分层；module 节点有 groupId；items 为模块功能条目 |
+| technical | 技术架构图 | module 为真实技术组件；technology 为小写技术标识，未知技术用通用图标；groupId可选，groups为自由逻辑容器；少文字，不传图标URL/坐标 |
 | mindmap | 思维导图 | topic 与 parentId；恰好一个没有 parentId 的根主题，父子不能循环 |
 | dataflow | 数据流架构图 | card 为带标题和正文的节点，note 为注释；反馈边 kind=feedback |
 
@@ -175,6 +176,7 @@ edges/lanes/phases/groups 可省略，自动补空数组。思维导图通过 pa
 - 流程图：用 start/end 起止，task 处理，decision 判断。自动排序保留循环；回边不会把整条循环挤到同一行。
 - 架构图：groups 按层次顺序排列；module 有 groupId，条目放 items，期次等业务标记放 badge。列数和层色由渲染配置负责。
 - 思维导图：topic + parentId。数组顺序决定同级分支顺序；父主题调整会校验循环。支持 Markdown/FMD 导入。
+- 技术架构图：module 使用技术名词label和小写technology（如vue、springboot、mysql），可选groupId归入独立可移动逻辑组，description完整留业务属性；必要items最多6项短能力，不能把方案段落塞进卡片。图标为固定本地供应，不传URL；人工位置、宽高、形状、配色或删除图标后，普通AI改字保留人工编辑，只有明确technology变更才更新该标识，明确relayout才全图重排。
 - 数据流架构图：card 的 label 为标题，description 为正文；note 为独立注释；edges 描述读入、汇聚、分析、确认、回写。反馈边 kind=feedback；无需布局行、横幅、图标或配色配置即可生成。
 
 ## 4. 独立渲染配置

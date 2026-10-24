@@ -80,12 +80,17 @@ dataflow.nodes=[
 dataflow.presentation.ranks={his:0,lis:0,pacs:0,emr:0,incubator:0,integration:1,analysis:2,review:2,trace:3}
 dataflow.presentation.cards={his:{icon:'database'},lis:{icon:'database'},pacs:{icon:'database'},emr:{icon:'database'},incubator:{icon:'database'},integration:{variant:'band',tone:'teal'},analysis:{icon:'network'},review:{icon:'check',tone:'teal'}}
 dataflow.edges=[...['his','lis','pacs','emr','incubator'].map(id=>({id:`read-${id}`,source:id,target:'integration'})),{id:'integrate',source:'integration',target:'analysis'},{id:'confirm',source:'analysis',target:'review'},{id:'evidence',source:'review',target:'analysis',label:'可追溯证据链',kind:'feedback'}]
-export const samples:DiagramDocument[]=[swim,architecture,flow,mind,dataflow]
+const technical=base('sample-technical','应用技术架构','technical')
+technical.groups=[{id:'app',label:'应用服务'},{id:'storage',label:'数据存储'}]
+technical.nodes=[{id:'web',kind:'module',label:'Vue',technology:'vue',groupId:'app'},{id:'service',kind:'module',label:'Spring Boot',technology:'springboot',groupId:'app'},{id:'db',kind:'module',label:'MySQL',technology:'mysql',groupId:'storage'}]
+technical.edges=[{id:'call',source:'web',target:'service',label:'HTTP'},{id:'store',source:'service',target:'db',label:'业务数据'}]
+export const samples:DiagramDocument[]=[swim,architecture,flow,mind,dataflow,technical]
 export function sampleFor(kind:DiagramKind){return copy(samples.find(d=>d.kind===kind)!)}
 export function blankDocument(kind:DiagramKind):DiagramDocument {
-  const d=base(newId('diagram'),{swimlane:'未命名泳道图',flowchart:'未命名流程图',architecture:'未命名架构图',mindmap:'未命名思维导图',dataflow:'未命名数据流架构图'}[kind],kind)
+  const d=base(newId('diagram'),{swimlane:'未命名泳道图',flowchart:'未命名流程图',architecture:'未命名架构图',mindmap:'未命名思维导图',dataflow:'未命名数据流架构图',technical:'未命名技术架构图'}[kind],kind)
   if(kind==='swimlane'){d.lanes=[{id:'lane1',label:'角色 1'},{id:'lane2',label:'角色 2'},{id:'lane3',label:'角色 3'}];d.phases=[{id:'phase1',label:'阶段 1'}];d.nodes=[{id:newId(),label:'开始',kind:'start',laneId:'lane1',phaseId:'phase1'}]}
   else if(kind==='architecture'){d.groups=[{id:'layer1',label:'应用层'},{id:'layer2',label:'服务层'},{id:'layer3',label:'数据层'}];d.nodes=[{id:newId(),label:'应用模块',kind:'module',groupId:'layer1',items:['功能 1','功能 2']}]}
+  else if(kind==='technical'){d.groups=[{id:'services',label:'应用服务'}];d.nodes=[{id:newId(),label:'服务组件',kind:'module',technology:'service',groupId:'services'}]}
   else if(kind==='dataflow'){d.nodes=[{id:newId(),label:'数据源',description:'输入数据',kind:'card'}];d.presentation.cards={[d.nodes[0].id]:{icon:'database'}}}
   else d.nodes=[{id:newId(),label:kind==='mindmap'?'中心主题':'开始',kind:kind==='mindmap'?'topic':'start'}]
   return d

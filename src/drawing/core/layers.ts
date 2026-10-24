@@ -6,7 +6,7 @@ import {resizeSwimlanePhase} from './phase-editing'
 import {layoutDocument} from './layout'
 
 const contentKeys=['schemaVersion','id','title','kind','nodes','edges','lanes','phases','groups']
-const nodeKeys=['id','label','kind','color','description','items','badge','laneId','phaseId','groupId','parentId']
+const nodeKeys=['id','label','kind','color','description','items','badge','laneId','phaseId','groupId','parentId','technology']
 const edgeKeys=['id','source','target','label','kind']
 const groupKeys=['id','label','kind','color']
 function checkKeys(value:unknown,allowed:string[],name:string,rendering=false){

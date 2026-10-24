@@ -15,12 +15,12 @@ test('draft namespaces cannot collide between users or teams; local database is 
  assert.equal(new Set(values).size,values.length);assert.ok(values.every(v=>v!=='flymind-native-drafts-v1'))
 })
 
-test('front-end password changes use the current identity and keep correctable password errors signed in',async()=>{
+test('front-end password changes use the current identity and send only the new password and keep correctable input errors signed in',async()=>{
  const calls:Array<{url:string;body:unknown}>=[];let lost=0
  const {CloudIdentityGuard}=await import('../src/drawing/services/cloud-client')
- const guard=new CloudIdentityGuard('u1',async(input,init)=>{if(String(input).endsWith('/auth/me'))return Response.json({code:200,data:{user:{id:'u1'},teams:[]}});calls.push({url:String(input),body:JSON.parse(String(init?.body))});return Response.json({code:'INVALID_CURRENT_PASSWORD',error:'当前密码不正确'},{status:400})},()=>lost++)
- const api=new CloudClient(guard.fetch());await assert.rejects(()=>api.changePassword('old-value','easy12'),e=>e instanceof NativeApiError&&e.code==='INVALID_CURRENT_PASSWORD')
- await guard.check();assert.equal(lost,0);assert.deepEqual(calls,[{url:'/cloud-api/auth/password',body:{currentPassword:'old-value',newPassword:'easy12'}}])
+ const guard=new CloudIdentityGuard('u1',async(input,init)=>{if(String(input).endsWith('/auth/me'))return Response.json({code:200,data:{user:{id:'u1'},teams:[]}});calls.push({url:String(input),body:JSON.parse(String(init?.body))});return Response.json({code:'INVALID_INPUT',error:'密码不合法'},{status:400})},()=>lost++)
+ const api=new CloudClient(guard.fetch());await assert.rejects(()=>api.changePassword('easy12'),e=>e instanceof NativeApiError&&e.code==='INVALID_INPUT')
+ await guard.check();assert.equal(lost,0);assert.deepEqual(calls,[{url:'/cloud-api/auth/password',body:{newPassword:'easy12'}}])
 })
 test('viewer blocks all diagram and organization mutations while allowing a real export',async()=>{
  const calls:string[]=[];const transport=cloudTeamFetch('viewer',async(input)=>{calls.push(String(input));return Response.json({})})
@@ -92,3 +92,9 @@ test('actual OAuth scopes offer write consent only to owner admin editor and rea
  const base={client:{id:'c',name:'Client'},teams,expiresAt:Date.now()+1000}
  assert.deepEqual(cloudConsentTeams({...base,scopes:['flymind:read','flymind:write']}).map(t=>t.id),['o','a','e']);assert.equal(cloudConsentTeams({...base,scopes:['flymind:read']}).length,4)
 })
+
+ test('invitations use public user codes and the recipient inbox without shared tokens',async()=>{
+ const calls:Array<{url:string;body:unknown}>=[];const api=new CloudClient(async(input,init)=>{calls.push({url:String(input),body:init?.body?JSON.parse(String(init.body)):undefined});return Response.json({code:200,data:[]})});
+ await api.invite('team-1',' ab12cd ','editor');await api.invitations();await api.accept('invite-1');await api.decline('invite-2');
+ assert.deepEqual(calls,[{url:'/cloud-api/teams/team-1/invites',body:{userCode:'AB12CD',role:'editor'}},{url:'/cloud-api/invites',body:undefined},{url:'/cloud-api/invites/invite-1/accept',body:undefined},{url:'/cloud-api/invites/invite-2/decline',body:undefined}]);
+ })

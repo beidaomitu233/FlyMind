@@ -38,3 +38,5 @@
 @media(max-width:760px){.cloud-auth{display:flex;min-height:100dvh;padding:32px 24px;justify-content:center;align-items:center}.cloud-auth-art{display:none}.cloud-auth-entry{width:100%;max-width:440px;padding:24px 8px}.cloud-auth-brand{margin-bottom:40px}.cloud-auth-heading h1{font-size:27px}}
 @media(max-width:420px){.cloud-auth{padding:24px 20px}.cloud-auth-entry{padding:16px 0}.cloud-auth-brand{margin-bottom:36px}}
 @media(prefers-reduced-motion:reduce){.cloud-auth-spinner{animation:none}}
+
+.cloud-invitation-inbox{display:flex;flex-direction:column;gap:12px}.cloud-invitation-row{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid var(--ui-border)}.cloud-invitation-row>div{flex:1;min-width:0}.cloud-invitation-row p{margin:5px 0 0;font-size:12px}.cloud-invitation-row button{white-space:nowrap}

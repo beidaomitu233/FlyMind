@@ -131,11 +131,13 @@ export function createCloudHTTP(options:CloudHTTPOptions){
  app.post('/cloud-api/auth/login',async(req,res)=>{const b=req.body;if(!b||Object.keys(b).some(k=>!['phone','password'].includes(k))||typeof b.phone!=='string'||b.phone.length>32||!b.phone.length||typeof b.password!=='string'||!b.password.length||b.password.length>200)throw new CloudAccessError(400,'INVALID_LOGIN','手机号或密码格式无效');await proxy(req,res,'/app/flymind/auth/login',true)})
  app.get('/cloud-api/auth/me',(req,res)=>proxy(req,res,'/app/flymind/auth/me'))
  app.post('/cloud-api/auth/logout',(req,res)=>proxy(req,res,'/app/flymind/auth/logout'))
- app.post('/cloud-api/auth/password',async(req,res)=>{const b=req.body;if(!b||Array.isArray(b)||Object.keys(b).length!==2||Object.keys(b).some(k=>!['currentPassword','newPassword'].includes(k))||typeof b.currentPassword!=='string'||!b.currentPassword.length||Buffer.byteLength(b.currentPassword,'utf8')>72||typeof b.newPassword!=='string'||Array.from(b.newPassword).length<6||!b.newPassword.trim()||Buffer.byteLength(b.newPassword,'utf8')>72)throw new CloudAccessError(400,'INVALID_INPUT','新密码至少6位，最多72字节，无需混合大小写或符号');await proxy(req,res,'/app/flymind/auth/password')})
+ app.post('/cloud-api/auth/password',async(req,res)=>{const b=req.body;if(!b||Array.isArray(b)||Object.keys(b).length!==1||typeof b.newPassword!=='string'||Array.from(b.newPassword).length<6||!b.newPassword.trim()||Buffer.byteLength(b.newPassword,'utf8')>72)throw new CloudAccessError(400,'INVALID_INPUT','新密码至少6位，最多72字节，无需混合大小写或符号');await proxy(req,res,'/app/flymind/auth/password')})
  app.get('/cloud-api/teams',(req,res)=>proxy(req,res,'/app/flymind/teams'))
  app.post('/cloud-api/teams',(req,res)=>proxy(req,res,'/app/flymind/teams'))
  const teamProxy:[string,'get'|'post'|'patch'|'delete'][]=[['/:teamId','patch'],['/:teamId/members','get'],['/:teamId/invites','post'],['/:teamId/members/:userId','patch'],['/:teamId/members/:userId','delete'],['/:teamId/transfer','post'],['/:teamId/leave','post']]
  for(const [path,method] of teamProxy)app[method]('/cloud-api/teams'+path,async(req,res)=>{if(!safeId.test(String(req.params.teamId))||req.params.userId&&!safeId.test(String(req.params.userId)))throw new CloudAccessError(400,'INVALID_TEAM','团队或成员标识无效');await proxy(req,res,'/app/flymind/teams'+req.path.slice('/cloud-api/teams'.length))})
+ app.get('/cloud-api/invites',(req,res)=>proxy(req,res,'/app/flymind/invites'))
+ for(const action of ['accept','decline'])app.post('/cloud-api/invites/:id/'+action,(req,res)=>{if(!/^[a-zA-Z0-9_-]{1,100}$/.test(String(req.params.id)))throw new CloudAccessError(400,'INVALID_INPUT','邀请标识无效');return proxy(req,res,'/app/flymind/invites/'+req.params.id+'/'+action)})
  app.post('/cloud-api/invites/accept',(req,res)=>proxy(req,res,'/app/flymind/invites/accept'))
  if(oauth)for(const action of ['inspect','approve'] as const)app.post('/cloud-api/oauth/requests/'+action,async(req,res)=>{
   return tracked(req,async()=>{

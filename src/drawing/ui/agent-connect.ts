@@ -16,5 +16,5 @@ export function buildAgentInstallPrompt(client:AgentClient,context:AgentConnectC
  const entry=agentClients[client];if(!entry)throw Error('不支持的 AI 客户端')
  const scope=agentConnectionScope(context)
  const drawing=scope==='same-diagram'?`当前目标 teamId=${context.teamId}、diagramId=${context.diagramId}；先读最新修订，保留已有编辑，在同一张图继续，不新建副本。`:scope==='import-required'?'当前可能是本地图，先让我显式导入云端团队、确认图形身份后再修改，不自动上传。':`${safeId(context.teamId)?'当前团队 teamId='+context.teamId+'；':''}还没有指定图形，先问清绘图任务，按任务归组创建第一张图，之后沿同图继续。`
- return `请帮我在 ${entry.name} 连接 FlyMind 远程 MCP：${AGENT_MCP_URL}，先检查已有连接，同地址复用，不覆盖其他服务。请发起浏览器 OAuth，由我本人登录 FlyMind、选择团队并确认；不要索取密码或令牌，不能自动配置时请给我最短操作步骤。工具未出现时提示重连或新开会话，连接后先读 get_drawing_guide，再按我的要求绘图。${drawing}`
+ return `安装并连接 FlyMind 远程 MCP：${AGENT_MCP_URL}，先检查已有连接，同地址复用，不覆盖其他服务。请发起浏览器 OAuth，由我本人登录 FlyMind、选择团队并确认；不要索取密码或令牌，不能自动配置时请给我最短操作步骤。工具未出现时提示重连或新开会话，连接后先读 get_drawing_guide，再按我的要求绘图。${drawing}`
 }

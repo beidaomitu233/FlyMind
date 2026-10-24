@@ -82,7 +82,7 @@ try{
  cloud=createCloudHTTP({controlPlaneURL,publicOrigin:origin,cloudDataRoot:join(root,'data'),allowInsecureLoopback:true,gatewayKey,collaborationIntervalMs:150});server.on('request',cloud.app);await b.context.setOffline(false)
  await Promise.all([a.labelPresent('乙维护草稿'),b.labelPresent('甲维护前修改')]);await Promise.all(clients.map(c=>c.page.locator('[data-status="ready"]').waitFor({timeout:20000})));assert.ok(sameNativeState(await a.xml(),await b.xml()));assert.deepEqual(await Promise.all(clients.map(c=>c.page.evaluate(()=>window.nativeEvents.filter(e=>e.event==='load').length))),[1,1]);report.cases.push({name:'application-drain-restart-keeps-live-canvas-and-offline-draft',passed:true})
  const source=await cloud.workspaces.run(tokens.alice,'team-a','diagram:read',workspace=>workspace.diagrams.getDrawing(content.id))
- await a.page.getByRole('button',{name:'工作区菜单：新建分组、导入、排序',exact:true}).click();await a.page.getByRole('button',{name:'导入图形',exact:true}).click()
+ await a.page.getByRole('button',{name:'导入图形',exact:true}).click()
  const dialog=a.page.getByRole('dialog',{name:'导入图形',exact:true})
  await dialog.locator('input[type="file"]').first().setInputFiles([
   {name:'all.project.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(source.document))},

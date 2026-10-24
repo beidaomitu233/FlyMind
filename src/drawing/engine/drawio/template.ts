@@ -3,7 +3,7 @@ import type {DrawioCompileOptions} from '../types'
 import {fail} from './xml'
 export {RUNTIME_FONT_FAMILY as FONT} from '../runtime-assets'
 import {RUNTIME_FONT_FAMILY as FONT} from '../runtime-assets'
-export const metaKeys=['description','items','badge','color','parentId','groupId'] as const
+export const metaKeys=['description','items','badge','color','parentId','groupId','technology'] as const
 type Attributes=Record<string,string|number|undefined>
 export function nodeMetadata(node:DiagramNode):Attributes{
   const attrs:Attributes={fmType:node.kind==='note'?'annotation':'node',fmId:node.id,fmKind:node.kind,fmRole:'main',fmLaneId:node.laneId,fmPhaseId:node.phaseId}

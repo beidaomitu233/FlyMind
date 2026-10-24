@@ -1,6 +1,7 @@
+import{technicalDependencyPorts}from'./technical-layout'
 import {readControlledEdge} from './controlled'
 import {ROUTING_SUPPLY,type RoutingSupply} from './routing-supply'
-import {attr,children,element,fail,type NativeDocument,type NativeCell} from './xml'
+import {attr,cellText,children,element,fail,type NativeDocument,type NativeCell} from './xml'
 import {box,mainEntries,businessType,geometry,setStyle,styleValue} from './state'
 import {textUnits} from './template'
 import {planOuterReturns,outerReturnPort,assertOuterSeparation,oppositeBlocks} from './return-routing'
@@ -46,7 +47,7 @@ export function nativeForbiddenRegions(n:NativeDocument):RouteBox[]{
  const result:RouteBox[]=[]
  for(const e of n.cells.values()){
   const role=attr(e.object,'fmRole'),type=businessType(e)
-  if(type==='layer'&&role==='main'){const b=absoluteRouteBox(n,e),header=Number(styleValue(e,'startSize')??48);result.push({...b,id:e.id+':header',h:Math.min(b.h,header)})}
+  if(type==='layer'&&role==='main'){const b=absoluteRouteBox(n,e),header=Number(styleValue(e,'startSize')??48);if(header>0)result.push({...b,id:e.id+':header',...(styleValue(e,'horizontal')==='0'?{w:Math.min(b.w,header)}:{h:Math.min(b.h,header)})});else if(styleValue(e,'verticalLabelPosition')==='top'){const font=Number(styleValue(e,'fontSize')??19),textWidth=textUnits(cellText(e))*font+24,width=Math.max(32,Math.min(b.w,textWidth)),height=font*1.5*Math.max(1,Math.ceil(textWidth/b.w));result.push({id:e.id+':external-title',x:b.x+(b.w-width)/2,y:b.y-height-14,w:width,h:height+4})}}
   else if(type==='decoration'&&role==='title')result.push(absoluteRouteBox(n,e))
  }
  return result
@@ -152,7 +153,8 @@ export async function routeNativeEdges(n:NativeDocument,affected:NativeCell[]):P
  const title=[...n.cells.values()].find(e=>attr(e.object,'fmRole')==='title'&&attr(e.object,'fmType')==='decoration'),horizontal=!!title&&attr(title.object,'fmOrientation')==='horizontal',kind=title&&attr(title.object,'fmKind'),flow=kind==='flowchart',outerEnabled=flow||kind==='swimlane'
  const pin=(b:RouteBox,start:boolean)=>horizontal?{x:start?1:0,y:(Math.round(b.y+b.h/2)-b.y)/b.h,dir:start?8:4}:{x:(Math.round(b.x+b.w/2)-b.x)/b.w,y:start?1:0,dir:start?2:1}
  const side=(b:RouteBox,start:boolean)=>outerReturnPort(n,b,start,horizontal)
- const edges:RouteEdge[]=affected.map(e=>{const source=attr(e.cell,'source'),target=attr(e.cell,'target'),s=byId.get(source??''),t=byId.get(target??''),forward=flow&&attr(e.object,'fmKind')!=='feedback'&&s&&t&&(horizontal?t.x>s.x:t.y>s.y);return {id:e.id,source,target,...((attr(e.object,'fmRole')==='parent-edge'||forward)&&s&&t?{sourceConstraint:pin(s,true),targetConstraint:pin(t,false),sourceJetty:24,targetJetty:24}:{})}})
+ const edges:RouteEdge[]=affected.map(e=>{const source=attr(e.cell,'source'),target=attr(e.cell,'target'),s=byId.get(source??''),t=byId.get(target??''),forward=(flow||kind==='technical'&&(horizontal||source&&target&&n.cells.has(source)&&n.cells.has(target)&&attr(n.cells.get(source)!.cell,'parent')===attr(n.cells.get(target)!.cell,'parent')))&&attr(e.object,'fmKind')!=='feedback'&&s&&t&&(horizontal?t.x>s.x:t.y>s.y);return {id:e.id,source,target,...((attr(e.object,'fmRole')==='parent-edge'||forward)&&s&&t?{sourceConstraint:pin(s,true),targetConstraint:pin(t,false),sourceJetty:24,targetJetty:24}:{})}})
+ if(kind==='technical')for(const edge of edges){const s=n.cells.get(edge.source??''),t=n.cells.get(edge.target??'');if(!s||!t)continue;const node=(e:NativeCell)=>({id:e.id,label:cellText(e),kind:'module' as const,technology:attr(e.object,'fmTechnology')}),ports=technicalDependencyPorts(node(s),node(t)),pin=(box:RouteBox,x:number,y:number)=>({x:x===0||x===1?x:(Math.round(box.x+x*box.w)-box.x)/box.w,y:y===0||y===1?y:(Math.round(box.y+y*box.h)-box.y)/box.h,dir:x===0?4:x===1?8:y===0?1:2});if(ports.exitX===undefined&&attr(s.cell,'parent')===attr(t.cell,'parent')){const a=byId.get(s.id)!,b=byId.get(t.id)!;Object.assign(ports,Math.abs(b.y-a.y)>Math.abs(b.x-a.x)?{exitX:.5,exitY:b.y>a.y?1:0,entryX:.5,entryY:b.y>a.y?0:1}:{exitX:b.x>a.x?1:0,exitY:.5,entryX:b.x>a.x?0:1,entryY:.5});}if(ports.exitX!==undefined&&ports.entryX!==undefined){edge.sourceConstraint=pin(byId.get(s.id)!,ports.exitX,ports.exitY);edge.targetConstraint=pin(byId.get(t.id)!,ports.entryX,ports.entryY);edge.sourceJetty=24;edge.targetJetty=24;}}
  for(const e of edges)if(!e.source||!e.target||!byId.has(e.source)||!byId.has(e.target))fail('ROUTING_UNSUPPORTED_EDGE','避障路由需要有效业务端点')
  const affectedIds=new Set(edges.map(e=>e.id)),routes=new Map<string,RoutePoint[]>(),placed:LabelRect[]=[]
  for(const old of mainEntries(n).filter(e=>businessType(e)==='edge'&&!affectedIds.has(e.id))){const occupancy=existingOccupancy(n,old,byId);if(occupancy){routes.set(old.id,occupancy.points);if(occupancy.label)placed.push(occupancy.label)}}

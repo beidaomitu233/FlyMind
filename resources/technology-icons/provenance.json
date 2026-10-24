@@ -1,0 +1,92 @@
+{
+  "source": "https://github.com/simple-icons/simple-icons",
+  "commit": "30053a0f492fd192740ad001031b3091be060986",
+  "license": "CC0-1.0",
+  "licenseSha256": "9046848b63a5c92bff14e4accca80bd987e0623b74adf9226ce5198d312b79d5",
+  "assets": [
+    {
+      "slug": "vuedotjs",
+      "color": "#4FC08D",
+      "url": "https://raw.githubusercontent.com/simple-icons/simple-icons/30053a0f492fd192740ad001031b3091be060986/icons/vuedotjs.svg",
+      "sha256": "2a57b59bd3ff2880f971f7f6cce2378d20bdfb1a54150a0a7ca9fd2fe1bfa781"
+    },
+    {
+      "slug": "react",
+      "color": "#087EA4",
+      "url": "https://raw.githubusercontent.com/simple-icons/simple-icons/30053a0f492fd192740ad001031b3091be060986/icons/react.svg",
+      "sha256": "ab9136a1a4a8be72ac6743e1bdd1912d878bd68d57787ea7a6c6838e3b23c01c"
+    },
+    {
+      "slug": "nginx",
+      "color": "#009639",
+      "url": "https://raw.githubusercontent.com/simple-icons/simple-icons/30053a0f492fd192740ad001031b3091be060986/icons/nginx.svg",
+      "sha256": "236d53b2b746706df75e2a01668cb84e6f3fc7c8923a9ce824f8534db007a438"
+    },
+    {
+      "slug": "springboot",
+      "color": "#6DB33F",
+      "url": "https://raw.githubusercontent.com/simple-icons/simple-icons/30053a0f492fd192740ad001031b3091be060986/icons/springboot.svg",
+      "sha256": "1b4bb8d7522fa0742a9fc40685b3efe3e089c5d07e4d3eebf4b4dbb28f827ad3"
+    },
+    {
+      "slug": "mysql",
+      "color": "#4479A1",
+      "url": "https://raw.githubusercontent.com/simple-icons/simple-icons/30053a0f492fd192740ad001031b3091be060986/icons/mysql.svg",
+      "sha256": "67c144cc3e44ad14062a3f20ebe29c5e7eeb2c2c9c0f43cf48d87fe6291a8b2d"
+    },
+    {
+      "slug": "redis",
+      "color": "#FF4438",
+      "url": "https://raw.githubusercontent.com/simple-icons/simple-icons/30053a0f492fd192740ad001031b3091be060986/icons/redis.svg",
+      "sha256": "428b86deb14c8bdacdcdf75987fe454f367bcd078a7e4ae3f84de29aa5bdf136"
+    },
+    {
+      "slug": "docker",
+      "color": "#2496ED",
+      "url": "https://raw.githubusercontent.com/simple-icons/simple-icons/30053a0f492fd192740ad001031b3091be060986/icons/docker.svg",
+      "sha256": "65571291c261ef869c31540a38f3ca0f0ee3bb73f179c172211c8860f19a6359"
+    },
+    {
+      "slug": "kubernetes",
+      "color": "#326CE5",
+      "url": "https://raw.githubusercontent.com/simple-icons/simple-icons/30053a0f492fd192740ad001031b3091be060986/icons/kubernetes.svg",
+      "sha256": "ceee2f4e87fa1533600672190c156194039f744fa9b5da10e83f002178e84b47"
+    },
+    {
+      "slug": "elasticsearch",
+      "color": "#005571",
+      "url": "https://raw.githubusercontent.com/simple-icons/simple-icons/30053a0f492fd192740ad001031b3091be060986/icons/elasticsearch.svg",
+      "sha256": "f866863bb80c3f1e22cb49541442c9db2112bba74b8c1210328bd3536984e6a3"
+    },
+    {
+      "slug": "jenkins",
+      "color": "#D24939",
+      "url": "https://raw.githubusercontent.com/simple-icons/simple-icons/30053a0f492fd192740ad001031b3091be060986/icons/jenkins.svg",
+      "sha256": "95ab5d541710c116d939f44e4e72c8b1503e78d04a1c298ad257c4e26d3a1873"
+    },
+    {
+      "slug": "postgresql",
+      "color": "#4169E1",
+      "url": "https://raw.githubusercontent.com/simple-icons/simple-icons/30053a0f492fd192740ad001031b3091be060986/icons/postgresql.svg",
+      "sha256": "c8ccadbd88c9312c2ad3734c4861b31d3485ce179ee91d64793143f83cfa745c"
+    },
+    {
+      "slug": "minio",
+      "color": "#C72E49",
+      "url": "https://raw.githubusercontent.com/simple-icons/simple-icons/30053a0f492fd192740ad001031b3091be060986/icons/minio.svg",
+      "sha256": "2367d2631b71093061d589e4ec8de7853b35c0f46ba88285387ba192553004b0"
+    },
+    {
+      "slug": "nodedotjs",
+      "color": "#5FA04E",
+      "url": "https://raw.githubusercontent.com/simple-icons/simple-icons/30053a0f492fd192740ad001031b3091be060986/icons/nodedotjs.svg",
+      "sha256": "021851b758cde7d3e04819c3ac02047d0ff281c712e8387afa0c76a6dac6db6c"
+    },
+    {
+      "slug": "python",
+      "color": "#3776AB",
+      "url": "https://raw.githubusercontent.com/simple-icons/simple-icons/30053a0f492fd192740ad001031b3091be060986/icons/python.svg",
+      "sha256": "ad9468e1c4903f73ae7eebfbe980f0f727a10db695be3d914e7d8bd25356a862"
+    }
+  ]
+}

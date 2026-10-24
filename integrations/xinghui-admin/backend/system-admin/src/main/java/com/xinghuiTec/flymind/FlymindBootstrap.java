@@ -26,12 +26,14 @@ public class FlymindBootstrap implements ApplicationRunner {
   long user=id(),role=id();db.update("INSERT INTO sys_user(user_id,tenant_id,username,nickname,password,mobile,status,is_deleted) VALUES(?,?,?,?,?,?,1,0)",user,tenant,phone,"平台管理员",encoder.encode(password),phone);
   db.update("INSERT INTO sys_role(role_id,tenant_id,role_name,role_key,status,is_deleted) VALUES(?,?,?,'flymind-platform-admin',1,0)",role,tenant,"FlyMind平台管理员");
   db.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,?)",user,role);
-  long directory=90001L,users=90002L,teams=90003L;
+  long directory=90001L,users=90002L,teams=90003L,dashboard=90004L,overview=90005L;
   db.update("INSERT INTO sys_menu(menu_id,menu_name,parent_id,menu_type,path,status,visible,is_deleted) VALUES(?,? ,0,'M','flymind','0','0',0)",directory,"FlyMind管理");
   db.update("INSERT INTO sys_menu(menu_id,menu_name,parent_id,menu_type,path,component,status,visible,perms,is_deleted) VALUES(?,?,?,'C','users','system/user/index','0','0','system:user:list',0)",users,"用户管理",directory);
   db.update("INSERT INTO sys_menu(menu_id,menu_name,parent_id,menu_type,path,component,status,visible,perms,is_deleted) VALUES(?,?,?,'C','teams','system/team/index','0','0','flymind:team:list',0)",teams,"团队管理",directory);
-  for(long menu:new long[]{directory,users,teams})db.update("INSERT INTO sys_role_menu(role_id,menu_id) VALUES(?,?)",role,menu);
-  for(String perm:new String[]{"system:user:list","system:user:query","system:user:add","system:user:edit","system:user:remove","system:role:list","system:role:query","system:role:add","system:role:edit","system:role:remove","flymind:team:list","flymind:team:query","flymind:team:edit"}){
+  if(db.queryForObject("SELECT COUNT(*) FROM sys_menu WHERE menu_id=? AND parent_id=0 AND menu_type='M' AND path='dashboard' AND is_deleted=0",Integer.class,dashboard)==0)db.update("INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,menu_type,path,status,visible,is_deleted) VALUES(?,?,0,-100,'M','dashboard','0','0',0)",dashboard,"数据看板");
+  if(db.queryForObject("SELECT COUNT(*) FROM sys_menu WHERE menu_id=? AND parent_id=? AND menu_type='C' AND path='overview' AND component='dashboard/analytics/index' AND perms='flymind:dashboard:view' AND is_deleted=0",Integer.class,overview,dashboard)==0)db.update("INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,menu_type,path,component,status,visible,perms,is_deleted) VALUES(?,?,?,0,'C','overview','dashboard/analytics/index','0','0','flymind:dashboard:view',0)",overview,"应用概览",dashboard);
+  for(long menu:new long[]{directory,users,teams,dashboard,overview})db.update("INSERT INTO sys_role_menu(role_id,menu_id) VALUES(?,?)",role,menu);
+  for(String perm:new String[]{"flymind:dashboard:view","system:user:list","system:user:query","system:user:add","system:user:edit","system:user:remove","system:role:list","system:role:query","system:role:add","system:role:edit","system:role:remove","flymind:team:list","flymind:team:query","flymind:team:edit"}){
    long menu=id();db.update("INSERT INTO sys_menu(menu_id,menu_name,menu_type,perms,status,is_deleted) VALUES(?,?,'F',?,'0',0)",menu,perm,perm);db.update("INSERT INTO sys_role_menu(role_id,menu_id) VALUES(?,?)",role,menu);
   }
  }

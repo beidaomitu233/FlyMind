@@ -10,9 +10,10 @@
 | swimlane 泳道图 | 同流程节点；laneId、存在阶段时 phaseId | 角色负责的真实动作和交接，task“提出需求”可以是入口，不强造 start/end。需有明确完成/报告/交付/终止结果，或以 feedback 闭合真实持续循环。回流不能伪作普通前置。 |
 | architecture 架构图 | module、groupId、items、badge、短 description、color | 按真实职责分层。模块依赖/接口箭头合法，也可不画不必要的箭头；不套流程入口/终点要求。不能把长方案装进模块字段。 |
 | mindmap 思维导图 | topic、parentId、短 description、color | 一个根、父子无环；下级属于上级分类。单链分类合法，不因有动作词就判错；多个明确“步骤1/步骤2”不能伪装分类树。 |
+| technical 技术架构图 | module、technology、可选groupId/items/badge、短description、color | 用真实技术名称与技术标识，逻辑组为独立可移动容器；少文字。未知technology使用通用图标，不输入图标URL或位置，不强套水平分层。 |
 | dataflow 数据流架构图 | card、description、短 badge、color | 来源、处理、去向和真实数据方向；业务节点需连通，回写用 feedback。不套流程 start/end，也不因为卡片有箭头就称其为执行流程。 |
 
-所有图形可有用户明确要求的短 note，仅支持 label/description/color，无业务归属；不是步骤或父主题。items 仅架构模块使用，badge 仅架构模块和数据卡片使用；其余归属字段只用于对应类型。lanes/phases 仅泳道，groups 仅架构。结构 schema 的较大字符串上限不是 AI 质量许可。
+所有图形可有用户明确要求的短 note，仅支持 label/description/color，无业务归属；不是步骤或父主题。items 仅架构/技术架构模块使用，badge 仅架构/技术架构模块和数据卡片使用；其余归属字段只用于对应类型。lanes/phases 仅泳道，groups 仅架构/技术架构；技术架构可以无组。结构 schema 的较大字符串上限不是 AI 质量许可。
 
 ## 每次绘制与修改
 
@@ -34,13 +35,15 @@
 | 开始/结束标题 | 12 / 36 | 24 / 72 |
 | 流程/泳道 description | 80字符短属性 | 120字符，不放连续步骤或方案 |
 | 脑图/短批注 description | 120字符以内 | 120字符 |
+| 技术架构 description | 短属性，保留在业务属性，不显示为整段卡片正文 | 120字符 |
+| 技术架构 items | 少量短能力 | 最多6条；单条24中文 / 64纯外文；不能空白占位 |
 | 架构/数据卡 description | 120字符以内 | 240字符 |
 | 架构 items | 8条以内 | 12条；单条32中文 / 100纯外文；不能空白占位 |
-| 架构/数据卡 badge | 短状态/版本 | 12中文 / 30纯外文 |
+| 架构/技术架构/数据卡 badge | 短状态/版本 | 12中文 / 30纯外文 |
 | note 标题 | 必要短批注 | 80中文 / 240纯外文；同时受下列总量约束 |
 | 连线标题 | 只写条件/依赖/数据名称 | 24中文 / 80纯外文 |
 
-业务标题超过3行，或出现至少3个句号/分号的段落会被拒绝。每节点 label+description+items+badge **总量**另限：架构480字符、数据卡300、流程/泳道/脑图160、note200；不能将文字拆字段逃避总量。note数量最多 `max(2,ceil(业务节点数×15%))`，不是用解释堆满画布。
+业务标题超过3行，或出现至少3个句号/分号的段落会被拒绝。每节点 label+description+items+badge **总量**另限：架构480字符、数据卡300、流程/泳道/脑图/技术架构160、note200；不能将文字拆字段逃避总量。note数量最多 `max(2,ceil(业务节点数×15%))`，不是用解释堆满画布。
 
 报告 `quality:{standardVersion,passed,score,issues}` 给出稳定问题代码、nodeId/edgeId与可测 actual/limit。通过要求无error且至少80分；历史修改按同一标准与原稿比较，error和warning均不得新增或加重，severity下降可作为改善。人工草稿仍可保存；AI不得用声明 annotation 或替换ID掩饰新问题。
 
@@ -49,3 +52,7 @@
 - 架构分层、脑图根/父子和引用有效性仍由内容结构校验保证，质量规则不另造布局或伪造业务关系。
 - 机器不能证明所有模块职责一致、每个主题分类合理或每项业务条件真实；模糊表述应确认，不使用宽泛技术词/动词黑名单。
 - `get_drawing_guide`、`flymind://drawing-standard` 与本文件同源；skill 为操作摘要。人工图不会被质量检查自动迁移或修改。
+
+## 技术图标与人工编辑
+
+technical 的 technology 只接小写技术slug（1–64位，如vue、springboot、mysql）；不接URL、base64或样式。固定本地品牌图标供应外的技术使用通用原生图元；不得为匹配图标改写真实技术语义。技术图同样保持原生可编辑，人工移动/拉宽高/改形状配色或删图标后，普通AI改字不得恢复模板或复活图标；只有明确technology变更才更新对应标识，明确relayout才重排全图。标题预算沿用非流程节点32中文/110纯外文硬上限，建议18中文/64纯外文；description/items/badge也计入160字符总预算，不以拆字段规避少文字要求。

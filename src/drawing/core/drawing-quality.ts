@@ -20,16 +20,16 @@ export function inspectDrawing(d:DiagramContent):DrawingQuality {
   const issues:QualityIssue[]=[],nodes=d.nodes.filter(n=>n.kind!=='note'),ids=new Set(nodes.map(n=>n.id)),edges=d.edges.filter(e=>ids.has(e.source)&&ids.has(e.target))
   const issue=(code:string,severity:QualityIssue['severity'],message:string,n?:DiagramNode,actual?:number,limit?:number)=>issues.push({code,severity,message,...(n?{nodeId:n.id}:{}),...(actual!==undefined?{actual}:{}),...(limit!==undefined?{limit}:{})})
   if(!nodes.length)issue('no_business_nodes','error','图形只有说明文字，没有业务节点；请绘制实际流程、模块或主题')
-  const allowed=d.kind==='architecture'?['module']:d.kind==='mindmap'?['topic']:d.kind==='dataflow'?['card']:['start','end','task','decision']
+  const allowed=['architecture','technical'].includes(d.kind)?['module']:d.kind==='mindmap'?['topic']:d.kind==='dataflow'?['card']:['start','end','task','decision']
   const process=d.kind==='flowchart'||d.kind==='swimlane'
   for(const collection of ['lanes','phases','groups'] as const){
-    if(d[collection].length&&(collection==='groups'?d.kind!=='architecture':d.kind!=='swimlane'))issue('unused_'+collection,'error','此图形类型不使用该业务容器；请选择正确图形类型，不将容器当说明框',undefined,d[collection].length,0)
+    if(d[collection].length&&(collection==='groups'?!['architecture','technical'].includes(d.kind):d.kind!=='swimlane'))issue('unused_'+collection,'error','此图形类型不使用该业务容器；请选择正确图形类型，不将容器当说明框',undefined,d[collection].length,0)
   }
   for(const n of d.nodes){
-    const allowedFields=['id','label','kind','color','description',...(n.kind==='note'?[]:d.kind==='architecture'?['groupId','items','badge']:d.kind==='swimlane'?['laneId','phaseId']:d.kind==='mindmap'?['parentId']:d.kind==='dataflow'?['badge']:[])]
+    const allowedFields=['id','label','kind','color','description',...(n.kind==='note'?[]:d.kind==='technical'?['groupId','technology','items','badge']:d.kind==='architecture'?['groupId','items','badge']:d.kind==='swimlane'?['laneId','phaseId']:d.kind==='mindmap'?['parentId']:d.kind==='dataflow'?['badge']:[])]
     const forbidden=Object.keys(n).filter(field=>!allowedFields.includes(field)&&(n as unknown as Record<string,unknown>)[field]!==undefined)
     for(const field of forbidden)issue('node_field_'+field,'error','该类型不使用 '+field+'；不要借其他类型字段存放步骤或说明',n,length(JSON.stringify((n as unknown as Record<string,unknown>)[field])),0)
-    const descriptionLimit=n.kind==='note'?120:process?120:d.kind==='mindmap'?120:240
+    const descriptionLimit=n.kind==='note'?120:process?120:['mindmap','technical'].includes(d.kind)?120:240
     const descriptionRecommended=process?80:120
     if(n.description&&length(n.description)>descriptionLimit)issue('long_description','error','备注过长；只保留节点必要属性，方案、参数预算和解释留在对话或资料中',n,length(n.description),descriptionLimit)
     else if(n.description&&length(n.description)>descriptionRecommended)issue('wordy_description','warning','备注应为短属性，不承载多个步骤或整段方案',n,length(n.description),descriptionRecommended)
@@ -53,7 +53,8 @@ export function inspectDrawing(d:DiagramContent):DrawingQuality {
       else if((n.items?.length||0)>8)issue('many_items','warning','模块建议保留 8 项以内核心能力',n,n.items!.length,8)
       if(n.items?.some(s=>[...s].length>cap(s,32,100)))issue('long_item','error','模块条目应是简短能力名称，详细规则放正文资料',n)
     }
-    if(d.kind==='architecture'&&n.items?.some(item=>!item.trim()))issue('empty_item','error','能力条目不能是空白占位',n,n.items.filter(item=>!item.trim()).length,0)
+    if(d.kind==='technical'){if((n.items?.length??0)>6)issue('too_many_items','error','技术图保留技术名称和最多6项短能力；详细说明留业务属性或资料',n,n.items!.length,6);if(n.items?.some(s=>length(s)>cap(s,24,64)))issue('long_item','error','技术组件条目只保留简短技术名词或职责',n)}
+    if(['architecture','technical'].includes(d.kind)&&n.items?.some(item=>!item.trim()))issue('empty_item','error','能力条目不能是空白占位',n,n.items.filter(item=>!item.trim()).length,0)
     if(d.kind==='mindmap'){
       let depth=1,cur=n;const seen=new Set([n.id]);while(cur.parentId){const p=nodes.find(x=>x.id===cur.parentId);if(!p||seen.has(p.id))break;depth++;seen.add(p.id);cur=p}
       if(depth>5)issue('deep_mindmap','warning','层级超过 5 层；检查是否需要另开主题图，避免机械拆词',n,depth,5)

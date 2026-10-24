@@ -1,3 +1,5 @@
+import{TECHNOLOGY_ICONS}from'./drawio/technology-icons-data'
+import{technologyBrandIcons}from'./technology-brand-icons'
 import {DOMParser}from'@xmldom/xmldom'
 import{validateDrawingProject}from'./project'
 import type{NativeCanvasCell,NativeCanvasProjectV3,NativeCanvasCreateOptions,NativeImportInspection,NativeDrawingProject,NativeBusinessMapping,DrawingProjectV3}from'./types'
@@ -14,7 +16,8 @@ import{validateContent}from'../core/layers'
 import {DRAWIO_VERSION,DRAWIO_ADAPTER_VERSION}from'./constants'
 export async function nativeXMLHash(xml:string){const bytes=new TextEncoder().encode(xml),hash=await crypto.subtle.digest('SHA-256',bytes);return [...new Uint8Array(hash)].map(x=>x.toString(16).padStart(2,'0')).join('')}
 const decodedCSS=(value:string)=>value.replace(/\\([0-9a-f]{1,6})\s?/gi,(_,hex)=>String.fromCodePoint(parseInt(hex,16))).replace(/\\(.)/g,'$1').replace(/\/\*[\s\S]*?\*\//g,'')
-function resource(value:string){const v=value.trim();if(v.startsWith('#')||/^data:image\/(png|jpeg|gif|webp);base64,[a-z0-9+/=\s]+$/i.test(v))return;fail('UNSAFE_NATIVE_RESOURCE','外部、活动或未支持嵌入资源')}
+const fixedTechnologyImages=new Set([...Object.values(technologyBrandIcons),...Object.values(TECHNOLOGY_ICONS).map(icon=>icon.svg)].map(svg=>'data:image/svg+xml,'+encodeURIComponent(svg)))
+function resource(value:string){const v=value.trim();if(fixedTechnologyImages.has(v))return;if(v.startsWith('#')||/^data:image\/(png|jpeg|gif|webp);base64,[a-z0-9+/=\s]+$/i.test(v))return;fail('UNSAFE_NATIVE_RESOURCE','外部、活动或未支持嵌入资源')}
 function css(value:string){const source=decodedCSS(value);if(/@import|expression\s*\(|javascript\s*:/i.test(source))fail('UNSAFE_NATIVE_RESOURCE','活动CSS不允许');for(const match of source.matchAll(/url\s*\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/gi))resource(match[1]??match[2]??match[3])}
 function inspectElements(document:Document){const list=document.getElementsByTagName('*');for(let i=0;i<list.length;i++){const e=list.item(i)!;if(['script','iframe','object','embed','link','meta','base','audio','video','foreignobject'].includes(e.nodeName.toLowerCase()))fail('UNSAFE_NATIVE_RESOURCE','活动HTML元素不允许');for(let j=0;j<e.attributes.length;j++){const a=e.attributes.item(j)!,key=a.name.toLowerCase();if(/^on/.test(key))fail('UNSAFE_NATIVE_RESOURCE','事件属性不允许');if(['src','href','xlink:href','poster'].includes(key))resource(a.value);if(key==='style')css(a.value)}if(e.nodeName.toLowerCase()==='style')css(e.textContent??'')}}
 function safeNative(xml:string){const n=parseNative(xml);for(const e of n.cells.values()){const label=attr(e.object,'label')??attr(e.cell,'value')??'',style=attr(e.cell,'style')??'';css(style);for(const field of style.split(';'))if(/^image=/.test(field))resource(field.slice(6));if(/<[^>]+>/.test(label)){const errors:string[]=[],d=new DOMParser({errorHandler:{warning:()=>{},error:m=>errors.push(m),fatalError:m=>errors.push(m)}}).parseFromString('<html><body>'+label+'</body></html>','text/html');if(errors.length)fail('INVALID_NATIVE_HTML','原生标签HTML无法安全解析');inspectElements(d)}}return n}

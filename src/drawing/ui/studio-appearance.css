@@ -58,6 +58,7 @@
 .studio-root.native-appearance :is(.workspace-header>.studio-icon,.workspace-folder-open>svg,.workspace-row-menu) {color:var(--ui-muted)}
 .studio-root.native-appearance .workspace-section-heading {display:flex;align-items:center;justify-content:space-between;padding:2px 5px 7px 10px;color:var(--ui-muted);font-size:12px;min-height:35px}
 .studio-root.native-appearance .workspace-section-heading .studio-icon {width:27px;min-width:27px;height:27px}
+.studio-root.native-appearance .studio-type-grid button[aria-pressed="true"] {border-color:var(--ui-accent);background:var(--ui-active);box-shadow:0 0 0 1px var(--ui-accent)}
 .studio-root.native-appearance :is(.workspace-folder,.workspace-file) {border-radius:7px}
 .studio-root.native-appearance :is(.workspace-folder,.workspace-file):hover {background:var(--ui-hover)}
 .studio-root.native-appearance .workspace-file.active {background:var(--ui-active);color:var(--ui-text)}
