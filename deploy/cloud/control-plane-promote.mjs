@@ -8,6 +8,7 @@ import {createHash,randomUUID} from 'node:crypto'
 import {spawn} from 'node:child_process'
 import {dirname,join,resolve,posix,sep} from 'node:path'
 import {pathToFileURL} from 'node:url'
+import {materializeCandidate} from './materialize-candidate.mjs'
 
 const SHA=/^[a-f0-9]{64}$/,MIGRATION=/^V[0-9][A-Za-z0-9_.-]*__[^/\\]+\.sql$/
 const PATH_KEYS=['incomingDirectory','stateDirectory','backupDirectory','jarPath','environmentFile','backupHelper','readinessKeyFile','pythonExecutable']
@@ -170,8 +171,7 @@ export async function promoteControlPlane(argv=process.argv.slice(2)){
   await copyExclusive(join(config.incomingDirectory,release.releaseId+'.tar.gz'),archive,4_000_000_000)
   if(await fileSHA(archive)!==release.archiveSHA)throw Error('Candidate archive digest mismatch')
   await mkdir(candidate,{mode:0o755})
-  const extract="import sys,tarfile,pathlib; assert hasattr(tarfile,'data_filter'); t=tarfile.open(sys.argv[1]); m=t.getmembers(); assert len(m)<100000 and sum(x.size for x in m)<4000000000; assert all(not x.name.startswith('/') and not any(p=='..' for p in pathlib.PurePosixPath(x.name).parts) and chr(92) not in x.name and ':' not in x.name for x in m); t.extractall(sys.argv[2],filter='data')"
-  await run(python,['-c',extract,archive,candidate])
+  await materializeCandidate({archive,destination:candidate,environment:release.environment,python,run,requireRootOwned:true})
   const {verifyCandidate}=await import('./verify-cloud-candidate.mjs'),manifest=await verifyCandidate(candidate,{requireRootOwned:true})
   if(manifest.releaseId!==release.releaseId||manifest.release?.migrationLevel!==1)throw Error('Candidate release identity/migration level mismatch')
   release.sourceCommit=manifest.sourceCommit

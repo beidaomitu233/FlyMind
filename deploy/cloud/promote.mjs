@@ -11,6 +11,7 @@ import {request as httpRequest} from 'node:http'
 import {request as httpsRequest} from 'node:https'
 import {resolve,join,dirname,sep,posix} from 'node:path'
 import {pathToFileURL} from 'node:url'
+import {materializeCandidate} from './materialize-candidate.mjs'
 export function validateDeploymentConfig(config){
  const required=['releaseRoot','currentLink','incomingDirectory','dataRoot','backupDirectory','stateDirectory','applicationService','publicOrigin','applicationOrigin']
  if(!config||Object.keys(config).some(k=>!required.includes(k))||required.some(k=>typeof config[k]!=='string'||!config[k]))throw Error('Deployment config invalid')
@@ -50,8 +51,7 @@ try{
  try{if(!(await source.stat()).isFile())throw Error('Archive must be a regular file');let copied=0;await pipeline(source.createReadStream({autoClose:false}),new Transform({transform(chunk,_encoding,callback){copied+=chunk.length;callback(copied>4_000_000_000?Error('Archive budget exceeded'):null,chunk)}}),createWriteStream(stagedArchive,{flags:'wx',mode:0o600}))}finally{await source.close()}
  const hash=createHash('sha256');for await(const bytes of createReadStream(stagedArchive))hash.update(bytes);if(hash.digest('hex')!==archiveSHA)throw Error('Archive digest mismatch')
  try{const prior=JSON.parse(await readFile(preparedReceipt,'utf8'));if(prior.archiveSHA!==archiveSHA)throw Error('Release id reused for another archive');await verifyCandidate(candidate)}catch(error){if(error.code!=='ENOENT')throw error;await mkdir(candidate,{mode:0o755});
-  const extract="import sys,tarfile,pathlib; assert hasattr(tarfile,'data_filter'), 'Python tarfile data_filter required'; a,d=sys.argv[1:]; t=tarfile.open(a); m=t.getmembers(); assert len(m)<100000; assert sum(x.size for x in m)<4000000000; assert all(not x.name.startswith('/') and not any(p=='..' for p in pathlib.PurePosixPath(x.name).parts) and chr(92) not in x.name and ':' not in x.name for x in m); t.extractall(d,filter='data')"
-  await run('python3',['-c',extract,stagedArchive,candidate]);await verifyCandidate(candidate)
+  await materializeCandidate({archive:stagedArchive,destination:candidate,environment,python:'python3',run,requireRootOwned:true});await verifyCandidate(candidate)
   await writeFile(preparedReceipt,JSON.stringify({releaseId,archiveSHA}),{flag:'wx',mode:0o600})
  }
  const manifest=await verifyCandidate(candidate);if(manifest.releaseId!==releaseId||manifest.release?.migrationLevel!==1)throw Error('Release identity mismatch or unsupported migration level')

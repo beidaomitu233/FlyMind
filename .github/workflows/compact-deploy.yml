@@ -1,0 +1,133 @@
+name: Build and deploy compact candidate
+
+on:
+  push:
+    paths:
+      - scripts/build-compact-candidate.py
+      - scripts/check-compact-source.mjs
+      - scripts/verify-compact-roundtrip.mjs
+      - deploy/cloud/materialize-candidate.mjs
+      - tests/compact-builder.test.py
+      - tests/compact-materializer.test.mjs
+      - .github/workflows/compact-deploy.yml
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Verified main cloud candidate run
+        required: true
+        default: '40071395983'
+      baseline_run_id:
+        description: Successful cloud candidate currently deployed
+        required: true
+        default: '39994902799'
+      deploy:
+        description: Publish after the reviewed static materializer is installed
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    outputs:
+      target_sha: ${{ steps.provenance.outputs.target_sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.23.3
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.11'
+      - name: Compact format and actual POSIX fixtures
+        run: |
+          python tests/compact-builder.test.py
+          python tests/cloud-control-plane-install.test.py
+          node --test tests/compact-materializer.test.mjs tests/cloud-control-plane.test.mjs tests/cloud-deployment.test.mjs
+      - name: Verify immutable main source and baseline gates
+        id: provenance
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          COMPACT_TARGET_RUN: ${{ inputs.source_run_id || '40071395983' }}
+          COMPACT_BASELINE_RUN: ${{ inputs.baseline_run_id || '39994902799' }}
+        run: node scripts/check-compact-source.mjs
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: flymind-linux-x64
+          path: original-target
+          run-id: ${{ inputs.source_run_id || '40071395983' }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: flymind-linux-x64
+          path: original-baseline
+          run-id: ${{ inputs.baseline_run_id || '39994902799' }}
+          github-token: ${{ github.token }}
+      - name: Verify original archives and safely unpack
+        run: |
+          (cd original-target && sha256sum -c flymind-linux-x64.tar.gz.sha256)
+          (cd original-baseline && sha256sum -c flymind-linux-x64.tar.gz.sha256)
+          python - <<'PY'
+          import pathlib,tarfile
+          for source,dest in [('original-target','target'),('original-baseline','baseline')]:
+              pathlib.Path(dest).mkdir()
+              with tarfile.open(source+'/flymind-linux-x64.tar.gz') as t:
+                  members=t.getmembers()
+                  assert len(members)<100000 and sum(m.size for m in members)<4000000000
+                  assert all(not m.name.startswith('/') and '..' not in pathlib.PurePosixPath(m.name).parts and chr(92) not in m.name and ':' not in m.name for m in members)
+                  t.extractall(dest,filter='data')
+          PY
+      - name: Build exact-byte compact transport
+        run: python scripts/build-compact-candidate.py --baseline baseline --target target --output compact/flymind-linux-x64.tar.gz --report compact/build-report.json
+      - name: Materialize actual Linux candidate and verify the complete tree
+        run: node scripts/verify-compact-roundtrip.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: flymind-compact-linux-x64
+          path: |
+            compact/flymind-linux-x64.tar.gz
+            compact/flymind-linux-x64.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: compact-verification
+          path: compact/*.json
+          if-no-files-found: error
+          retention-days: 30
+
+  production:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.deploy == true && vars.CLOUD_COMPACT_ENABLED == 'true'
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment: production
+    concurrency:
+      group: cloud-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.23.3
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: flymind-compact-linux-x64
+          path: download
+      - name: Publish only the verified compact candidate
+        env:
+          DEPLOY_ENVIRONMENT: production
+          DEPLOY_CONTROL_PLANE_DEPLOY: 'true'
+          DEPLOY_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          DEPLOY_SOURCE_SHA: ${{ needs.prepare.outputs.target_sha }}
+          DEPLOY_TRANSPORT: bytes
+          DEPLOY_SSH_HOST: ${{ secrets.SSH_HOST }}
+          DEPLOY_SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_SSH_PORT: ${{ secrets.SSH_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: node scripts/upload-cloud-candidate.mjs

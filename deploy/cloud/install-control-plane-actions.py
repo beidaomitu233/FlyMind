@@ -295,6 +295,7 @@ def install(args):
     code = {
         LIBEXEC + '/flymind-control-plane-promote.mjs': (read_protected(source / 'deploy/cloud/control-plane-promote.mjs'), 0o644),
         LIBEXEC + '/verify-cloud-candidate.mjs': (read_protected(source / 'scripts/verify-cloud-candidate.mjs'), 0o644),
+        LIBEXEC + '/materialize-candidate.mjs': (read_protected(source / 'deploy/cloud/materialize-candidate.mjs'), 0o644),
         FORCED: (read_protected(source / 'deploy/cloud/ssh-command.py'), 0o755),
         LIBEXEC + '/artifact-fetch.py': (read_protected(source / 'deploy/cloud/artifact-fetch.py'), 0o644),
     }
