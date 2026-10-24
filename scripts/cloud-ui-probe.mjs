@@ -82,8 +82,9 @@ try{
  cloud=createCloudHTTP({controlPlaneURL,publicOrigin:origin,cloudDataRoot:join(root,'data'),allowInsecureLoopback:true,gatewayKey,collaborationIntervalMs:150});server.on('request',cloud.app);await b.context.setOffline(false)
  await Promise.all([a.labelPresent('乙维护草稿'),b.labelPresent('甲维护前修改')]);await Promise.all(clients.map(c=>c.page.locator('[data-status="ready"]').waitFor({timeout:20000})));assert.ok(sameNativeState(await a.xml(),await b.xml()));assert.deepEqual(await Promise.all(clients.map(c=>c.page.evaluate(()=>window.nativeEvents.filter(e=>e.event==='load').length))),[1,1]);report.cases.push({name:'application-drain-restart-keeps-live-canvas-and-offline-draft',passed:true})
  const source=await cloud.workspaces.run(tokens.alice,'team-a','diagram:read',workspace=>workspace.diagrams.getDrawing(content.id))
- await a.page.getByRole('button',{name:'导入图形',exact:true}).click()
+ await a.page.getByRole('button',{name:'导入到列表',exact:true}).click()
  const dialog=a.page.getByRole('dialog',{name:'导入图形',exact:true})
+ assert.equal(await dialog.getByLabel('导入目标',{exact:true}).inputValue(),'','list import must initially target ungrouped')
  await dialog.locator('input[type="file"]').first().setInputFiles([
   {name:'all.project.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(source.document))},
   {name:'all.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(source.document.content))},
@@ -99,13 +100,13 @@ try{
  report.cases.push({name:'all-formats-one-editable-import-in-folder',passed:true})
  // A real webkitdirectory selection plus one lost successful server response.
  const directory=join(root,'chosen');await mkdir(join(directory,'nested'),{recursive:true});await writeFile(join(directory,'nested','valid.json'),JSON.stringify({...content,id:'directory-source',title:'目录导入'}));await writeFile(join(directory,'broken.json'),'{broken')
- await a.page.getByRole('button',{name:'工作区菜单：新建分组、导入、排序',exact:true}).click();await a.page.getByRole('button',{name:'导入图形',exact:true}).click();await dialog.locator('input[webkitdirectory]').setInputFiles(directory);await dialog.getByRole('button',{name:'导入',exact:true}).waitFor();await dialog.getByText('可导入',{exact:true}).waitFor()
+ await a.page.getByRole('button',{name:'导入到分组 导入验收',exact:true}).click();assert.equal(await dialog.getByLabel('导入目标',{exact:true}).inputValue(),afterImport.groups[0].id,'group import must retain the clicked real target');await dialog.locator('input[webkitdirectory]').setInputFiles(directory);await dialog.getByRole('button',{name:'导入',exact:true}).waitFor();await dialog.getByText('可导入',{exact:true}).waitFor()
  let lost=false,commits=[];await a.page.route('**/native/imports/items',async route=>{commits.push(route.request().postDataJSON());if(!lost){lost=true;await route.fetch();await route.abort('failed')}else await route.continue()})
  await dialog.getByRole('button',{name:'导入',exact:true}).click();await dialog.getByText('结果待确认，可重试',{exact:true}).waitFor();await dialog.getByRole('button',{name:'重试未完成项',exact:true}).click();await dialog.getByRole('status').filter({hasText:'已导入 1 张'}).waitFor();await a.page.unroute('**/native/imports/items');assert.equal(commits.length,2);assert.deepEqual(commits[0],commits[1]);await dialog.getByRole('button',{name:'关闭导入',exact:true}).click()
- const afterDirectory=await cloud.workspaces.run(tokens.alice,'team-a','workspace:read',async workspace=>({files:await workspace.diagrams.list(),activity:await workspace.store.listActivity({},workspace.dataRootId)}));assert.equal(afterDirectory.files.length,3);assert.equal(afterDirectory.activity.items.filter(e=>e.action==='import').length,2)
+ const afterDirectory=await cloud.workspaces.run(tokens.alice,'team-a','workspace:read',async workspace=>({files:await workspace.diagrams.list(),activity:await workspace.store.listActivity({},workspace.dataRootId)}));assert.equal(afterDirectory.files.length,3);assert.equal(afterDirectory.files.filter(f=>f.workspaceGroupId===afterImport.groups[0].id).length,2);assert.equal(afterDirectory.activity.items.filter(e=>e.action==='import').length,2)
  report.cases.push({name:'actual-directory-partial-invalid-and-lost-ACK-exact-retry',passed:true})
  assert.ok(afterImport.activity.items.some(e=>e.actor.userId==='alice'&&e.actor.channel==='web'));assert.ok(afterImport.activity.items.some(e=>e.actor.userId==='bob'&&e.actor.channel==='web'))
- await a.page.getByRole('button',{name:'工作区菜单：新建分组、导入、排序',exact:true}).click();await a.page.getByRole('button',{name:'操作记录',exact:true}).click();const activity=a.page.getByRole('dialog',{name:'操作记录',exact:true});await activity.locator('article').first().waitFor();assert.ok((await activity.innerText()).includes('alice'));await activity.getByRole('button',{name:'关闭操作记录',exact:true}).click()
+ await a.page.getByRole('button',{name:'操作记录',exact:true}).click();const activity=a.page.getByRole('dialog',{name:'操作记录',exact:true});await activity.locator('article').first().waitFor();assert.ok((await activity.innerText()).includes('alice'));await activity.getByRole('button',{name:'关闭操作记录',exact:true}).click()
  report.cases.push({name:'trusted-actors-and-real-activity-dialog',passed:true})
  await a.page.screenshot({path:join(output,'alice.png')});await b.page.screenshot({path:join(output,'bob.png')})
  await b.context.setOffline(true);await b.label('乙维护草稿','乙冲突草稿');await b.labelPresent('乙冲突草稿');await b.page.locator('[data-status="offline"]').waitFor({timeout:20000})

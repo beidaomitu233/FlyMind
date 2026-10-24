@@ -47,3 +47,7 @@ U30提交 `3c543b6` 已在 `codex/u30-quality-release` 推送。候选4006908869
 四个对应测试文件定向27/27，无skip；PM前端vue-tsc/server tsc通过，diff检查通过。仅质量负例由y=0改为x=0以命中新版左侧层标题，原节点/标题及节点重叠硬断言保留。此结果不代替下一轮真实Actions。
 
 已取得当前线上U29的成功runtime evidence，原9项资源摘要对应Windows CRLF构建，和当前git资源按同一checkout形式比对完全一致。两新增SQL摘要仅做预测，不作服务器批准凭据；须等新候选成功JAR的原字节evidence，不能归一化已安装JAR或直接相信候选自报verified。用户已明确批准一次固定迁移清单更新，仍需可访问的服务器控制台页面；没有本机SSH或绕过root策略。
+
+第二轮 `f27e5e3`：Verify40069680727成功，候选40069691532通过本地账号浏览器gate及前7个真实协同/MCP/更新恢复场景，随后因旧“导入图形”按钮定位失败而终止，未执行数据库或生产部署。精确更新实际列表/组导入入口及各自真实目标断言，操作记录使用现有footer入口；完整cloud-ui probe12/12实际运行通过、ok:true/exit0，全部格式去重、无效JSON、丢ACK原payload重试、可信actor、同字段冲突下载恢复、删除不复活验证保留。日志 `output/u30-cloud-ui-probe.log`，报告 `output/playwright/v11-cloud-ui/report.json`。不删除门槛或改产品迁就旧脚本。
+
+用户已提供宝塔控制台页面且批准固定清单追加；已打开真实登录页并请求本人登录，当前无可用管理会话。应用发布仍走Actions，不从本机SSH，地址/登录凭据不写入本报告或仓库。
