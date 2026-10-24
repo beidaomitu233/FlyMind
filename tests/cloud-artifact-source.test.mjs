@@ -1,7 +1,7 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {candidateIdentity,validateArtifactURL,artifactFetchMetadata,readCandidateIdentity} from '../scripts/cloud-artifact-source.mjs'
-import {mkdtemp,writeFile,rm,mkdir} from 'node:fs/promises'
+import {mkdtemp,writeFile,rm,mkdir,realpath} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join,resolve} from 'node:path'
 import {createHash} from 'node:crypto'
@@ -46,7 +46,7 @@ test('official API metadata binds run/commit/digest; API credential never accomp
  assert.throws(()=>validateArtifactURL('not a URL?fixture=private'),error=>!error.message.includes('private'))
 })
 test('actual Python compact builder output is accepted by the uploader identity reader',async()=>{
- const root=await mkdtemp(join(tmpdir(),'flymind-builder-identity-'))
+ const root=await realpath(await mkdtemp(join(tmpdir(),'flymind-builder-identity-')))
  try{
   for(const [name,text,releaseId]of [['baseline','old','run-122-1'],['target','new','run-123-1']]){
    const dir=join(root,name);await mkdir(dir);await writeFile(join(dir,'main.js'),text)
