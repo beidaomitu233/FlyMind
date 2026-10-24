@@ -1,6 +1,6 @@
 # 精简部署包：复用已验基线
 
-用户于2026-10-24明确要求在全量传输失败后更换部署方式。本方案仍由Actions发布，复用既有受限上传、Java与应用晋级、数据库审核、备份和回退。当前实施中，不代表已上线。
+用户于2026-10-24明确要求在全量传输失败后更换部署方式。本方案仍由Actions发布，复用既有受限上传、Java与应用晋级、数据库审核、备份和回退。现已两次实际生产发布成功，当前 `run-40090921255-1`；完整回执、后台缓存修复和业务验收边界见[生产验收](../validation/u30-production-acceptance.md)。下文首轮源/基线为协议实例，不是后续发布的固定输入。
 
 ## 固定边界
 
@@ -76,4 +76,6 @@ PM已下载并核对旧、新Linux原始tar的SHA，流式读取原manifest及JA
 
 Actions [40085197513](https://github.com/beidaomitu233/FlyMind/actions/runs/40085197513) 已成功完成真实 Linux 原始包构建与重放：精简 tar **2,066,654字节**，为原包0.53%；9309个目标文件通过完整验证，原manifest字节不变，基线再次验证通过。证据在该run的 `compact-verification` 制品（`source-proof.json`、`build-report.json`、`roundtrip-report.json`）。这是非特权Linux还原验收；服务器静态工具安装、实际晋级与线上业务验收仍未完成。
 
-旧全量自动生产开关 `CLOUD_AUTO_PRODUCTION=false`；精简生产仍需 `CLOUD_COMPACT_ENABLED=true` 和人工dispatch的 `deploy=true`。当前push仅验证，不会自动发布；首次成功前不把此路线描述为已上线或已实现push全自动发布。
+旧全量自动生产开关 `CLOUD_AUTO_PRODUCTION=false`；精简生产使用 `CLOUD_COMPACT_ENABLED=true` 和显式dispatch的 `deploy=true`。Push只运行格式/安全回归，不对已经部署后失效的首轮固定基线重新做来源核对；dispatch必须重新通过来源、真实原始包和完整重放全部门槛。当前不会每次push自动发布。
+
+首轮生产 `40089368684` 上传2,066,654字节，181秒，Java及应用晋级均成功。缓存修复的完整候选 `40090921255` 经第二次精简发布 `40092008345` 上线：基线 `run-40071395983-1`，包1,669,712字节、94秒上传，完整目标manifest SHA `168cddd253291319662d7fb88a93e208d9740cd243cafa42153f44e51c64e67d`；最终公网ready且pendingWrites=0。第二次不需要重装服务器静态工具。

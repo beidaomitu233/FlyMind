@@ -55,6 +55,7 @@ jobs:
           python tests/install-compact-publisher.test.py
           node --test tests/compact-materializer.test.mjs tests/cloud-control-plane.test.mjs tests/cloud-deployment.test.mjs tests/cloud-artifact-source.test.mjs tests/cloud-python-extract.test.mjs
       - name: Verify immutable main source and baseline gates
+        if: github.event_name == 'workflow_dispatch'
         id: provenance
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -62,18 +63,21 @@ jobs:
           COMPACT_BASELINE_RUN: ${{ inputs.baseline_run_id || '39994902799' }}
         run: node scripts/check-compact-source.mjs
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: github.event_name == 'workflow_dispatch'
         with:
           name: flymind-linux-x64
           path: original-target
           run-id: ${{ inputs.source_run_id || '40071395983' }}
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: github.event_name == 'workflow_dispatch'
         with:
           name: flymind-linux-x64
           path: original-baseline
           run-id: ${{ inputs.baseline_run_id || '39994902799' }}
           github-token: ${{ github.token }}
       - name: Verify original archives and safely unpack
+        if: github.event_name == 'workflow_dispatch'
         run: |
           (cd original-target && sha256sum -c flymind-linux-x64.tar.gz.sha256)
           (cd original-baseline && sha256sum -c flymind-linux-x64.tar.gz.sha256)
@@ -88,10 +92,13 @@ jobs:
                   t.extractall(dest,filter='data')
           PY
       - name: Build exact-byte compact transport
+        if: github.event_name == 'workflow_dispatch'
         run: python scripts/build-compact-candidate.py --baseline baseline --target target --output compact/flymind-linux-x64.tar.gz --report compact/build-report.json
       - name: Materialize actual Linux candidate and verify the complete tree
+        if: github.event_name == 'workflow_dispatch'
         run: node scripts/verify-compact-roundtrip.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: github.event_name == 'workflow_dispatch'
         with:
           name: flymind-compact-linux-x64
           path: |
@@ -100,6 +107,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: github.event_name == 'workflow_dispatch'
         with:
           name: compact-verification
           path: compact/*.json
