@@ -45,6 +45,41 @@ export async function verifyAccountTeamOverview(request,{admin,session}){
  const overview=envelope(await request('/admin/flymind/overview?days=7',{token:admin}))
  if(overview.timezone!=='UTC'||Number(overview.days)!==7||Number(overview.users?.total)!==2||Number(overview.invites?.accepted)!==1||overview.activitySince==null||!Array.isArray(overview.trend)||overview.trend.length!==7||!overview.definitions?.activeUsers)fail('OVERVIEW_FACTS_MISMATCH')
 }
+export async function verifyRegistration(request,{password}){
+ const path='/app/flymind/auth/',codes=new Set(),ids=new Set()
+ const register=(phone,expected=200)=>request(path+'register',{method:'POST',body:{phone,password},expected})
+ const rejected=(body,code,errorCode)=>{if(body?.code!==code||body.errorCode!==errorCode)fail('REGISTRATION_ERROR_CONTRACT')}
+ const identity=(body,phone)=>{
+  appToken(body);const user=envelope(body).user
+  if(typeof user?.id!=='string'||!user.id||typeof user.name!=='string'||!user.name||user.name.includes(phone)||!/^(?=.*[A-Z])(?=.*[0-9])[A-Z0-9]{6}$/.test(user.userCode??''))fail('REGISTRATION_IDENTITY_INVALID')
+  return user
+ }
+ const personal=async(body,phone)=>{
+  const user=identity(body,phone),me=envelope(await request(path+'me',{token:'Bearer '+appToken(body)}))
+  if(me.user?.id!==user.id||me.user?.userCode!==user.userCode||!Array.isArray(me.teams)||me.teams.length!==1||me.teams[0].role!=='owner'||me.teams[0].name!=='个人空间'||!me.teams[0].id)fail('REGISTRATION_PERSONAL_SPACE_INVALID')
+  return {user,team:me.teams[0].id}
+ }
+ const remember=user=>{if(ids.has(user.id)||codes.has(user.userCode))fail('REGISTRATION_IDENTITY_REUSED');ids.add(user.id);codes.add(user.userCode)}
+ const phone='13800000101',created=await register(phone),first=await personal(created,phone);remember(first.user)
+ const loggedOut=envelope(await request(path+'logout',{method:'POST',token:'Bearer '+appToken(created)}));if(loggedOut.success!==true)fail('REGISTRATION_LOGOUT_FAILED')
+ const revoked=await request(path+'me',{token:'Bearer '+appToken(created),expected:401});if(revoked?.code!==401)fail('REGISTRATION_SESSION_NOT_REVOKED')
+ const login=await request(path+'login',{method:'POST',body:{phone,password}}),restored=await personal(login,phone)
+ if(restored.user.id!==first.user.id||restored.user.userCode!==first.user.userCode||restored.team!==first.team)fail('REGISTRATION_LOGIN_IDENTITY_CHANGED')
+ rejected(await register('13800000099',409),409,'ACCOUNT_EXISTS')
+ // Real parallel HTTP exercises MySQL's unique constraint/current-read path; it does not
+ // force both transactions to establish an identical REPEATABLE READ snapshot.
+ for(const candidate of ['13800000102','13800000103','13800000104']){
+  const results=await Promise.all([register(candidate,[200,409]),register(candidate,[200,409])])
+  const winners=results.filter(body=>body?.code===200),losers=results.filter(body=>body?.code===409)
+  if(winners.length!==1||losers.length!==1)fail('REGISTRATION_CONCURRENCY_MISMATCH')
+  rejected(losers[0],409,'ACCOUNT_EXISTS');remember((await personal(winners[0],candidate)).user)
+  rejected(await register(candidate,409),409,'ACCOUNT_EXISTS')
+ }
+ // Registration has an independent five-attempt phone budget; login uses a separate key.
+ for(let attempt=2;attempt<=5;attempt++)rejected(await register(phone,409),409,'ACCOUNT_EXISTS')
+ rejected(await register(phone,429),429,'RATE_LIMITED')
+ return {successfulRegistrations:ids.size,concurrentPairs:3,phoneLimitAttempt:6,snapshotCoordination:'parallel-http-not-forced'}
+}
 async function freePort(){const server=createServer();await new Promise((yes,no)=>{server.once('error',no);server.listen(0,'127.0.0.1',yes)});const port=server.address().port;await new Promise(yes=>server.close(yes));return port}
 async function hashFile(file){const hash=createHash('sha256');for await(const chunk of createReadStream(file))hash.update(chunk);return hash.digest('hex')}
 async function waitExit(exited,ms){return Promise.race([exited.then(()=>true),delay(ms, false,{ref:false})])}
@@ -65,7 +100,7 @@ export async function runSmoke(env=process.env){
   let spawnError=false;child.once('error',()=>{spawnError=true});exited=new Promise(yes=>child.once('close',()=>{closed=true;yes()}))
   const request=async(path,{method='GET',body,token,gatewayKey,expected=200}={})=>{
    let response;try{response=await fetch(`http://127.0.0.1:${port}${path}`,{method,redirect:'error',signal:AbortSignal.timeout(5000),headers:{...(body?{'Content-Type':'application/json'}:{}),...(token?{Authorization:token}:{}),...(gatewayKey?{'X-FlyMind-Gateway-Key':gatewayKey}:{})},body:body?JSON.stringify(body):undefined})}catch{fail('HTTP_UNAVAILABLE')}
-   if(response.status!==expected)fail('HTTP_STATUS_'+response.status)
+   if(!(Array.isArray(expected)?expected:[expected]).includes(response.status))fail('HTTP_STATUS_'+response.status)
    const text=await response.text();if(text.length>1024*1024)fail('RESPONSE_BUDGET');try{return JSON.parse(text)}catch{fail('INVALID_JSON')}
   }
   stage='packaged-readiness';let ready=false;const deadline=Date.now()+180000
@@ -76,11 +111,12 @@ export async function runSmoke(env=process.env){
   stage='create-independent-app-account';const account=envelope(await request('/admin/flymind/users',{method:'POST',token:admin,body:{phone:'13800000001',name:'CI前台账号',password:'easy12'}}));if(account.phone!=='13800000001')fail('ACCOUNT_IDENTITY_MISMATCH')
   stage='app-login';const session=appToken(await request('/app/flymind/auth/login',{method:'POST',body:{phone:'13800000001',password:'easy12'}}))
   stage='user-id-invitation-overview';await verifyAccountTeamOverview(request,{admin,session})
+  stage='anonymous-registration';const registration=await verifyRegistration(request,{password:randomBytes(18).toString('base64url')})
   stage='app-change-password';const changed=envelope(await request('/app/flymind/auth/password',{method:'POST',token:'Bearer '+session,body:{newPassword:nextPassword}}));if(changed.success!==true||changed.reauthenticate!==true)fail('PASSWORD_CHANGE_NOT_ACKNOWLEDGED')
   await request('/app/flymind/auth/me',{token:'Bearer '+session,expected:401})
   stage='app-new-password';const renewed=appToken(await request('/app/flymind/auth/login',{method:'POST',body:{phone:'13800000001',password:nextPassword}}));envelope(await request('/app/flymind/auth/me',{token:'Bearer '+renewed}))
   stage='admin-still-valid';envelope(await request('/user/info',{token:admin}));envelope(await request('/user/router',{token:admin}))
-  return {ok:true,jarSha256:sha,checks:['packaged-ready-mysql-redis','admin-login-info-router','independent-app-account','user-id-invitation-acceptance','overview-real-facts','app-password-session-revocation','admin-session-preserved']}
+  return {ok:true,jarSha256:sha,registration,checks:['packaged-ready-mysql-redis','admin-login-info-router','independent-app-account','user-id-invitation-acceptance','overview-real-facts','anonymous-registration','mysql-concurrent-registration','registration-phone-rate-limit','app-password-session-revocation','admin-session-preserved']}
  }catch(error){const code=/^[A-Z][A-Z0-9_]+$/.test(error.message??'')?error.message:'SMOKE_FAILED';throw new Error(`${stage}:${code}`)}
  finally{
   try{if(child&&!closed){child.kill('SIGTERM');if(!await waitExit(exited,25000)){child.kill('SIGKILL');if(!await waitExit(exited,5000))fail('OWNED_JAVA_DID_NOT_EXIT')}}}finally{await log.close();if(!child||closed)await rm(root,{recursive:true,force:true,maxRetries:3,retryDelay:100})}

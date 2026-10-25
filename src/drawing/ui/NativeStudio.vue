@@ -107,6 +107,7 @@ let pendingExport:{sessionKey:string;diagramId:string;input:{expectedRevision:nu
 const exportFormats=computed(()=>items.value.find(i=>i.id===currentId.value)?.mode==='canvas-only'?['png','svg','drawio','project.json'] as const:['png','svg','drawio','json','project.json'] as const)
 const exportStatus=computed(()=>exportJob.value?`r${exportJob.value.revision}${snapshot.value&&exportJob.value.revision!==snapshot.value.baseRevision?' · 历史修订':''}${snapshot.value?.dirty?' · 不含未保存编辑':''} · ${({queued:'等待导出',running:'后台生成中',succeeded:'导出完成',failed:'导出失败'})[exportJob.value.status]}`:'')
 const layoutEnabled=ref(false),orientation=ref<'vertical'|'horizontal'>('vertical'),groupMenuOpen=ref(false)
+const layoutLoading=ref(false),layoutLoadingLabel=ref('正在自动排版…')
 const layoutConfirmation=shallowRef<{sessionKey:string;orientation?:'vertical'|'horizontal'}>()
 let pendingRendering:{id:string;rendering:{relayout:true;orientation?:'vertical'|'horizontal'};expectedRevision:number;requestId:string;record?:import('../services/native-types').NativeRecord}|undefined
 async function updateOrientation(){if(!client||!session)return;const active=session;try{const record=await client.get(active.diagramId);if(active===session&&record.revision===active.snapshot().baseRevision&& !('mode' in record.document))orientation.value=record.document.rendering.preferences.orientation??'vertical'}catch(error){if(active===session)fail(error)}}
@@ -131,8 +132,35 @@ async function confirmLayout(){
 async function configureLayout(nextOrientation?:'vertical'|'horizontal'){
   if(pendingContent){message.value='请先确认当前属性修改，再自动排版。';return}
   if(!client||!session||!host.value||busy.value||!ready.value||!layoutEnabled.value)return
-  const active=session,bridge=host.value;busy.value=true;clearTimeout(timer)
-  try{await saveTask;if(!pendingRendering){await capture(true);await active.flush();pendingRendering={id:active.diagramId,rendering:{relayout:true,...(nextOrientation?{orientation:nextOrientation}:{})},expectedRevision:active.snapshot().baseRevision,requestId:crypto.randomUUID()}}const request=pendingRendering;if(request.id!==active.diagramId)throw new Error('请先确认上一图形的排版结果');request.record??=await client.configureRendering(request.id,{rendering:request.rendering,expectedRevision:request.expectedRevision,requestId:request.requestId});await bridge.mergeXML(request.record.document.rendering.engine.xml);await active.adoptCommitted(request.record,request.expectedRevision);orientation.value=request.record.document.rendering.preferences.orientation??'vertical';propertyContent.value=request.record.document.content;pendingRendering=undefined;await refreshList();message.value=''}catch(error){fail(error);if(error instanceof NativeApiError&&!error.uncertain&&!pendingRendering?.record)pendingRendering=undefined}finally{busy.value=false}
+  const active=session,bridge=host.value,key=sessionKey.value
+  const requestedOrientation=pendingRendering?.rendering.orientation??nextOrientation
+  layoutLoadingLabel.value=requestedOrientation?`正在切换为${requestedOrientation==='horizontal'?'横向':'纵向'}排版…`:'正在自动排版…'
+  busy.value=true;layoutLoading.value=true;clearTimeout(timer)
+  const stillActive=()=>!viewDisposed&&!identitySuspended.value&&active===session&&key===sessionKey.value
+  try{
+    await paintViewport()
+    if(!stillActive())return
+    await saveTask
+    if(!pendingRendering){
+      await capture(true);await active.flush()
+      if(!stillActive())return
+      pendingRendering={id:active.diagramId,rendering:{relayout:true,...(nextOrientation?{orientation:nextOrientation}:{})},expectedRevision:active.snapshot().baseRevision,requestId:crypto.randomUUID()}
+    }
+    const request=pendingRendering
+    if(request.id!==active.diagramId)throw new Error('请先确认上一图形的排版结果')
+    request.record??=await client.configureRendering(request.id,{rendering:request.rendering,expectedRevision:request.expectedRevision,requestId:request.requestId})
+    if(!stillActive())return
+    await bridge.mergeXML(request.record.document.rendering.engine.xml)
+    if(!stillActive())return
+    await active.adoptCommitted(request.record,request.expectedRevision)
+    orientation.value=request.record.document.rendering.preferences.orientation??'vertical';propertyContent.value=request.record.document.content
+    // The public load ACK precedes paint. Keep feedback over the retained frame
+    // until the new native document has had two animation frames to render.
+    await paintViewport()
+    if(!stillActive())return
+    pendingRendering=undefined;await refreshList();message.value=''
+  }catch(error){if(stillActive())fail(error);if(error instanceof NativeApiError&&!error.uncertain&&!pendingRendering?.record)pendingRendering=undefined}
+  finally{layoutLoading.value=false;busy.value=false}
 }
 async function groupSelection(ungroup=false){
   groupMenuOpen.value=false
@@ -144,6 +172,7 @@ async function groupSelection(ungroup=false){
 const status=computed(()=>{
   const s=snapshot.value
   if(viewportLoading.value)return switching.value?'正在切换':'读取中'
+  if(layoutLoading.value)return layoutLoadingLabel.value
   if(!enabled.value)return 'Native pilot 未启用'
   if(!s)return '选择或创建图形'
   if(!ready.value)return '编辑器加载中'
@@ -365,7 +394,7 @@ async function activatePrepared(next:NativeSaveSession,name:string,expectedGener
     await displayed
   }catch(error){if(!committed){viewport?.discardPrepared();await next.close().catch(()=>{})}throw error}
 }
-async function paintDisplayTarget(){
+async function paintViewport(){
   await nextTick()
   if(viewDisposed)return
   await new Promise<void>(resolve=>{
@@ -382,7 +411,7 @@ async function processOpen(){
     while(pendingOpen&&!viewDisposed){
       const target=pendingOpen,generation=transitionGeneration;pendingOpen=undefined
       try{
-        await paintDisplayTarget()
+        await paintViewport()
         if(viewDisposed||generation!==transitionGeneration)continue
         if(!validated){if(!await validateLeave())throw new Error(message.value||'已保留当前图形');validated=true}
         if(generation!==transitionGeneration)continue
@@ -514,7 +543,7 @@ onBeforeUnmount(()=>{stopCollaboration();viewDisposed=true;transitionGeneration+
     </section>
     <div class="studio-workarea"><div class="studio-canvas-area">
       <div class="studio-toolbar" :inert="props.readOnly"><button class="studio-icon" title="撤销（Ctrl+Z）" aria-label="撤销" :disabled="busy||!ready" @click="nativeAction('undo')"><Icon name="undo" :size="17"/></button><button class="studio-icon" title="重做（Ctrl+Shift+Z）" aria-label="重做" :disabled="busy||!ready" @click="nativeAction('redo')"><Icon name="redo" :size="17"/></button><i class="studio-divider"/><button v-if="displayKind" class="studio-text-btn" :disabled="busy||!ready" @click="openProperties().then(()=>addNode())"><Icon name="plus" :size="16"/>{{['architecture','technical'].includes(displayKind)?'模块':displayKind==='mindmap'?'主题':displayKind==='dataflow'?'卡片':'节点'}}</button><div class="studio-export-wrap" @click.stop><button class="studio-text-btn" :disabled="!ready||busy" @click="groupMenuOpen=!groupMenuOpen"><Icon name="group" :size="16"/>分组<Icon name="chevron" :size="12"/></button><div v-if="groupMenuOpen" class="studio-menu"><button @click="groupSelection()">分组选中元素（Ctrl+G）</button><button @click="groupSelection(true)">取消分组（Ctrl+Shift+G）</button></div></div><i class="studio-divider"/><button class="studio-text-btn" :disabled="!ready||busy" @click="nativeAction('fit')"><Icon name="layout" :size="16"/>适合画布</button><div class="studio-toolbar-end"><button v-if="displayKind" class="studio-text-btn" :disabled="!ready||busy||!layoutEnabled" @click="requestLayout()"><Icon name="layout" :size="16"/>自动排版</button><div v-if="displayKind" class="studio-direction-switch" role="group" aria-label="排版方向"><button :aria-pressed="orientation==='vertical'" title="纵向排版" :disabled="!ready||busy||!layoutEnabled||!!layoutConfirmation||!!pendingRendering" @click="requestLayout('vertical')"><Icon name="direction-vertical" :size="15"/><span>纵向</span></button><button :aria-pressed="orientation==='horizontal'" title="横向排版" :disabled="!ready||busy||!layoutEnabled||!!layoutConfirmation||!!pendingRendering" @click="requestLayout('horizontal')"><Icon name="direction-horizontal" :size="15"/><span>横向</span></button></div><button v-if="displayKind==='mindmap'" class="studio-text-btn" :disabled="busy||!ready||deletingBranch" @click="deleteCurrentBranch">删除当前分支</button><button v-if="displayMode==='canvas-only'" class="studio-text-btn" :disabled="busy||!ready" @click="openMapping">业务属性映射</button></div></div>
-      <section class="native-editor native-studio-canvas" :inert="busy||mappingOpen||(props.readOnly&&!!sessionKey)||editorSafetyPaused"><DrawioViewport ref="host" :appearance="appearance" :loading="viewportLoading" :collaboration="Boolean(props.collaborationUserId)" :session-key="sessionKey" :initial-x-m-l="initialXML" :title="title" @ready="hostReady" @history-requested="nativeAction" @xml="xml" @save-requested="requested" @error="hostError"><FlyMindWelcome :read-only="props.readOnly" :disabled="!enabled||viewportLoading||busy" @create="openNew(null)" @connect="openAgentConnect" @team="teamEntry()" /></DrawioViewport></section>
+      <section class="native-editor native-studio-canvas" :inert="(busy&&!layoutLoading)||mappingOpen||(props.readOnly&&!!sessionKey)||editorSafetyPaused"><DrawioViewport ref="host" :warmup-key="enabled&&!viewportLoading?rootId:undefined" :appearance="appearance" :loading="viewportLoading" :layout-loading="layoutLoading" :layout-loading-label="layoutLoadingLabel" :collaboration="Boolean(props.collaborationUserId)" :session-key="sessionKey" :initial-x-m-l="initialXML" :title="title" @ready="hostReady" @history-requested="nativeAction" @xml="xml" @save-requested="requested" @error="hostError"><FlyMindWelcome :read-only="props.readOnly" :disabled="!enabled||viewportLoading||busy" @create="openNew(null)" @connect="openAgentConnect" @team="teamEntry()" /></DrawioViewport></section>
     </div><aside v-if="inspectorOpen" class="studio-inspector"><div class="studio-inspector-heading"><strong>节点属性</strong><button class="studio-icon" @click="inspectorOpen=false"><Icon name="close" :size="15"/></button></div><div class="studio-inspector-content" :inert="props.readOnly"><label v-if="!viewportLoading&&currentId" class="studio-field">图形所属分组<select aria-label="图形所属分组" :value="sidebar.assignments[currentId]||''" :disabled="busy" @change="sidebar.moveToWorkspaceGroup(currentId,($event.target as HTMLSelectElement).value||null)"><option value="">未分组</option><option v-for="group in sidebar.workspaceGroups" :key="group.id" :value="group.id">{{group.name}}</option></select></label><fieldset v-if="propertyContent" class="studio-inspector-fields" :disabled="busy" :style="{visibility:viewportLoading?'hidden':undefined}"><label class="studio-field">节点<select v-model="propertyId"><option value="">选择节点</option><option v-for="node in propertyContent.nodes" :key="node.id" :value="node.id">{{node.label||node.id}}</option></select></label><template v-if="propertyNode"><label class="studio-field">文字<textarea :key="propertyNode.id" :value="propertyText('label')" @input="inputProperty('label',$event)" rows="3" @change="updateProperty('label',($event.target as HTMLTextAreaElement).value)"/></label><label class="studio-field">类型<select :value="propertyNode.kind" @change="updateProperty('kind',($event.target as HTMLSelectElement).value)"><option v-for="kind in ['architecture','technical'].includes(propertyContent.kind)?['module','note']:propertyContent.kind==='mindmap'?['topic','note']:propertyContent.kind==='dataflow'?['card','note']:['task','decision','start','end','note']" :key="kind" :value="kind">{{kind}}</option></select></label><template v-if="propertyContent.kind==='swimlane'"><label class="studio-field">所属泳道<select :value="propertyNode.laneId" @change="updateProperty('laneId',($event.target as HTMLSelectElement).value)"><option v-for="lane in propertyContent.lanes" :key="lane.id" :value="lane.id">{{lane.label}}</option></select></label><label class="studio-field">阶段<select :value="propertyNode.phaseId" @change="updateProperty('phaseId',($event.target as HTMLSelectElement).value)"><option v-for="phase in propertyContent.phases" :key="phase.id" :value="phase.id">{{phase.label}}</option></select></label></template><label v-if="['architecture','technical'].includes(propertyContent.kind)" class="studio-field">所属分组<select :value="propertyNode.groupId" @change="updateProperty('groupId',($event.target as HTMLSelectElement).value||null)"><option v-if="propertyContent.kind==='technical'" value="">不分组</option><option v-for="group in propertyContent.groups" :key="group.id" :value="group.id">{{group.label}}</option></select></label><label v-if="propertyContent.kind==='mindmap'&&propertyNode.parentId" class="studio-field">父主题<select :value="propertyNode.parentId" @change="updateProperty('parentId',($event.target as HTMLSelectElement).value)"><option v-for="node in propertyContent.nodes.filter(n=>n.id!==propertyId)" :key="node.id" :value="node.id">{{node.label}}</option></select></label><label v-if="propertyContent.kind==='architecture'" class="studio-field">模块条目<textarea :value="propertyText('items')" @input="inputProperty('items',$event)" rows="5" @change="updateProperty('items',($event.target as HTMLTextAreaElement).value.split('\n').filter(s=>s.trim()))"/></label><label v-if="propertyContent.kind==='architecture'" class="studio-field">标记<input :value="propertyText('badge')" @input="inputProperty('badge',$event)" @change="updateProperty('badge',($event.target as HTMLInputElement).value)"/></label><label v-if="propertyContent.kind==='technical'" class="studio-field">技术标识<input :value="propertyText('technology')" @input="inputProperty('technology',$event)" @change="updateProperty('technology',($event.target as HTMLInputElement).value.trim().toLowerCase()||null)" placeholder="例如 nginx、docker、mysql"/></label><label class="studio-field">说明<textarea :value="propertyText('description')" @input="inputProperty('description',$event)" @change="updateProperty('description',($event.target as HTMLTextAreaElement).value)"/></label></template><button class="studio-secondary" @click="addNode"><Icon name="plus" :size="15"/>新增{{propertyContent.kind==='mindmap'?'子主题':'节点'}}</button><button v-if="pendingContent" class="studio-secondary" @click="applyContent([])">重试同一属性修改</button></fieldset><p v-else class="studio-property-empty">选择图形元素后查看属性。<button class="studio-text-btn" :disabled="busy||viewportLoading||!ready||!displayKind" @click="openProperties">读取属性</button></p></div></aside></div>
     </main>
     <div v-if="layoutConfirmation" class="studio-overlay" @click.self="layoutConfirmation=undefined"><section class="studio-dialog studio-group-dialog" role="dialog" aria-modal="true" aria-label="确认自动排版"><div class="studio-dialog-heading"><h2>自动排版</h2><button class="studio-icon" aria-label="关闭排版确认" @click="layoutConfirmation=undefined"><Icon name="close"/></button></div><p>自动排版会调整人工位置和连线折点，保留业务内容与配色。</p><div class="studio-dialog-actions"><button class="studio-secondary" @click="layoutConfirmation=undefined">取消</button><button class="studio-primary" :disabled="busy" @click="confirmLayout">确认排版</button></div></section></div>

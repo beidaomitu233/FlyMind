@@ -5,6 +5,11 @@ export interface CloudMember {userId:string;userCode?:string;name:string;role:Cl
 export interface CloudMe {user:{id:string;userCode?:string;name:string};expiresAt:number;teams:CloudTeam[]}
 export interface CloudInvitation {status:'pending'|'accepted'|'declined'|'expired';id:string;teamId:string;teamName:string;inviterName:string;inviterCode:string;role:CloudRole;createdAt:number;expiresAt:number}
 export interface CloudConsent {client:{id:string;name:string};scopes:string[];teams:CloudTeam[];expiresAt:number}
+/** Registration only. Existing login accepts previously issued account credentials. */
+export function cloudRegistrationError(phone:string,password:string):string|undefined{
+ if(!/^1[3-9]\d{9}$/.test(phone))return '请输入11位大陆手机号'
+ if(Array.from(password).length<6||!password.trim()||new TextEncoder().encode(password).length>72)return '密码至少6位，最多72字节，无需混合大小写或符号'
+}
 export function cloudConsentTeams(consent:CloudConsent):CloudTeam[]{return consent.teams.filter(team=>!consent.scopes.includes('flymind:write')||team.role!=='viewer')}
 const id=(value:string)=>{if(!/^[a-zA-Z0-9_-]{1,100}$/.test(value))throw new Error('团队或用户标识无效');return encodeURIComponent(value)}
 const requestId=(value:string)=>{if(!/^[a-zA-Z0-9_-]{20,512}$/.test(value))throw new Error('授权请求无效');return value}
@@ -51,6 +56,7 @@ export class CloudClient {
  constructor(private readonly transport:typeof fetch=globalThis.fetch.bind(globalThis)){}
  private async request<T>(path:string,method='GET',body?:unknown):Promise<T>{const response=await this.transport('/cloud-api'+path,{method,credentials:'same-origin',redirect:'error',cache:'no-store',headers:body===undefined?{}:{'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});const value=await response.json();if(!response.ok||value.code!==200)throw new NativeApiError(value.error??value.message??'云端请求失败',response.status,value.code&&typeof value.code==='string'?value.code:'CLOUD_ERROR');return value.data as T}
  login(phone:string,password:string){return this.request('/auth/login','POST',{phone,password})}
+ register(phone:string,password:string){return this.request('/auth/register','POST',{phone,password})}
  me(){return this.request<CloudMe>('/auth/me')}
  logout(){return this.request('/auth/logout','POST')}
  changePassword(newPassword:string){return this.request<{success:boolean;reauthenticate:boolean}>('/auth/password','POST',{newPassword})}

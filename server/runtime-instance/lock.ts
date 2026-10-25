@@ -1,4 +1,4 @@
-import {mkdir,readFile,writeFile,rename,rm,stat,chmod} from 'node:fs/promises'
+import {mkdir,readFile,writeFile,rename,rm,stat,chmod,open} from 'node:fs/promises'
 import {join,resolve,sep} from 'node:path'
 import {randomUUID} from 'node:crypto'
 import {RuntimeInstanceError} from './types'
@@ -9,7 +9,20 @@ export function processAlive(pid:unknown){if(!Number.isSafeInteger(pid)||Number(
 export const lockDirectory=(config:RuntimeConfiguration)=>join(config.dataRoot,'.flymind-runtime.lock')
 export function credentialPath(config:RuntimeConfiguration,instanceId:string){if(!/^[a-f0-9-]{36}$/i.test(instanceId))throw new RuntimeInstanceError('INVALID_INSTANCE_ID','实例标识无效');return join(config.privateRuntimeRoot,config.rootPathId+'.'+instanceId+'.json')}
 export async function readOwner(config:RuntimeConfiguration):Promise<RuntimeOwner|undefined>{try{return JSON.parse(await readFile(join(lockDirectory(config),'owner.json'),'utf8'))}catch{return undefined}}
-async function atomicJSON(path:string,value:unknown){const temp=path+'.'+randomUUID()+'.tmp';await writeFile(temp,JSON.stringify(value),{mode:0o600});await rename(temp,path)}
+async function atomicJSON(path:string,value:unknown,beforeRename?:()=>Promise<void>){
+ const temp=path+'.'+randomUUID()+'.tmp',file=await open(temp,'wx',0o600)
+ try{
+  try{await file.writeFile(JSON.stringify(value))}finally{await file.close()}
+  const deadline=Date.now()+750
+  for(;;){
+   // A short Windows reader may deny replacement without denying reads. Never
+   // delete the destination to work around it, and recheck identity each time.
+   await beforeRename?.()
+   try{await rename(temp,path);return}
+   catch(error){const code=(error as NodeJS.ErrnoException).code;if(process.platform!=='win32'||!['EPERM','EACCES','EBUSY'].includes(code??'')||Date.now()>=deadline)throw error;await wait(25)}
+  }
+ }finally{await rm(temp,{force:true}).catch(()=>{})}
+}
 function same(a:RuntimeOwner|undefined,b:RuntimeOwner|undefined){return !!a&&!!b&&a.instanceId===b.instanceId&&a.nonce===b.nonce&&a.pid===b.pid}
 async function safeRemove(path:string,parent:string){if(!resolve(path).startsWith(resolve(parent)+sep))throw new RuntimeInstanceError('UNSAFE_LOCK_PATH','拒绝不在预期目录中的锁清理');await rm(path,{recursive:true,force:true})}
 async function recoverOrphanGuard(guard:string,directory:string){
@@ -43,7 +56,7 @@ async function recover(config:RuntimeConfiguration){
 }
 export class RuntimeLease {
  constructor(readonly config:RuntimeConfiguration,public owner:RuntimeOwner){}
- async update(changes:Partial<RuntimeOwner>){const current=await readOwner(this.config);if(!same(current,this.owner))throw new RuntimeInstanceError('LOCK_OWNERSHIP_CHANGED','Runtime锁已改变');const next={...this.owner,...changes};await atomicJSON(join(lockDirectory(this.config),'owner.json'),next);this.owner=next}
+ async update(changes:Partial<RuntimeOwner>){const expected=this.owner,next={...expected,...changes};await atomicJSON(join(lockDirectory(this.config),'owner.json'),next,async()=>{if(!same(await readOwner(this.config),expected))throw new RuntimeInstanceError('LOCK_OWNERSHIP_CHANGED','Runtime锁已改变')});this.owner=next}
  async release(){
   const directory=lockDirectory(this.config),moved=directory+'.release-'+this.owner.nonce,deadline=Date.now()+750
   // Windows denies directory rename while an owner file has a short-lived

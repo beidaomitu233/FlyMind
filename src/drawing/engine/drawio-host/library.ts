@@ -1,4 +1,4 @@
-import {DRAWIO_ADAPTER_VERSION} from '../constants'
+import {DRAWIO_ADAPTER_VERSION,DRAWIO_VERSION} from '../constants'
 import {RUNTIME_FONT_FAMILY,runtimeFontCSS} from '../runtime-assets'
 
 const prototypes=[
@@ -26,8 +26,10 @@ export function businessLibraryConfiguration(fontFamilies?:readonly string[]){
   }
 }
 
-export function drawioHostURL(origin:string){
-  const url=new URL('/drawio/index.html',origin)
+export function drawioHostURL(origin:string,initialXML?:string){
+  const url=new URL(`/drawio/v${DRAWIO_VERSION}/index.html`,origin)
   for(const [key,value] of Object.entries({embed:'1',proto:'json',configure:'1',offline:'1',local:'1',lang:'zh',libs:'fm-business;general',ui:'min',sidebar:'0',format:'0',saveAndExit:'0',noSaveBtn:'0',noExitBtn:'1'}))url.searchParams.set(key,value)
+  // Fixed vendor eagerly loads MathJax unless math=0; keep default for formula documents.
+  if(initialXML!==undefined&&/<mxGraphModel\b/.test(initialXML)&&!/<mxGraphModel\b[^>]*\bmath\s*=\s*["']1["']/.test(initialXML))url.searchParams.set('math','0')
   return url.href
 }

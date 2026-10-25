@@ -23,7 +23,7 @@ export async function checkRuntimeAssets(assets=resolveRuntimeAssets()){
 }
 /** Root mount: app.use(runtimeAssetsRouter()). No parent-directory fallback. */
 export function runtimeAssetsRouter(assets=resolveRuntimeAssets()){
- const router=Router();try{router.use('/drawio',drawioStaticRouter(assets.drawioRoot))}catch{throw new NativeRenderError('DRAWIO_MISSING',`${assets.drawioRoot}；运行 node scripts/setup-drawio-runtime.mjs`)}
+ const router=Router();try{router.use(`/drawio/v${DRAWIO_VERSION}`,drawioStaticRouter(assets.drawioRoot,{immutable:true}));router.use('/drawio',drawioStaticRouter(assets.drawioRoot))}catch{throw new NativeRenderError('DRAWIO_MISSING',`${assets.drawioRoot}；运行 node scripts/setup-drawio-runtime.mjs`)}
  router.get(`/runtime-assets/fonts/${RUNTIME_FONT_FILE}`,(_req,res)=>{res.setHeader('Content-Type','font/otf');res.setHeader('Cache-Control','public, max-age=31536000, immutable');res.sendFile(resolve(assets.fontRoot,RUNTIME_FONT_FILE))})
  router.get('/runtime-assets/fonts/OFL.txt',(_req,res)=>res.sendFile(resolve(assets.fontRoot,'OFL.txt')))
  return router

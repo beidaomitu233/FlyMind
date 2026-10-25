@@ -25,6 +25,8 @@ export interface DrawioHostOptions {
   readViewport?:()=>{scrollLeft:number;scrollTop:number}|Promise<{scrollLeft:number;scrollTop:number}>
   fontFamilies?:readonly string[]
   collaboration?:boolean
+  initializedEngine?:boolean
+  requireDocumentIdentity?:boolean
 }
 const object=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v)
 const bytes=(value:string)=>new TextEncoder().encode(value).byteLength
@@ -35,6 +37,8 @@ export class DrawioHostProtocolError extends Error {
 
 /** Public embed protocol only. It owns requests, not document persistence. */
 export class DrawioHostController {
+  private documentIdentity:string|undefined
+  private identity(xml:string){const n=parseNative(xml,{allowDanglingEdgeEndpoints:true});return [...n.cells.values()].map(e=>attr(e.object,'fmDocumentId')).find(Boolean)}
   private phase:'configure'|'init'|'load'|'ready'|'closed'='configure'
   private committedLoad:{id:string;xml:string}|undefined
   private captureView:{scale:number;translate:{x:number;y:number}}|undefined
@@ -46,12 +50,15 @@ export class DrawioHostController {
   private pending=new Map<string,{resolve:(xml:string)=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}>()
   private incremental=new Map<string,{action:'patch'|'resetDiff';resolve:()=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}>()
   constructor(private readonly options:DrawioHostOptions){
+    if(options.requireDocumentIdentity)this.documentIdentity=this.identity(options.initialXML)
     const origin=new URL(options.origin)
     if(origin.origin!==options.origin||!['http:','https:'].includes(origin.protocol))throw new DrawioHostProtocolError('INVALID_ORIGIN','Host 必须使用精确 HTTP origin')
     if(!options.sessionKey||options.sessionKey.length>1000||!validXML(options.initialXML))throw new DrawioHostProtocolError('INVALID_INITIAL_DOCUMENT','会话或初始 XML 无效/超过 5 MiB')
     if(options.title!==undefined&&(typeof options.title!=='string'||options.title.length>1000))throw new DrawioHostProtocolError('INVALID_TITLE','标题过长或无效')
     this.startup=setTimeout(()=>this.fail('STARTUP_TIMEOUT','原生编辑器初始化超时'),options.startupTimeoutMs??HOST_STARTUP_TIMEOUT_MS)
+    if(options.initializedEngine){this.phase='load';this.sendInitialLoad()}
   }
+  private sendInitialLoad(){this.send('load',{xml:this.options.initialXML,title:this.options.title??'',autosave:1,...(this.options.collaboration?{diffSync:true}:{})})}
   private report(code:string,message:string){this.options.onError?.({sessionKey:this.options.sessionKey,code,message})}
   private fail(code:string,message:string){this.report(code,message);this.dispose(new DrawioHostProtocolError(code,message))}
   private send(action:string,fields:Record<string,unknown>={}){
@@ -72,11 +79,12 @@ export class DrawioHostController {
     }
     if(data.event==='init'){
       if(this.phase!=='init')return
-      this.phase='load';this.send('load',{xml:this.options.initialXML,title:this.options.title??'',autosave:1,...(this.options.collaboration?{diffSync:true}:{})});return
+      this.phase='load';this.sendInitialLoad();return
     }
     if(data.event==='load'&&this.phase==='ready'&&this.committedLoad){const request=this.committedLoad;if(data.xml!==request.xml)return;const pending=this.mergePending.get(request.id);if(!pending)return;this.committedLoad=undefined;this.mergePending.delete(request.id);clearTimeout(pending.timer);pending.resolve();return}
     if(data.event==='load'){
       if(this.phase!=='load')return
+      if(this.options.initializedEngine&&data.xml!==this.options.initialXML)return
       if(!validXML(data.xml)){this.fail('INVALID_LOAD','原生加载回复缺少有效 XML');return}
       clearTimeout(this.startup);this.startup=undefined;this.phase='ready';this.options.onReady?.({sessionKey:this.options.sessionKey});return
     }
@@ -95,6 +103,7 @@ export class DrawioHostController {
     }
     if(data.event==='autosave'||data.event==='save'){
       if(!validXML(data.xml)){this.report('INVALID_XML','原生保存 XML 无效或超过 5 MiB');return}
+      if(this.options.requireDocumentIdentity){let identity:string|undefined;try{identity=this.identity(data.xml)}catch{this.report('DOCUMENT_IDENTITY_UNREADABLE','当前编辑的文档身份无法读取，尚未保存；请保留草稿并修复元数据');return}if(!identity){this.report('DOCUMENT_IDENTITY_MISSING','当前编辑缺少文档身份，尚未保存；请撤销元数据删除或保留恢复草稿');return}if(identity!==this.documentIdentity)return}
       const reason=data.event;this.options.onXML?.({sessionKey:this.options.sessionKey,xml:data.xml,reason})
       this.options.onSaveRequested?.({sessionKey:this.options.sessionKey,reason});return
     }

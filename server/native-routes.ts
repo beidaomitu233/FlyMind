@@ -72,7 +72,7 @@ export function nativeRouter(service:NativeDiagramService,exports?:NativeExportS
 }
 
 /** Serve only public, local vendor assets; never expose WAR internals or symlink escapes. */
-export function drawioStaticRouter(vendor:string){
+export function drawioStaticRouter(vendor:string,options:{immutable?:boolean}={}){
   const root=realpathSync.native(resolve(vendor)),router=Router()
   router.use((req,res,next)=>{
     try{
@@ -83,6 +83,6 @@ export function drawioStaticRouter(vendor:string){
       next()
     }catch{res.sendStatus(404)}
   })
-  router.use(express.static(root,{dotfiles:'deny',index:'index.html',fallthrough:false,redirect:true,setHeaders:res=>{res.setHeader('Cache-Control','no-cache');res.setHeader('Content-Security-Policy',"default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' data: blob:; form-action 'none'; base-uri 'self'")}}))
+  router.use(express.static(root,{dotfiles:'deny',index:'index.html',fallthrough:false,redirect:true,setHeaders:res=>{res.setHeader('Cache-Control',options.immutable?'public, max-age=31536000, immutable':'no-cache');res.setHeader('Content-Security-Policy',"default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' data: blob:; form-action 'none'; base-uri 'self'")}}))
   return router
 }

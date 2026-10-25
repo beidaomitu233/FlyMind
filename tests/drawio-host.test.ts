@@ -102,7 +102,7 @@ test('uncommitted text DOM check is conservative on read failure and tests visib
  assert.equal(hasUncommittedNativeText(()=>null),true);assert.equal(hasUncommittedNativeText(()=>{throw Error('cross-origin')}),true);assert.equal(hasUncommittedNativeText(()=>doc([])),false);const editor={isConnected:true,getClientRects:()=>[{}]};assert.equal(hasUncommittedNativeText(()=>doc([editor])),true);assert.equal(hasUncommittedNativeText(()=>doc([editor],{display:'none',visibility:'visible'})),false);assert.equal(hasUncommittedNativeText(()=>doc([{...editor,getClientRects:()=>[]}])),false)
 })
 test('inline offline library has all eight visible business labels, intent metadata and no preallocated identity',()=>{
- const config=businessLibraryConfiguration(),items=config.libraries[0].entries[0].libs[0].data;assert.equal(items.length,8);for(const [i,kind] of ['task','decision','start','end','module','topic','card','note'].entries()){assert.ok(items[i].xml.includes(`fmKind="${kind}"`));assert.ok(items[i].xml.includes('fmType="node"'));assert.ok(!items[i].xml.includes('fmId='));assert.ok(items[i].xml.includes(`label="${items[i].title}"`))}assert.ok(items[7].xml.includes('text;strokeColor=none;fillColor=none;'));assert.ok(!items[7].xml.includes('#eef0ff'));assert.equal(items[7].w,240);assert.equal(items[7].h,72);const u=new URL(drawioHostURL('http://localhost:5178'));assert.equal(u.origin,'http://localhost:5178');assert.equal(u.pathname,'/drawio/index.html');assert.equal(u.searchParams.get('offline'),'1');assert.equal(u.searchParams.get('configure'),'1')
+ const config=businessLibraryConfiguration(),items=config.libraries[0].entries[0].libs[0].data;assert.equal(items.length,8);for(const [i,kind] of ['task','decision','start','end','module','topic','card','note'].entries()){assert.ok(items[i].xml.includes(`fmKind="${kind}"`));assert.ok(items[i].xml.includes('fmType="node"'));assert.ok(!items[i].xml.includes('fmId='));assert.ok(items[i].xml.includes(`label="${items[i].title}"`))}assert.ok(items[7].xml.includes('text;strokeColor=none;fillColor=none;'));assert.ok(!items[7].xml.includes('#eef0ff'));assert.equal(items[7].w,240);assert.equal(items[7].h,72);const u=new URL(drawioHostURL('http://localhost:5178'));assert.equal(u.origin,'http://localhost:5178');assert.equal(u.pathname,'/drawio/v31.5.3/index.html');assert.equal(u.searchParams.get('offline'),'1');assert.equal(u.searchParams.get('configure'),'1')
 })
 test('invalid initial origin/document and failed load reject without ready',()=>{
  for(const extra of [{origin:'*'},{origin:'http://localhost:5178/path'},{initialXML:''},{initialXML:'中'.repeat(MAX_HOST_XML_BYTES/2)}])assert.throws(()=>setup(extra));const h=setup();h.receive({event:'configure'});h.receive({event:'init'});h.receive({event:'load',xml:null});assert.equal(h.errors.at(-1)?.code,'INVALID_LOAD');assert.equal(h.ready.length,0);h.controller.dispose()
@@ -125,5 +125,26 @@ test('native group and ungroup commit editing then capture actual XML through th
    h.receive({event:'export',format:'xml',message:last,xml:xml+'\n'});assert.equal(await p,xml+'\n')
   }
   assert.throws(()=>(h.controller as any).send('invokeAction',{actionName:'executeScript'}),{code:'ACTION_DENIED'})
+ }finally{h.controller.dispose()}
+})
+
+test('ordinary documents skip eager MathJax but mathematical documents retain native initialization',()=>{
+ assert.equal(new URL(drawioHostURL('http://localhost',xml)).searchParams.get('math'),'0')
+ assert.equal(new URL(drawioHostURL('http://localhost',xml.replace('<mxGraphModel>','<mxGraphModel math="1">'))).searchParams.has('math'),false)
+ assert.equal(new URL(drawioHostURL('http://localhost')).searchParams.has('math'),false)
+})
+
+test('warm engine load requires exact document ACK and rejects delayed autosave from its previous document',()=>{
+ const doc=(id:string)=>`<mxfile><diagram id="page"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><UserObject id="title" fmDocumentId="${id}" label="${id}"><mxCell parent="1" vertex="1"><mxGeometry width="100" height="30" as="geometry"/></mxCell></UserObject></root></mxGraphModel></diagram></mxfile>`
+ const old=doc('old'),current=doc('current'),h=setup({initialXML:current,initializedEngine:true,requireDocumentIdentity:true})
+ try{
+  assert.deepEqual(h.sent.map(m=>m.action),['load'])
+  h.receive({event:'load',xml:old});assert.equal(h.ready.length,0)
+  h.receive({event:'autosave',xml:old});assert.equal(h.xmlEvents.length,0)
+  h.receive({event:'load',xml:current});assert.equal(h.ready.length,1)
+  h.receive({event:'autosave',xml:old});assert.equal(h.xmlEvents.length,0)
+  h.receive({event:'autosave',xml:current.replace('fmDocumentId="current"','')});assert.equal(h.errors.at(-1)?.code,'DOCUMENT_IDENTITY_MISSING');assert.equal(h.xmlEvents.length,0)
+  h.receive({event:'autosave',xml:'<mxfile>'});assert.equal(h.errors.at(-1)?.code,'DOCUMENT_IDENTITY_UNREADABLE');assert.equal(h.xmlEvents.length,0)
+  h.receive({event:'autosave',xml:current});assert.equal(h.xmlEvents.length,1)
  }finally{h.controller.dispose()}
 })

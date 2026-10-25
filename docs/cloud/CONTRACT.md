@@ -32,6 +32,7 @@
 | 方法与路径 | 输入 | 输出 | 说明 |
 |---|---|---|---|
 | POST `/app/flymind/auth/login` | `{phone,password}` | `{sessionToken,expiresAt,user:{id,name}}` | 公共入口，按 IP/账号限速，错误不泄露手机号是否存在 |
+| POST `/app/flymind/auth/register` | 严格 `{phone,password}` | 同登录，含 `user.userCode` | 固定应用tenant；11位大陆手机号，密码6字符起/最多72 UTF-8字节；原子创建独立前台账号、个人空间、owner及会话。已有或保留手机号返回409 `ACCOUNT_EXISTS`，不授予后台角色 |
 | GET `/app/flymind/auth/me` | Bearer 应用令牌 | `{user:{id,name},expiresAt,teams:TeamSummary[]}` | 检查账号与会话，枚举当前有效成员团队 |
 | POST `/app/flymind/auth/logout` | 同上 | `{success:true}` | 撤销当前设备会话，其他设备不受影响 |
 | POST `/app/flymind/session/introspect` | Bearer 应用令牌；JSON `{teamId}` | 下述 TrustedContext | Node 云端 API 的身份事实来源，不信任 Node 传入 userId/role |
@@ -81,6 +82,8 @@ Node 数据根：`<FLYMIND_CLOUD_DATA_DIR>/teams/<sha256(teamId)>/`。绝不使�
 前端保持原 FlyMind 界面，仅新增登录/账号菜单/团队选择/成员面板；Java 管理端继续使用星辉组件和真实 API。生产用户体验、持久化和权限全部通过后才能声明 C01 已验收。
 
 ## C01 管理账号补充（实现切片，待完整环境验收）
+
+2026-10-25 U33 自助注册扩展：浏览器 `POST /cloud-api/auth/register` 与 Java `/app/flymind/auth/register` 分层。浏览器注册必须同源 Origin（Bearer 也不能绕过）；成功仅返回用户摘要及有效期，应用令牌由 BFF 写 HttpOnly/SameSite Cookie。注册密码不记录或缓存；未接入短信验证，不标记手机号已验证。注册不是管理员开通账号接口，不接受 `role`、`tenantId`、`userId` 或 `userCode`。当前本地实施，未发布；后续证据记录 `docs/validation/u33-registration.md`。
 
 - `GET /admin/flymind/users`：当前受控应用tenant内账号；`system:user:list`。
 - `POST /admin/flymind/users`：`{phone,name,password}`，管理员开通既有SysUser，固定服务端tenant，不接受tenantId；`system:user:add`。

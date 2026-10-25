@@ -14,6 +14,7 @@ public class FlymindController {
  private String field(Map<String,Object> body,String key){Object v=body.get(key);if(!(v instanceof String s))throw new FlymindException(400,"INVALID_INPUT","缺少必要字段");return s;}
  private void fields(Map<String,Object> body,String... keys){if(!Set.of(keys).containsAll(body.keySet()))throw new FlymindException(400,"INVALID_INPUT","包含不支持的字段");}
  @PostMapping("/auth/login") public ResponseEntity<Object> login(@RequestBody Map<String,Object> b,HttpServletRequest request){fields(b,"phone","password");return ok(service.login(field(b,"phone"),field(b,"password"),request.getRemoteAddr()));}
+ @PostMapping("/auth/register") public ResponseEntity<Object> register(@RequestBody Map<String,Object> b,HttpServletRequest request){fields(b,"phone","password");return ok(service.register(field(b,"phone"),field(b,"password"),request.getRemoteAddr()));}
  @GetMapping("/auth/me") public ResponseEntity<Object> me(@RequestHeader("Authorization")String auth){return ok(service.me(auth));}
  @PostMapping("/auth/logout") public ResponseEntity<Object> logout(@RequestHeader("Authorization")String auth){service.logout(auth);return ok(Map.of("success",true));}
  @PostMapping("/auth/password") public ResponseEntity<Object> password(@RequestHeader("Authorization")String auth,@RequestBody Map<String,Object>b){fields(b,"newPassword");service.changePassword(auth,field(b,"newPassword"));return ok(Map.of("success",true,"reauthenticate",true));}

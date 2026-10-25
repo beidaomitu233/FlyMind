@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {CloudClient,cloudDraftDatabase,cloudTeamFetch} from '../src/drawing/services/cloud-client'
+import {CloudClient,cloudDraftDatabase,cloudTeamFetch,cloudRegistrationError} from '../src/drawing/services/cloud-client'
 import {NativeClient} from '../src/drawing/services/native-client'
 import {NativeApiError} from '../src/drawing/services/native-types'
 
@@ -9,6 +9,17 @@ test('cloud authentication uses same-origin cookie without persisting or returni
  const client=new CloudClient(async(input,init)=>{calls.push({url:String(input),init});return Response.json({code:200,data:{user:{id:'u1',name:'Alice'},expiresAt:123}})})
  await client.login('13800000000','not-a-real-password')
  assert.equal(calls[0].url,'/cloud-api/auth/login');assert.equal(calls[0].init?.credentials,'same-origin');assert.equal(calls[0].init?.redirect,'error');assert.equal(new Headers(calls[0].init?.headers).has('Authorization'),false)
+})
+
+test('registration sends only phone and password using the same-origin no-store session channel',async()=>{
+ const calls:Array<{url:string;init?:RequestInit}>=[];const client=new CloudClient(async(input,init)=>{calls.push({url:String(input),init});return Response.json({code:200,data:{user:{id:'new-user'}}})})
+ await client.register('13800000000','easy12');const {url,init}=calls[0];assert.equal(url,'/cloud-api/auth/register');assert.deepEqual(JSON.parse(String(init?.body)),{phone:'13800000000',password:'easy12'});assert.equal(init?.credentials,'same-origin');assert.equal(init?.cache,'no-store');assert.equal(init?.redirect,'error');assert.equal(new Headers(init?.headers).has('Authorization'),false)
+ const failing=new CloudClient(async()=>Response.json({code:'ACCOUNT_EXISTS',error:'账号已存在'},{status:409}));await assert.rejects(()=>failing.register('13800000000','easy12'),e=>e instanceof NativeApiError&&e.code==='ACCOUNT_EXISTS')
+})
+
+test('registration validates character count and UTF8 bytes without changing existing login rules',()=>{
+ assert.equal(cloudRegistrationError('13800000000','easy12'),undefined);assert.equal(cloudRegistrationError('19900000000','中'.repeat(24)),undefined)
+ for(const [phone,password] of [['12800000000','easy12'],['1380000000','easy12'],['13800000000','12345'],['13800000000','😀😀😀'],['13800000000','      '],['13800000000','中'.repeat(25)]])assert.ok(cloudRegistrationError(phone,password))
 })
 test('draft namespaces cannot collide between users or teams; local database is separate',()=>{
  const values=[cloudDraftDatabase('u1','t1'),cloudDraftDatabase('u1','t2'),cloudDraftDatabase('u2','t1'),cloudDraftDatabase('u:1','t1'),cloudDraftDatabase('u','1:t1')]

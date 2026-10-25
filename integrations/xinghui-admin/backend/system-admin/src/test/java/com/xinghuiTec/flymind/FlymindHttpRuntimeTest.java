@@ -56,7 +56,7 @@ class FlymindHttpRuntimeTest {
   java.nio.file.Path root=java.nio.file.Path.of(System.getProperty("user.dir")).toAbsolutePath();
   while(root!=null&&!java.nio.file.Files.isRegularFile(root.resolve("tests/fixtures/u30-ui-harness.mjs")))root=root.getParent();
   assertNotNull(root,"Product root not found");
-  var output=root.resolve("output/u30-ui-private");java.nio.file.Files.createDirectory(output);ownerOnly(output);
+  var output=root.resolve(System.getProperty("flymind.uiHarnessOutput","output/u30-ui-private")).normalize();assertTrue(output.startsWith(root.resolve("output"))&&!output.equals(root.resolve("output")),"Harness output must be a new directory within product output");java.nio.file.Files.createDirectory(output);ownerOnly(output);
   for(String column:List.of("email VARCHAR(50)","avatar VARCHAR(200)","login_ip VARCHAR(128)","login_date TIMESTAMP","create_time TIMESTAMP","update_time TIMESTAMP","create_by VARCHAR(64)","update_by VARCHAR(64)"))db.execute("ALTER TABLE sys_user ADD "+column);
   db.execute("CREATE TABLE sys_role(role_id BIGINT PRIMARY KEY,tenant_id VARCHAR(20),role_name VARCHAR(30),role_key VARCHAR(50),data_scope CHAR(1),status INT,is_deleted INT,create_time TIMESTAMP,update_time TIMESTAMP,create_by VARCHAR(64),update_by VARCHAR(64))");
   db.execute("CREATE TABLE sys_user_role(user_id BIGINT,role_id BIGINT,PRIMARY KEY(user_id,role_id))");db.execute("CREATE TABLE sys_role_menu(role_id BIGINT,menu_id BIGINT,PRIMARY KEY(role_id,menu_id))");
@@ -138,6 +138,18 @@ class FlymindHttpRuntimeTest {
   assertEquals(200,send("POST","/app/flymind/auth/login",null,Map.of("phone","13800000001","password","easy12"),false).status());
   verify(cache,never()).deleteObject(RedisConstants.ADMIN_LOGIN_PREFIX+"1");
  }
+ @Test void anonymousRegistrationRealHttpRoundtripAndExactWhitelist()throws Exception {
+  var result=app("POST","/auth/register",null,Map.of("phone","13800000011","password","easy12"));assertEquals(200,result.status());
+  var data=result.body().path("data");String token="Bearer "+data.path("sessionToken").asText(),id=data.path("user").path("id").asText();
+  assertTrue(data.path("sessionToken").asText().matches("[A-Za-z0-9_-]{43}"));assertTrue(data.path("user").path("userCode").asText().matches("(?=.*[A-Z])(?=.*[0-9])[A-Z0-9]{6}"));assertFalse(data.path("user").path("name").asText().contains("13800000011"));
+  var me=app("GET","/auth/me",token,null);assertEquals(200,me.status());assertEquals(id,me.body().path("data").path("user").path("id").asText());assertEquals("owner",me.body().path("data").path("teams").get(0).path("role").asText());
+  assertEquals(409,app("POST","/auth/register",null,Map.of("phone","13800000011","password","easy12")).status());
+  assertEquals(400,app("POST","/auth/register",null,Map.of("phone","13800000012","password","easy12","role","admin")).status());
+  assertEquals(401,app("GET","/auth/register",null,null).status());assertEquals(401,app("POST","/auth/register/",null,Map.of("phone","13800000012","password","easy12")).status());
+  assertEquals(401,send("GET","/admin/flymind/teams",token,null,false).status());
+  assertEquals(200,app("POST","/auth/logout",token,Map.of()).status());assertEquals(401,app("GET","/auth/me",token,null).status());
+  assertEquals(200,app("POST","/auth/login",null,Map.of("phone","13800000011","password","easy12")).status());
+ }
  @Test void actualAdminLoginInfoAndRoutesRejectFrontendOnlyAccountAndRepairRelationTenantSql()throws Exception {
   for(String column:List.of("email VARCHAR(50)","avatar VARCHAR(200)","login_ip VARCHAR(128)","login_date TIMESTAMP","create_time TIMESTAMP","update_time TIMESTAMP","create_by VARCHAR(64)","update_by VARCHAR(64)"))db.execute("ALTER TABLE sys_user ADD "+column);
   db.execute("CREATE TABLE sys_role(role_id BIGINT PRIMARY KEY,tenant_id VARCHAR(20),role_name VARCHAR(30),role_key VARCHAR(50),data_scope CHAR(1),status INT,is_deleted INT,create_time TIMESTAMP,update_time TIMESTAMP,create_by VARCHAR(64),update_by VARCHAR(64))");
@@ -166,6 +178,9 @@ class FlymindHttpRuntimeTest {
    var routes=send("GET","/user/router",jwt,null,false);assertEquals(200,routes.body().path("code").asInt());assertEquals(1,routes.body().path("data").size());
    assertNotEquals(200,send("POST","/user/login",null,Map.of("phone","13800000002","password",PASSWORD),false).body().path("code").asInt());
    assertEquals(200,send("POST","/app/flymind/auth/login",null,Map.of("phone","13800000002","password",PASSWORD),false).status());
+   var registered=app("POST","/auth/register",null,Map.of("phone","13800000003","password","easy12"));assertEquals(200,registered.status());String registeredId=registered.body().path("data").path("user").path("id").asText();
+   assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM sys_user_role WHERE user_id=?",Integer.class,registeredId));
+   assertNotEquals(200,send("POST","/user/login",null,Map.of("phone","13800000003","password","easy12"),false).body().path("code").asInt());
   } finally {tenantProperties.setExcludes(fixed);}
  }
  @Test void oauthConsentPkceAndRefreshReplayOverHttp()throws Exception {

@@ -44,12 +44,36 @@ public class FlymindIdentityService {
  private String raw(String bearer){if(bearer==null||!bearer.matches("Bearer [A-Za-z0-9_-]{43}"))throw unauthorized();return bearer.substring(7);}
  private record Account(String id,String name,String password){}
  private List<Account> account(String phone,boolean lock){return db.query("SELECT u.user_id,COALESCE(NULLIF(u.nickname,''),u.username) AS display_name,a.password FROM sys_user u JOIN app_flymind_account a ON a.user_id=u.user_id WHERE u.mobile=? AND u.tenant_id=? AND a.status=1 AND u.is_deleted=0"+(lock?" FOR UPDATE":""),(r,n)->new Account(r.getString("user_id"),r.getString("display_name"),r.getString("password")),phone,tenant);}
+ /** Creates an independent app identity, never reusing a retained user or assigning admin roles. */
+ public Login register(String phone,String password,String ip){
+  if(phone==null||!phone.matches("1[3-9][0-9]{9}"))throw bad();
+  FlymindAppAccounts.validatePassword(password);
+  limiter.checkRegistration(ip==null?"unknown":ip,phone);
+  if(db.queryForObject("SELECT COUNT(*) FROM sys_user WHERE tenant_id=? AND mobile=?",Integer.class,tenant,phone)>0)
+   throw new FlymindException(409,"ACCOUNT_EXISTS","该手机号已注册或保留，请登录或联系管理员");
+  String uid=Long.toString(new SecureRandom().nextLong(1,Long.MAX_VALUE)),displayName="FlyMind用户";
+  try{
+   db.update("INSERT INTO sys_user(user_id,tenant_id,username,nickname,password,mobile,status,is_deleted) VALUES(?,?,?,?,?,?,1,0)",uid,tenant,"fm_"+uid,displayName,passwords.encode(token()),phone);
+  }catch(org.springframework.dao.DuplicateKeyException duplicate){
+   // Current read sees the winner after a unique-index wait, even with a prior
+   // REPEATABLE READ snapshot. Do not add a gap lock to the initial existence check.
+   if(!db.query("SELECT user_id FROM sys_user WHERE tenant_id=? AND mobile=? FOR UPDATE",(r,n)->r.getString(1),tenant,phone).isEmpty())
+    throw new FlymindException(409,"ACCOUNT_EXISTS","该手机号已注册或保留，请登录或联系管理员");
+   throw new FlymindException(503,"IDENTITY_UNAVAILABLE","暂时无法创建账号，请稍后重试");
+  }
+  long now=clock.getAsLong();String encoded=passwords.encode(password);
+  db.update("INSERT INTO app_flymind_account(user_id,password,status,created_at,updated_at) VALUES(?,?,1,?,?)",uid,encoded,now,now);
+  return completeLogin(new Account(uid,displayName,encoded));
+ }
  public Login login(String phone,String password,String ip){
   if(phone==null||password==null||phone.length()>32||password.getBytes(StandardCharsets.UTF_8).length>72)throw new FlymindException(401,"INVALID_CREDENTIALS","手机号或密码错误");
   limiter.check(ip==null?"unknown":ip,phone);
   List<Account> rows=account(phone,true);Account a=rows.size()==1?rows.get(0):null;
   if(!passwords.matches(password,a==null?dummyPassword:a.password()))throw new FlymindException(401,"INVALID_CREDENTIALS","手机号或密码错误");
   if(a==null)throw new FlymindException(401,"INVALID_CREDENTIALS","手机号或密码错误");
+  return completeLogin(a);
+ }
+ private Login completeLogin(Account a){
   if(db.queryForObject("SELECT COUNT(*) FROM app_flymind_team WHERE personal_user_id=?",Integer.class,a.id())==0){String teamId=id();db.update("INSERT INTO app_flymind_team(id,name,type,personal_user_id,status,created_at) VALUES(?,?,'personal',?,1,?)",teamId,"个人空间",a.id(),clock.getAsLong());db.update("INSERT INTO app_flymind_member(team_id,user_id,role,created_at) VALUES(?,?,'owner',?)",teamId,a.id(),clock.getAsLong());}
   String plain=token(),sid=id();long now=clock.getAsLong(),expires=now+7L*24*60*60*1000;
   db.update("INSERT INTO app_flymind_session(id,user_id,token_hash,created_at,expires_at) VALUES(?,?,?,?,?)",sid,a.id(),hash(plain),now,expires);

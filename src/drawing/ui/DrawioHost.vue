@@ -7,8 +7,8 @@ import {hasUncommittedNativeText} from '../engine/drawio-host/editing'
 
 const props=defineProps<{sessionKey:string;initialXML:string;title?:string;appearance?:DrawioAppearance;collaboration?:boolean}>()
 const emit=defineEmits<{ready:[event:HostReady];xml:[event:HostXML];error:[event:HostError];saveRequested:[event:HostSaveRequested];historyRequested:[action:'undo'|'redo']}>()
-// Initial document is immutable for this mounted session. Saving never reloads it.
-const initial={sessionKey:props.sessionKey,initialXML:props.initialXML,title:props.title}
+// Each binding is immutable until explicit same-workspace loadDocument. Saving never reloads it.
+let initial={sessionKey:props.sessionKey,initialXML:props.initialXML,title:props.title}
 const iframe=ref<HTMLIFrameElement>(),src=ref<string>(),visible=ref(false),loadFailed=ref(false),attempt=ref(0)
 let disposed=false,paintFrame:number|undefined,paintGeneration=0
 function cancelReveal(){paintGeneration++;if(paintFrame!==undefined)cancelAnimationFrame(paintFrame);paintFrame=undefined}
@@ -31,15 +31,15 @@ function reveal(event:HostReady){
 let controller:DrawioHostController|undefined
 const receive=(event:MessageEvent)=>controller?.handle(event)
 const report=(error:unknown)=>{if(!visible.value)loadFailed.value=true;emit('error',{sessionKey:initial.sessionKey,code:error instanceof DrawioHostProtocolError?error.code:'HOST_ERROR',message:error instanceof Error?error.message:String(error)})}
-function boot(){
+function boot(initializedEngine=false){
   if(disposed)return
   visible.value=false;loadFailed.value=false;cancelReveal()
   try{
-    controller=new DrawioHostController({...initial,collaboration:props.collaboration,origin:window.location.origin,source:()=>iframe.value?.contentWindow,
+    controller=new DrawioHostController({...initial,initializedEngine,requireDocumentIdentity:initial.initialXML.includes('fmDocumentId='),collaboration:props.collaboration,origin:window.location.origin,source:()=>iframe.value?.contentWindow,
       post:(data,origin)=>{if(!iframe.value?.contentWindow)throw new Error('编辑器窗口不存在');iframe.value.contentWindow.postMessage(data,origin)},
       readViewport:()=>{const el=iframe.value?.contentDocument?.querySelector('.geDiagramContainer');if(!el||!Number.isFinite(el.scrollLeft)||!Number.isFinite(el.scrollTop))throw new DrawioHostProtocolError('VIEWPORT_UNAVAILABLE','当前画布不可读');return {scrollLeft:el.scrollLeft,scrollTop:el.scrollTop}},
       onReady:reveal,onXML:e=>emit('xml',e),onError:e=>{if(!visible.value){cancelReveal();loadFailed.value=true}emit('error',e)},onSaveRequested:e=>emit('saveRequested',e)})
-    window.addEventListener('message',receive);const url=new URL(drawioHostURL(window.location.origin));url.searchParams.set('tooltips','0');url.searchParams.set('dark','0');src.value=url.href
+    window.addEventListener('message',receive);if(initializedEngine)return;const url=new URL(drawioHostURL(window.location.origin,initial.initialXML));url.searchParams.set('tooltips','0');url.searchParams.set('dark','0');src.value=url.href
   }catch(error){report(error)}
 }
 onMounted(()=>{window.addEventListener('pointerup',pointerUp,true);boot()})
@@ -47,8 +47,12 @@ async function retryLoad(){if(disposed)return;cancelReveal();controller?.dispose
 watch(()=>props.appearance,applyAppearance)
 watch(()=>props.sessionKey,key=>{if(key!==initial.sessionKey){cancelReveal();visible.value=false;controller?.dispose();report(new DrawioHostProtocolError('SESSION_CHANGED','切图须以 sessionKey 作为组件 key 重新挂载'))}})
 onBeforeUnmount(()=>{disposed=true;detachDocument();window.removeEventListener('pointerup',pointerUp,true);cancelReveal();window.removeEventListener('message',receive);controller?.dispose();controller=undefined})
+async function loadDocument(input:{sessionKey:string;initialXML:string;title?:string}){
+  if(!visible.value||disposed)throw new DrawioHostProtocolError('NOT_READY','引擎尚未就绪')
+  cancelReveal();controller?.dispose();controller=undefined;initial={...input,title:input.title};boot(true)
+}
 const requireController=()=>{if(!controller)throw new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪');return controller}
-defineExpose({groupSelection:(ungroup=false)=>requireController().groupSelection(ungroup),getSelection:()=>requireController().getSelection(),mergeXML:(xml:string)=>requireController().mergeXML(xml),undo:()=>requireController().undo(),redo:()=>requireController().redo(),deleteSelectedBranch:()=>controller?controller.deleteSelectedBranch():Promise.reject(new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪')),captureXML:()=>controller?.captureXML()??Promise.reject(new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪')),
+defineExpose({loadDocument,groupSelection:(ungroup=false)=>requireController().groupSelection(ungroup),getSelection:()=>requireController().getSelection(),mergeXML:(xml:string)=>requireController().mergeXML(xml),undo:()=>requireController().undo(),redo:()=>requireController().redo(),deleteSelectedBranch:()=>controller?controller.deleteSelectedBranch():Promise.reject(new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪')),captureXML:()=>controller?.captureXML()??Promise.reject(new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪')),
   applyRemoteXML:(fromXML:string,toXML:string)=>requireController().applyRemoteXML(fromXML,toXML),
   commitAndCaptureXML:()=>controller?.commitAndCaptureXML()??Promise.reject(new DrawioHostProtocolError('NOT_READY','编辑器尚未就绪')),
   hasUncommittedText:()=>hasUncommittedNativeText(()=>iframe.value?.contentDocument??null),

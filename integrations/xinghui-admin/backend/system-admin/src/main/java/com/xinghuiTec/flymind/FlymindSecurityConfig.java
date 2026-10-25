@@ -22,7 +22,7 @@ public class FlymindSecurityConfig {
   OncePerRequestFilter opaque=new OncePerRequestFilter(){
    @Override protected void doFilterInternal(HttpServletRequest req,HttpServletResponse res,FilterChain chain)throws ServletException,IOException {
     res.setHeader("Cache-Control","no-store");
-    try {if(!("POST".equals(req.getMethod())&&(req.getContextPath()+"/app/flymind/auth/login").equals(req.getRequestURI())))service.authenticate(req.getHeader("Authorization"));}
+    try {if(!("POST".equals(req.getMethod())&&((req.getContextPath()+"/app/flymind/auth/login").equals(req.getRequestURI())||(req.getContextPath()+"/app/flymind/auth/register").equals(req.getRequestURI()))))service.authenticate(req.getHeader("Authorization"));}
     catch(FlymindException error){res.setStatus(error.status);res.setContentType("application/json;charset=UTF-8");json.writeValue(res.getWriter(),Map.of("code",error.status,"errorCode",error.code,"message",error.getMessage()));return;}
     catch(org.springframework.dao.DataAccessException error){res.setStatus(503);res.setContentType("application/json;charset=UTF-8");json.writeValue(res.getWriter(),Map.of("code",503,"errorCode","IDENTITY_UNAVAILABLE","message","身份服务暂时不可用"));return;}
     chain.doFilter(req,res);

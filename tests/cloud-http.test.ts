@@ -29,6 +29,13 @@ async function setup(renderer?:NativeExportRenderer,maxQueuedTeams=4,identity?:i
   calls.push({path:req.url!,token,body});res.setHeader('Content-Type','application/json')
   const reply=(status:number,data:unknown)=>{res.statusCode=status;res.end(JSON.stringify(status===200?{code:200,message:'ok',data}:{code:status,errorCode:status===401?'LOGIN_REQUIRED':'TEAM_ACCESS_DENIED',message:'拒绝访问'}))}
   if(req.url==='/app/flymind/auth/login'){if(body.password!=='test-password'||body.phone!=='alice')return reply(401,{});return reply(200,{sessionToken:tokens.alice,expiresAt:Date.now()+3600000,user:{id:'alice',name:'Alice'}})}
+  if(req.url==='/app/flymind/auth/register'){
+   assert.deepEqual(Object.keys(body).sort(),['password','phone']);assert.equal(token,'')
+   if(body.phone==='13800000001'){res.statusCode=409;return res.end(JSON.stringify({code:409,errorCode:'ACCOUNT_EXISTS',message:'账号已存在'}))}
+   if(body.phone==='13800000002')return reply(200,{sessionToken:'invalid',expiresAt:Date.now()+3600000,user:{id:'bob',name:'Bob'}})
+   if(body.phone==='13800000003')return reply(503,{})
+   return reply(200,{sessionToken:tokens.bob,expiresAt:String(Date.now()+3600000),user:{id:'bob',name:'Bob'}})
+  }
   if(!user||revoked.has(token))return reply(401,{})
   if(req.url==='/app/flymind/auth/me')return reply(200,{user:{id:user,name:user},expiresAt:Date.now()+3600000,teams:[{id:'team-a',name:'A',role:user==='viewer'?'viewer':'editor'}]})
   if(req.url==='/app/flymind/auth/logout'){revoked.add(token);return reply(200,{success:true})}
@@ -41,9 +48,9 @@ async function setup(renderer?:NativeExportRenderer,maxQueuedTeams=4,identity?:i
   return reply(404,{})
  })
  const controlPlaneURL=await listen(authority),cloud=createCloudHTTP({controlPlaneURL,publicOrigin:'http://localhost',cloudDataRoot:join(root,'data'),allowInsecureLoopback:true,renderer:renderer??{render:async()=>{throw Error('Unexpected render')},close:async()=>{}},serveAssets:false,maxOpenTeams:4,maxQueuedTeams,identity}),http=createServer(cloud.app),base=await listen(http)
- async function request(path:string,options:{method?:string;body?:unknown;token?:string;rootId?:string;cookie?:string;origin?:string|null;host?:string;userId?:string|null}={}){
+ async function request(path:string,options:{method?:string;body?:unknown;rawBody?:string;contentType?:string;token?:string;rootId?:string;cookie?:string;origin?:string|null;host?:string;userId?:string|null}={}){
   const cookieUser=Object.entries(tokens).find(([,value])=>options.cookie?.endsWith('='+value))?.[0],expectedUser=options.userId===null?undefined:options.userId??cookieUser
-  const headers:Record<string,string>={Host:options.host??'localhost',...(options.origin===null?{}:{Origin:options.origin??'http://localhost'}),...(options.token?{Authorization:'Bearer '+options.token}:{}),...(options.cookie?{Cookie:options.cookie}:{}),...(expectedUser?{'X-FlyMind-User-Id':expectedUser}:{}),...(options.rootId?{'X-FlyMind-DataRoot-Id':options.rootId}:{}),...(options.body===undefined?{}:{'Content-Type':'application/json'})}
+  const headers:Record<string,string>={Host:options.host??'localhost',...(options.origin===null?{}:{Origin:options.origin??'http://localhost'}),...(options.token?{Authorization:'Bearer '+options.token}:{}),...(options.cookie?{Cookie:options.cookie}:{}),...(expectedUser?{'X-FlyMind-User-Id':expectedUser}:{}),...(options.rootId?{'X-FlyMind-DataRoot-Id':options.rootId}:{}),...(options.body===undefined&&options.rawBody===undefined?{}:{'Content-Type':options.contentType??'application/json'})}
   // Every fixture request owns its connection. Native font packaging can block
   // this same event loop across keep-alive expiry; don't reuse a stale global
   // Agent socket between these short-lived loopback servers or retry a write.
@@ -54,7 +61,7 @@ async function setup(renderer?:NativeExportRenderer,maxQueuedTeams=4,identity?:i
     const chunks:Buffer[]=[];response.on('data',chunk=>chunks.push(chunk));response.on('error',fail)
     response.once('aborted',()=>fail(new Error('Response aborted before completion')))
     response.once('end',()=>{const h=new Headers();for(const [key,value] of Object.entries(response.headers))if(value!==undefined)for(const v of Array.isArray(value)?value:[value])h.append(key,v);yes(new Response(Buffer.concat(chunks),{status:response.statusCode,headers:h}))})
-   });request.once('error',fail);request.end(options.body===undefined?undefined:JSON.stringify(options.body))
+   });request.once('error',fail);request.end(options.rawBody??(options.body===undefined?undefined:JSON.stringify(options.body)))
   })
  }
  const team=(id:string,path:string)=>'/cloud-api/teams/'+id+'/studio-api'+path
@@ -62,6 +69,30 @@ async function setup(renderer?:NativeExportRenderer,maxQueuedTeams=4,identity?:i
  async function close(){await stop(http);await cloud.close();await stop(authority);assert.ok(resolve(root).startsWith(resolve(tmpdir())+sep)&&root.includes('flymind-cloud-http-'));await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100})}
  return {root,cloud,request,team,health,close,calls,revoked,base}
 }
+
+test('cloud registration requires exact same origin even with Bearer and validates strict bounded input before forwarding',async()=>{
+ const s=await setup();try{
+  const path='/cloud-api/auth/register',body={phone:'13800000000',password:'easy12'}
+  for(const options of [{origin:null},{origin:null,token:tokens.alice},{origin:'https://attacker.invalid'},{host:'attacker.invalid'}]){const r=await s.request(path,{method:'POST',body,...options});assert.equal(r.status,403);assert.equal(r.headers.get('set-cookie'),null)}
+  for(const variant of [path+'/', '/cloud-api/auth/REGISTER'])for(const origin of [null,'https://attacker.invalid']){const r=await s.request(variant,{method:'POST',body,token:tokens.alice,origin});assert.equal(r.status,403);assert.equal(r.headers.get('set-cookie'),null)}
+  for(const invalid of [{...body,phone:'alice'},{...body,phone:'12800000000'},{...body,password:'12345'},{...body,password:'😀😀😀'},{...body,password:' '.repeat(6)},{...body,password:'中'.repeat(25)},{...body,tenantId:1},{phone:body.phone},[body]]){const r=await s.request(path,{method:'POST',body:invalid});assert.equal(r.status,400);assert.equal(r.headers.get('set-cookie'),null)}
+  let r=await s.request(path,{method:'POST',rawBody:' '.repeat(1024)+JSON.stringify(body)});assert.equal(r.status,413)
+  r=await s.request(path,{method:'POST',rawBody:'{'});assert.equal(r.status,400)
+  r=await s.request(path,{method:'POST',body,contentType:'text/plain'});assert.equal(r.status,415)
+  assert.equal(s.calls.length,0)
+  r=await s.request(path,{method:'POST',body:{...body,password:'中'.repeat(24)}});assert.equal(r.status,200);assert.equal(r.headers.get('cache-control'),'no-store');const result=await r.json();assert.equal(result.data.user.id,'bob');assert.equal('sessionToken'in result.data,false);assert.ok(!JSON.stringify(result).includes(tokens.bob));assert.match(r.headers.get('set-cookie')!,/HttpOnly/);assert.match(r.headers.get('set-cookie')!,/SameSite=Strict/)
+  const cookie=r.headers.get('set-cookie')!.split(';')[0];r=await s.request('/cloud-api/auth/me',{cookie});assert.equal(r.status,200);assert.equal((await r.json()).data.user.id,'bob')
+  for(const variant of [path+'/', '/cloud-api/auth/REGISTER']){r=await s.request(variant,{method:'POST',body,token:tokens.alice});assert.equal(r.status,200);assert.match(r.headers.get('set-cookie')!,/HttpOnly/)}
+ }finally{await s.close()}
+})
+
+test('cloud registration failure or invalid authority response preserves the existing cookie and error code',async()=>{
+ const s=await setup();try{
+  const cookie='fm_cloud_session='+tokens.alice
+  for(const [phone,status] of [['13800000001',409],['13800000002',503],['13800000003',503]] as const){const r=await s.request('/cloud-api/auth/register',{method:'POST',cookie,body:{phone,password:'easy12'}});assert.equal(r.status,status);assert.equal(r.headers.get('set-cookie'),null);assert.equal(r.headers.get('cache-control'),'no-store');if(status===409)assert.equal((await r.json()).code,'ACCOUNT_EXISTS')}
+  const r=await s.request('/cloud-api/auth/me',{cookie});assert.equal(r.status,200);assert.equal((await r.json()).data.user.id,'alice')
+ }finally{await s.close()}
+})
 
 test('front-end password proxy requires identity and origin, rejects legacy extra fields, and clears it after revocation',async()=>{
  const s=await setup();try{

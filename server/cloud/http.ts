@@ -81,8 +81,15 @@ export function createCloudHTTP(options:CloudHTTPOptions){
   const origin=req.get('Origin');if(!publicOAuth&&(origin&&origin!==publicURL.origin||req.get('Sec-Fetch-Site')==='cross-site')){errorResponse(res,new CloudAccessError(403,'ORIGIN_FORBIDDEN','来源不允许'));return}
   const bearer=req.get('Authorization')?.startsWith('Bearer ')
   const hasCookie=(req.get('Cookie')??'').split(';').some(s=>s.trim().startsWith(cookieName+'='))
-  if(!publicOAuth&&!['GET','HEAD','OPTIONS'].includes(req.method)&&!origin&&(!bearer||hasCookie||req.path==='/cloud-api/auth/login')){errorResponse(res,new CloudAccessError(403,'ORIGIN_REQUIRED','浏览器写入需要同源Origin'));return}
+  if(!publicOAuth&&!['GET','HEAD','OPTIONS'].includes(req.method)&&!origin&&(!bearer||hasCookie||['/cloud-api/auth/login','/cloud-api/auth/register'].includes(req.path))){errorResponse(res,new CloudAccessError(403,'ORIGIN_REQUIRED','浏览器写入需要同源Origin'));return}
   next()
+ })
+ app.post('/cloud-api/auth/register',(req,res,next)=>{
+  // Express also matches case variants and an optional trailing slash. Enforce
+  // the browser boundary here, independently of the global exact-path check.
+  if(req.get('Origin')!==publicURL.origin){errorResponse(res,new CloudAccessError(403,'ORIGIN_FORBIDDEN','注册需要同源Origin'));return}
+  if(!req.is('application/json')){errorResponse(res,new CloudAccessError(415,'INVALID_CONTENT_TYPE','注册请求需要 JSON'));return}
+  express.json({limit:1024})(req,res,error=>{if(error){errorResponse(res,new CloudAccessError((error as {status?:number}).status===413?413:400,'INVALID_REGISTRATION','注册请求格式或大小无效'));return}next()})
  })
  app.use(express.json({limit:'4mb'}))
  app.get('/healthz',(_req,res)=>res.json({status:'running'}))
@@ -129,6 +136,7 @@ export function createCloudHTTP(options:CloudHTTPOptions){
   res.json(value)
  }
  app.post('/cloud-api/auth/login',async(req,res)=>{const b=req.body;if(!b||Object.keys(b).some(k=>!['phone','password'].includes(k))||typeof b.phone!=='string'||b.phone.length>32||!b.phone.length||typeof b.password!=='string'||!b.password.length||b.password.length>200)throw new CloudAccessError(400,'INVALID_LOGIN','手机号或密码格式无效');await proxy(req,res,'/app/flymind/auth/login',true)})
+ app.post('/cloud-api/auth/register',async(req,res)=>{const b=req.body;if(!b||Array.isArray(b)||Object.keys(b).length!==2||Object.keys(b).some(k=>!['phone','password'].includes(k))||typeof b.phone!=='string'||!/^1[3-9]\d{9}$/.test(b.phone)||typeof b.password!=='string'||Array.from(b.password).length<6||!b.password.trim()||Buffer.byteLength(b.password,'utf8')>72)throw new CloudAccessError(400,'INVALID_REGISTRATION','请输入11位大陆手机号；密码至少6位，最多72字节');await proxy(req,res,'/app/flymind/auth/register',true)})
  app.get('/cloud-api/auth/me',(req,res)=>proxy(req,res,'/app/flymind/auth/me'))
  app.post('/cloud-api/auth/logout',(req,res)=>proxy(req,res,'/app/flymind/auth/logout'))
  app.post('/cloud-api/auth/password',async(req,res)=>{const b=req.body;if(!b||Array.isArray(b)||Object.keys(b).length!==1||typeof b.newPassword!=='string'||Array.from(b.newPassword).length<6||!b.newPassword.trim()||Buffer.byteLength(b.newPassword,'utf8')>72)throw new CloudAccessError(400,'INVALID_INPUT','新密码至少6位，最多72字节，无需混合大小写或符号');await proxy(req,res,'/app/flymind/auth/password')})

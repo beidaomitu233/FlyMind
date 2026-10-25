@@ -19,6 +19,62 @@ import {createServer} from 'node:net'
 import {prepareNativeRuntime} from '../server/runtime-instance/boot'
 async function temporary(){const root=await mkdtemp(join(tmpdir(),'flymind-instance-unit-'));return {root,config:runtimeConfiguration({dataRoot:join(root,'data'),privateRuntimeRoot:join(root,'private'),port:0,env:{FLYMIND_CONTROL_PLANE_ORIGIN:'https://runtime-test-authority.invalid',FLYMIND_NATIVE_PILOT:'1'}})}}
 async function cleanup(root:string){assert.ok(resolve(root).startsWith(resolve(tmpdir())+sep)&&root.includes('flymind-instance-unit-'));await rm(root,{recursive:true,force:true})}
+
+/** Real Windows handle: readers/writers allowed, atomic replacement denied. */
+async function holdOwnerFile(root:string,path:string){
+ const signal=join(root,'update-owner-held.txt'),released=join(root,'update-owner-released.txt')
+ const script="$stream = [System.IO.File]::Open($env:FLYMIND_TEST_OWNER, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)\ntry { [System.IO.File]::WriteAllText($env:FLYMIND_TEST_SIGNAL, 'held'); [Console]::ReadLine() | Out-Null } finally { $stream.Dispose(); [System.IO.File]::WriteAllText($env:FLYMIND_TEST_RELEASED, 'released') }"
+ const holder=spawn('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{env:{...process.env,FLYMIND_TEST_OWNER:path,FLYMIND_TEST_SIGNAL:signal,FLYMIND_TEST_RELEASED:released},stdio:['pipe','ignore','pipe'],windowsHide:true})
+ let stderr='';holder.stderr!.on('data',b=>stderr+=b)
+ const closed=new Promise<void>((yes,no)=>{holder.once('error',no);holder.once('close',()=>yes())})
+ const release=async()=>{if(!holder.stdin!.writableEnded)holder.stdin!.end('\n');await closed;assert.equal(holder.exitCode,0,'holder failed: '+stderr);assert.ok(await stat(released).then(()=>true,()=>false),'holder did not acknowledge Dispose: '+stderr)}
+ try{
+  const deadline=Date.now()+5000
+  while(Date.now()<deadline&&!await stat(signal).then(()=>true,()=>false)){if(holder.exitCode!==null)throw Error('owner holder exited: '+stderr);await wait(10)}
+  assert.ok(await stat(signal).then(()=>true,()=>false),'owner holder not ready: '+stderr)
+  const probe=path+'.sharing-probe';await writeFile(probe,'probe')
+  try{await assert.rejects(rename(probe,path),(error:NodeJS.ErrnoException)=>['EPERM','EACCES','EBUSY'].includes(error.code??''))}finally{await rm(probe,{force:true})}
+  return {release}
+ }catch(error){if(!holder.stdin!.writableEnded)holder.stdin!.end('\n');await closed.catch(()=>{});throw error}
+}
+
+test('Windows atomic owner update retries a short sharing handle without replacing another owner', {skip:process.platform!=='win32'},async()=>{
+ const {root,config}=await temporary();const lease=await acquireRuntimeLease(config);assert.ok(lease)
+ const holder=await holdOwnerFile(root,join(lockDirectory(config),'owner.json'))
+ try{
+  let settled=false;const update=lease.update({state:'ready',port:12345}).finally(()=>{settled=true})
+  // Keep the proven no-delete handle open long enough to exercise retries.
+  await wait(100);assert.equal(settled,false);assert.equal((await readOwner(config))?.state,'starting')
+  await holder.release();await update
+  assert.equal((await readOwner(config))?.state,'ready');assert.equal((await readOwner(config))?.port,12345)
+  assert.equal((await readdir(lockDirectory(config))).some(name=>name.endsWith('.tmp')),false)
+ }finally{await holder.release();await lease.release();await cleanup(root)}
+})
+
+test('Windows sustained owner-file sharing fails bounded and preserves old owner and removes only its temp', {skip:process.platform!=='win32'},async()=>{
+ const {root,config}=await temporary();const lease=await acquireRuntimeLease(config);assert.ok(lease)
+ const path=join(lockDirectory(config),'owner.json'),before=await readFile(path,'utf8'),holder=await holdOwnerFile(root,path)
+ try{
+  const unrelated=join(lockDirectory(config),'unrelated.tmp');await writeFile(unrelated,'keep')
+  const started=Date.now();await assert.rejects(lease.update({state:'ready'}),(error:NodeJS.ErrnoException)=>['EPERM','EACCES','EBUSY'].includes(error.code??''))
+  assert.ok(Date.now()-started>=700);assert.ok(Date.now()-started<2500)
+  assert.equal(await readFile(path,'utf8'),before);assert.equal(lease.owner.state,'starting')
+  assert.deepEqual((await readdir(lockDirectory(config))).sort(),['owner.json','unrelated.tmp']);assert.equal(await readFile(unrelated,'utf8'),'keep')
+ }finally{await holder.release();await lease.release();await cleanup(root)}
+})
+
+test('Windows sharing retry rechecks owner and never overwrites its replacement', {skip:process.platform!=='win32'},async()=>{
+ const {root,config}=await temporary();const lease=await acquireRuntimeLease(config);assert.ok(lease)
+ const path=join(lockDirectory(config),'owner.json'),holder=await holdOwnerFile(root,path),replacement={...lease.owner,instanceId:randomUUID(),nonce:randomUUID()}
+ try{
+  const outcome=lease.update({state:'ready'}).then(()=>undefined,error=>error)
+  await wait(100);await writeFile(path,JSON.stringify(replacement))
+  const failure=await outcome;assert.equal(failure?.code,'LOCK_OWNERSHIP_CHANGED')
+  await holder.release();assert.deepEqual(await readOwner(config),replacement);assert.notEqual(lease.owner.instanceId,replacement.instanceId)
+  assert.equal((await readdir(lockDirectory(config))).some(name=>name.endsWith('.tmp')),false)
+  await lease.release();assert.deepEqual(await readOwner(config),replacement)
+ }finally{await holder.release();await cleanup(root)}
+})
 test('ensure rejects disabled pilot, missing/production data roots and invalid config without creating a database',async()=>{
  await assert.rejects(ensureNativeRuntime({env:{FLYMIND_NATIVE_PILOT:'0'}}),{code:'NATIVE_PILOT_DISABLED'});await assert.rejects(ensureNativeRuntime({env:{FLYMIND_CONTROL_PLANE_ORIGIN:'https://runtime-test-authority.invalid',FLYMIND_NATIVE_PILOT:'1',FLYMIND_DATA_DIR:''}}),{code:'DATA_ROOT_REQUIRED'});await assert.rejects(ensureNativeRuntime({dataRoot:resolve('data'),env:{FLYMIND_CONTROL_PLANE_ORIGIN:'https://runtime-test-authority.invalid',FLYMIND_NATIVE_PILOT:'1'}}),{code:'ISOLATED_ROOT_REQUIRED'});assert.throws(()=>runtimeConfiguration({dataRoot:tmpdir(),env:{FLYMIND_CONTROL_PLANE_ORIGIN:'https://runtime-test-authority.invalid',FLYMIND_NATIVE_PILOT:'1'},port:99999}),{code:'INVALID_PORT'})
 })

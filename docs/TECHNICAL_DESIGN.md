@@ -1,5 +1,11 @@
 # FlyMind draw.io 技术设计
 
+> 2026-10-25 R33：新增固定应用租户内匿名 POST 注册，严格 `{phone,password}`，Java 同事务创建 sys_user 身份、独立 app 凭据、公共 ID、个人空间/owner 与应用会话。利用现有 `(tenant_id,mobile)` 唯一索引阻断并发重复，不复用已有身份，不创建后台角色。BFF 注册沿登录的 HttpOnly/SameSite 会话封装与 no-store，强制同源 Origin，不向浏览器响应暴露令牌；失败不伪造登录成功。实现与验证状态以 U33 验收记录为准。
+
+> 2026-10-25 R32：NativeStudio使用独立layoutLoading/Label覆盖capture/flush/configure/merge/adopt，nextTick+双RAF保证反馈先绘制、实际模型应用后再退出，finally处理成功/失败。DrawioViewport以160ms轻遮罩过渡、可访问status和实际iframe槽inert接入，不重挂引擎，与切图/预热/普通保存分离；减少动态偏好禁动画。见[U32验收](validation/u32-layout-feedback.md)。
+
+> 2026-10-25 R31：首页和引导使用语义button整卡交互，焦点/减少动态偏好/只读态仍有效；连接面板不检测或伪造外部Agent授权。加载优化保持原生XML、修订与编辑会话身份，资源缓存必须有固定版本身份，不能缓存账号/业务API；不同团队或未提交编辑不能因复用编辑器而串图。实际可编辑计时需覆盖数据读取、引擎准备、XML加载及绘制；具体实现和冷热测量见[U31记录](validation/u31-interaction-performance.md)，未验证结果不写成达标。
+
 > 2026-10-24 R30：新增 technical/profile technical-standard@1，内容节点使用 module + 可选 technology/groupId，图标由本地固定 Simple Icons CC0 SVG 映射提供。ELK 按真实节点与组间边布局；节点/文字/技术图标均保留原生图元。容器框默认不强制缩放孩子，人工几何与显式样式不被普通文案 patch 重置。账号公共 userCode 与内部 userId 分离，新增目录/UTC日事件表及后台菜单迁移；邀请通过 ID 收件箱闭环。改密保留同源/会话检查与授权撤销，仅移除旧密码输入。前端离开图形前等待真实 IDB 持久化队尾，写入失败仍禁止离开。详见[U30集成记录](validation/u30-integration.md)。
 
 > 2026-10-24 R29：复用 NativeStudio/CloudStudio 与原创建、任务组、团队弹窗，增加 Welcome/Onboarding/AgentConnect 独立 UI。引导 localStorage key 使用 JSON 编码 userId/teamId，pending/completed/skipped 分离；创建/邀请依据实际 API 成功，交替编辑依据当前图形权威 activity 中不同已提交修订。Agent 安装消息仅携带固定 MCP URL 和校验过的团队/图形 ID，不携带标题指令或凭据；OAuth 仍由客户端执行，网站自确认不冒充连接检测。主题变量只影响工作台，不写入业务内容或 draw.io 节点样式。无数据库迁移，详见[本批验收](validation/onboarding-20261024.md)。
