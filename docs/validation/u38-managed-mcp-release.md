@@ -1,6 +1,6 @@
 # U38 云端持续更新与U37发布
 
-日期：2026-11-01。状态：本地限定验收通过，发布进行中；生产结果待追加。
+日期：2026-11-01。状态：**已上线，应用与独立MCP网关均已验收。** 下文过程记录保留实际失败和修复；最终证据见末节。
 
 用户明确授权发布本批，并重申本地固定配置、云端持续更新、不逐次手动重启。随后明确允许本次通过SSH部署；PM已用原固定主机身份完成本人扫码认证，未增加临时root密钥。版本保持1.0.0，不打tag。
 
@@ -32,3 +32,14 @@
 本次首次替换旧网关会结束其内存MCP会话，部分客户端需恢复连接一次；之后兼容应用/规则更新已验证不要求逐次重启。新增工具或不兼容协议仍需兼容维护，不能保证第三方客户端永不重连。原本机STDIO不会自动变为远程连接，也不自动上传本地图；使用固定远程URL的客户才能随云端业务升级。
 
 明确排除U35字体性能修改、旧artifact-fetch续传后备、其它任务PRD模板/图片/README草稿。没有新增SQL迁移，不修改账号密码或图形归属，不自动重排存量人工图形。
+
+## 最终生产验收
+
+- 业务源`52b0f826aebdcef58f004a648d824763bcb6485f`；[完整候选41224699831](https://github.com/beidaomitu233/FlyMind/actions/runs/41224699831)四门槛全部成功，[Verify41224699902](https://github.com/beidaomitu233/FlyMind/actions/runs/41224699902)成功。候选源码、真实JAR/MySQL8/Redis7及Linux/Windows真实PNG/SQLite均通过。
+- [生产41225859068](https://github.com/beidaomitu233/FlyMind/actions/runs/41225859068)第二次尝试成功：复用原不可变候选和归档，Java回执`replayed:true`，应用成功，网关返回`ok:true/component:gateway`。没有跳过业务候选验证，也没有用重建候选掩盖第一次Host检查失败。
+- 独立静态发布器修正源`1879560d20079e0490765b65e91c46dfc2e9ac63`；publisher SHA256 `82a41b2189325ca345636447f231d79992d78e1d9c81c68df309813ed8e55c05`。该工具由已授权SSH校验预映像、离线传送固定源码后安装，应用发布仍由Actions完成。新工具[Linux门槛41226614312](https://github.com/beidaomitu233/FlyMind/actions/runs/41226614312)、[Verify41226614239](https://github.com/beidaomitu233/FlyMind/actions/runs/41226614239)均成功。此提交只修独立发布器/测试/记录，没有替换已验收的业务候选。
+- 公网HTTPS实际返回`releaseId=run-41224699831-1`、`ready=true`、`pendingWrites=0`，`engineResourceKey=ac48f2ec24a09565b4d2213d5c3e0d424e924174cab7c1058a73a8617e47b4b3`。OAuth issuer仍`https://fly.hui7.fun/`，token endpoint不变；无凭据访问`/mcp`返回401，未取消鉴权。
+- 服务器独立核对：`current`的candidate来源是上述业务源；`/opt/flymind/gateway/application`已是绑定该release/application的独立软链，实际网关PID1550283的cwd相同，加载的编译模块含动态完整规则刷新逻辑。三服务均active，旧真实网关目录保留bootstrap备份，部署锁已释放。
+- 用真实受限`flymind-deploy`身份、相同forced-command和同一归档SHA再次调用网关晋级，返回`alreadyCurrent:true/clientReconnectRequired:false`，前后网关PID相同。此次是真实systemd幂等验证，不是只用fake服务测试声称不会重启。
+- 真实同一SDK跨两次应用升级的完整规则/PNG/幂等演练来自隔离测试；本轮生产没有新建测试账号、图形或修改用户现有图形，也没有假称对生产OAuth用户做过该写入演练。公网与服务器实际结果、生产日志及归档还原证据分别在`output/u38-production.log`、`output/u38-compact-proof/`，包括9316条目完整还原、原manifest字节保留。
+- 本次SSH已正常退出。后续同契约业务、规则、布局更新走现有Actions应用发布，网关默认不重启；固定远程配置不变，正常更新不要求客户逐次重装或重启。首次替换旧网关的内存会话可能需恢复一次，第三方客户端行为不作无限承诺。
