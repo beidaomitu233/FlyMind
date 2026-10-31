@@ -4,6 +4,7 @@ import {lstat,readFile,writeFile,mkdir,rmdir,rename,symlink,realpath,unlink} fro
 import {dirname,join,resolve} from 'node:path'
 import {randomUUID} from 'node:crypto'
 import {spawn} from 'node:child_process'
+import {request as httpRequest} from 'node:http'
 import {pathToFileURL} from 'node:url'
 
 export function gatewayArguments(args){
@@ -55,6 +56,25 @@ export async function releaseGatewayLock(lock,owner){
  if(current.token!==owner.token||current.pid!==owner.pid||current.releaseId!==owner.releaseId)throw Error('GATEWAY_LOCK_OWNER_CHANGED')
  await unlink(join(lock,'owner.json'));await rmdir(lock)
 }
+// Node22 fetch may replace a custom Host with the connection origin. The app's
+// virtual-host guard must receive the public Host even on a loopback connection.
+export function gatewayReadinessJSON(origin,path,publicOrigin){
+ const originValue=origin instanceof URL?origin.origin:String(origin),url=new URL(originValue),publicURL=new URL(publicOrigin)
+ if(url.origin!==originValue||url.protocol!=='http:'||!['127.0.0.1','[::1]'].includes(url.hostname)||publicURL.protocol!=='https:'||publicURL.origin!==String(publicOrigin)||!['/readyz','/.well-known/oauth-authorization-server'].includes(path))throw Error('GATEWAY_READINESS_ORIGIN_INVALID')
+ return new Promise((yes,no)=>{
+  let settled=false,request
+  const finish=(error,value)=>{if(settled)return;settled=true;clearTimeout(timer);if(error){request?.destroy();no(Error('GATEWAY_READINESS_FAILED'))}else yes(value)}
+  const timer=setTimeout(()=>finish(true),2500)
+  request=httpRequest(new URL(path,url),{method:'GET',headers:{Host:publicURL.host,Origin:publicURL.origin,'Accept':'application/json','Accept-Encoding':'identity'},agent:false},response=>{
+   if(response.statusCode!==200||response.headers['content-encoding']&&response.headers['content-encoding']!=='identity'){response.destroy();finish(true);return}
+   let length=0;const chunks=[]
+   response.on('data',part=>{length+=part.length;if(length>16384){response.destroy();finish(true)}else chunks.push(part)})
+   response.once('error',()=>finish(true));response.once('aborted',()=>finish(true))
+   response.once('end',()=>{try{const value=JSON.parse(Buffer.concat(chunks).toString('utf8'));if(!value||typeof value!=='object'||Array.isArray(value))throw Error();finish(false,value)}catch{finish(true)}})
+  })
+  request.once('error',()=>finish(true));request.end()
+ })
+}
 export async function promoteGateway(args=process.argv.slice(2)){
  const {environment,releaseId,archiveSHA}=gatewayArguments(args)
  if(process.platform!=='linux'||process.getuid?.()!==0)throw Error('GATEWAY_LINUX_ROOT_REQUIRED')
@@ -80,10 +100,7 @@ export async function promoteGateway(args=process.argv.slice(2)){
   await trustedPath(target,true);await trustedPath(join(target,'lib/server/cloud/mcp-gateway-start.js'))
   const service='flymind-gateway.service',nodeService=async(action)=>run('/usr/bin/systemctl',[action,service])
   const stopped=async()=>{if(await run('/usr/bin/systemctl',['show','--property=MainPID','--value',service])!=='0')throw Error('GATEWAY_DRAIN_INCOMPLETE')}
-  const request=async(origin,path)=>{
-   const r=await fetch(new URL(path,origin),{headers:{Host:publicURL.host,Origin:publicURL.origin},redirect:'error',signal:AbortSignal.timeout(2500)})
-   if(!r.ok)throw Error('GATEWAY_READINESS_FAILED');return r.json()
-  }
+  const request=(origin,path)=>gatewayReadinessJSON(origin,path,publicURL.origin)
   const app=await request(appURL,'/readyz');if(app.ready!==true||app.releaseId!==releaseId)throw Error('GATEWAY_APP_NOT_READY')
   const ready=async(expected)=>{
    for(let i=0;i<30;i++){
