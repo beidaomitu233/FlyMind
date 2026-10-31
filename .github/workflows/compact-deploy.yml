@@ -8,6 +8,11 @@ on:
       - scripts/verify-compact-roundtrip.mjs
       - deploy/cloud/materialize-candidate.mjs
       - deploy/cloud/install-compact-publisher.py
+      - deploy/cloud/gateway-promote.mjs
+      - deploy/cloud/install-gateway-publisher.py
+      - deploy/cloud/ssh-command.py
+      - tests/cloud-gateway-deployment.test.mjs
+      - tests/install-gateway-publisher.test.py
       - tests/compact-builder.test.py
       - tests/compact-materializer.test.mjs
       - tests/install-compact-publisher.test.py
@@ -27,6 +32,10 @@ on:
         default: '39994902799'
       deploy:
         description: Publish after the reviewed static materializer is installed
+        type: boolean
+        default: false
+      deploy_gateway:
+        description: Upgrade stable gateway (requires reviewed root entry already installed; reconnects MCP sessions)
         type: boolean
         default: false
 
@@ -53,7 +62,8 @@ jobs:
           python tests/compact-builder.test.py
           python tests/cloud-control-plane-install.test.py
           python tests/install-compact-publisher.test.py
-          node --test tests/compact-materializer.test.mjs tests/cloud-control-plane.test.mjs tests/cloud-deployment.test.mjs tests/cloud-artifact-source.test.mjs tests/cloud-python-extract.test.mjs
+          python tests/install-gateway-publisher.test.py
+          node --test tests/compact-materializer.test.mjs tests/cloud-control-plane.test.mjs tests/cloud-deployment.test.mjs tests/cloud-artifact-source.test.mjs tests/cloud-python-extract.test.mjs tests/cloud-gateway-deployment.test.mjs
       - name: Verify immutable main source and baseline gates
         if: github.event_name == 'workflow_dispatch'
         id: provenance
@@ -136,6 +146,7 @@ jobs:
         env:
           DEPLOY_ENVIRONMENT: production
           DEPLOY_CONTROL_PLANE_DEPLOY: 'true'
+          DEPLOY_GATEWAY_DEPLOY: ${{ inputs.deploy_gateway == true && 'true' || 'false' }}
           DEPLOY_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
           DEPLOY_SOURCE_SHA: ${{ needs.prepare.outputs.target_sha }}
           DEPLOY_TRANSPORT: bytes

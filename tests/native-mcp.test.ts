@@ -2,24 +2,92 @@ import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {Client} from '@modelcontextprotocol/sdk/client/index.js'
 import {InMemoryTransport} from '@modelcontextprotocol/sdk/inMemory.js'
-import {createNativeMcpServer} from '../server/mcp-native/server'
+import {createNativeMcpServer,appendMcpGuidance,MCP_INLINE_LIMIT} from '../server/mcp-native/server'
 import {extractContent} from '../src/drawing/core/layers'
 import {sampleFor} from '../src/drawing/core/samples'
 import {runtimeCapabilities} from '../server/runtime-instance/config'
 import {nativeDocumentCapabilities} from '../src/drawing/services/native-capabilities'
+import {guideData,nativeGuide} from '../server/mcp-native/guide'
+import {drawingStandard} from '../server/drawing-guide'
+import {inspectDrawing} from '../src/drawing/core/drawing-quality'
 const content=extractContent(sampleFor('swimlane'))
 const record={format:3,document:{content,createdAt:100,updatedAt:100},revision:1,createdAt:100,workspaceGroupId:null}
 const pure={format:3,content,revision:1,createdAt:100,updatedAt:100,workspaceGroupId:null,readOnly:false,syncStatus:'synced'}
-async function harness(handler:(path:string,init:RequestInit)=>unknown,options={waitMs:20,pollMs:1}){
- const calls:{path:string;init:RequestInit}[]=[],facade=createNativeMcpServer(async()=>({baseURL:'http://127.0.0.1:5179',dataRootId:'test-root',instanceId:'test-instance',sessionToken:'secret',capabilities:runtimeCapabilities(),headers:()=>({}),authenticatedFetch:async(path,init={})=>{calls.push({path,init});const value=await handler(path,init);return value instanceof Response?value:new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}})},close:async()=>{}}),options)
+async function harness(handler:(path:string,init:RequestInit)=>unknown,options:Parameters<typeof createNativeMcpServer>[1]={waitMs:20,pollMs:1}){
+ const calls:{path:string;init:RequestInit}[]=[],facade=await createNativeMcpServer(async()=>({baseURL:'http://127.0.0.1:5179',dataRootId:'test-root',instanceId:'test-instance',sessionToken:'secret',capabilities:runtimeCapabilities(),headers:()=>({}),authenticatedFetch:async(path,init={})=>{calls.push({path,init});const value=await handler(path,init);return value instanceof Response?value:new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}})},close:async()=>{}}),options)
  const [serverTransport,clientTransport]=InMemoryTransport.createLinkedPair(),client=new Client({name:'test',version:'1'});await facade.server.connect(serverTransport);await client.connect(clientTransport)
  return {client,calls,async close(){await client.close();await facade.close()}}
 }
 async function reconnectHarness(connect:()=>Promise<any>){
- const facade=createNativeMcpServer(connect,{waitMs:5,pollMs:1}),[a,b]=InMemoryTransport.createLinkedPair(),client=new Client({name:'reconnect-test',version:'1'});await facade.server.connect(a);await client.connect(b)
+ const facade=await createNativeMcpServer(connect,{waitMs:5,pollMs:1}),[a,b]=InMemoryTransport.createLinkedPair(),client=new Client({name:'reconnect-test',version:'1'});await facade.server.connect(a);await client.connect(b)
  return {client,async close(){await client.close();await facade.close()}}
 }
 const response=(value:unknown,status=200)=>new Response(JSON.stringify(value),{status})
+
+test('initialize sends full current local standard before any optional guide read; tool parameters remain compatible',async()=>{
+ const h=await harness(()=>{throw Error('initialize must not start a local Runtime')})
+ try{
+  assert.ok(h.client.getInstructions()!.includes(await drawingStandard()));assert.ok(h.client.getInstructions()!.includes(nativeGuide));assert.equal(h.calls.length,0)
+  const tools=(await h.client.listTools()).tools;assert.equal(tools.length,18)
+  const create=tools.find(t=>t.name==='create_diagram')!,patch=tools.find(t=>t.name==='patch_diagram')!,update=tools.find(t=>t.name==='update_diagram')!
+  assert.deepEqual(create.inputSchema.required,['content','requestId']);assert.deepEqual(patch.inputSchema.required,['id','expectedRevision','requestId','operations']);assert.deepEqual(update.inputSchema.required,['id','expectedRevision','requestId','content'])
+  assert.match(create.description!,/用户材料.*真实职责/);assert.match(create.description!,/查看返回PNG和quality/)
+  for(const tool of [patch,update]){assert.match(tool.description!,/增量修改也遵循/);assert.match(tool.description!,/保留稳定ID/);assert.match(tool.description!,/冲突重读合并/)}
+  const denied=await h.client.callTool({name:'create_diagram',arguments:{content,requestId:'missing-task'}})
+  assert.equal(denied.isError,true);assert.equal(JSON.parse((denied.content[0] as any).text).error.code,'TASK_GROUP_REQUIRED');assert.match((denied.content.at(-1) as any).text,/真改原节点和边/);assert.match((denied.content.at(-1) as any).text,/不猜坐标/);assert.equal(h.calls.length,0)
+  const reminder=(denied.content.at(-1) as any).text;assert.ok(!reminder.includes('6. editIntent'));assert.ok(!reminder.includes('## 文字预算'));assert.ok(reminder.length<1000)
+ }finally{await h.close()}
+})
+
+test('repeated authoritative reminder fits the final inline budget without losing a saved export or sending oversized PNG',async()=>{
+ const guide={...guideData,guide:await drawingStandard()},data={...pure,saved:true,exportStatus:'succeeded',jobId:'job-safe',files:{png:'https://example.invalid/png'},resources:{png:'flymind://exports/id/1/job-safe/png'}}
+ const text=JSON.stringify(data),base={structuredContent:data,content:[{type:'text',text},{type:'image',mimeType:'image/png',data:''}]}
+ const initialBytes=Buffer.byteLength(JSON.stringify(base)),padding=MCP_INLINE_LIMIT-4096-initialBytes-10
+ base.content[1].data='A'.repeat(padding)
+ assert.ok(Buffer.byteLength(JSON.stringify(base))+4096<MCP_INLINE_LIMIT)
+ for(const full of [false,true]){
+  const response=appendMcpGuidance(base,guide,full)
+  assert.ok(Buffer.byteLength(JSON.stringify(response))+4096<=MCP_INLINE_LIMIT);assert.equal(response.structuredContent.saved,true);assert.equal(response.structuredContent.exportStatus,'succeeded');assert.equal(response.structuredContent.jobId,'job-safe');assert.deepEqual(response.structuredContent.content,content);assert.deepEqual(response.structuredContent.files,data.files);assert.equal(response.structuredContent.previewStatus,'too_large');assert.equal(response.content.some((c:any)=>c.type==='image'),false)
+  if(full)assert.ok(response.content.some((c:any)=>c.type==='text'&&c.text.endsWith(guide.guide)))
+ }
+})
+
+test('remote initialize fetches the authoritative application guide each session and never falls back on failure',async()=>{
+ const standard=await drawingStandard();let current='authority-release-A'
+ const handler=(path:string)=>{assert.equal(path,'/studio-api/native/guide');return {...guideData,guide:current+'\n'+standard}}
+ const a=await harness(handler,{remoteApplication:true});let originalTools:unknown
+ try{assert.equal(a.client.getInstructions(),current+'\n'+standard);assert.equal(a.calls.length,1);originalTools=(await a.client.listTools()).tools}finally{await a.close()}
+ current='authority-release-B'
+ const b=await harness(handler,{remoteApplication:true});try{assert.equal(b.client.getInstructions(),current+'\n'+standard);assert.deepEqual((await b.client.listTools()).tools,originalTools)}finally{await b.close()}
+ await assert.rejects(harness(()=>response({error:'unavailable',code:'APPLICATION_UNAVAILABLE'},503),{remoteApplication:true}),{code:'APPLICATION_UNAVAILABLE'})
+ await assert.rejects(harness(()=>({guide:'malformed'}),{remoteApplication:true}))
+ await assert.rejects(harness(()=>({...guideData,guide:' '}),{remoteApplication:true}),{code:'APPLICATION_GUIDE_INVALID'})
+})
+test('long remote session refreshes rules before writes, fails closed and isolates concurrent rule snapshots',async()=>{
+ let policy='A',unavailable=false,writes=0,releaseSlow!:()=>void
+ const rule=()=>({...guideData,guide:'authority-'+policy+'\n### MCP执行提示\n按版本'+policy+'修改原节点。\n## 下一节\n结束'})
+ const h=await harness(async(path,init)=>{
+  if(path.endsWith('/guide'))return unavailable?response({code:'GUIDE_DOWN',error:'rules unavailable'},503):rule()
+  if(path.endsWith('/ai/diagrams')){writes++;const input=JSON.parse(String(init.body));if(input.requestId==='slow')await new Promise<void>(r=>{releaseSlow=r});return response({code:'QUALITY_FAILED',error:'quality refused'},422)}
+  return {...pure,quality:inspectDrawing(content)}
+ },{remoteApplication:true})
+ try{
+  unavailable=true
+  const failed=await h.client.callTool({name:'create_diagram',arguments:{taskName:'规则回归',content,requestId:'blocked'}})
+  assert.equal(failed.isError,true);assert.match(JSON.stringify(failed),/GUIDE_DOWN/);assert.equal(writes,0)
+  unavailable=false;policy='B'
+  const slow=h.client.callTool({name:'create_diagram',arguments:{taskName:'规则回归',content,requestId:'slow'}})
+  while(!releaseSlow)await new Promise<void>(r=>setImmediate(r))
+  policy='C'
+  const read=await h.client.callTool({name:'get_diagram',arguments:{id:content.id}})
+  assert.ok(!read.isError,JSON.stringify(read));assert.ok(JSON.stringify(read.content).includes('authority-C'));assert.ok(JSON.stringify(read.content).includes('以下完整规则替代'))
+  releaseSlow();const denied=await slow
+  assert.match((denied.content.at(-1) as any).text,/按版本B/);assert.ok(!JSON.stringify(denied).includes('按版本C'));assert.equal(writes,1)
+  const next=await h.client.callTool({name:'get_diagram',arguments:{id:content.id}})
+  assert.ok(!JSON.stringify(next.content).includes('以下完整规则替代'));assert.match((next.content.at(-1) as any).text,/按版本C/)
+ }finally{releaseSlow?.();await h.close()}
+})
+
 test('local account denial keeps MCP transport and guides browser login without accepting passwords',async()=>{
  let connects=0,authorized=false
  const h=await reconnectHarness(async()=>{connects++;return fakeConnection('root',async()=>authorized?response(pure):response({code:'LOCAL_LOGIN_REQUIRED',error:'login needed'},401))})

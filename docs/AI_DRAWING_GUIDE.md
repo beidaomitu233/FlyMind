@@ -2,7 +2,7 @@
 
 ## 原生 pilot（D05）
 
-仅在 `FLYMIND_NATIVE_PILOT=1` 与显式隔离数据根下启用；G2 前默认仍走旧入口。本节优先于下文旧引擎参数。实际支持集合以 get_drawing_guide 的 capabilities 为准，当前六类已适配（新增technical技术架构图）。get_rendering_config 返回原生 profile/preferences；configure_rendering 先读取 get_rendering_config 及实际工具 schema，仅提交支持且需要修改的字段；切换方向需 relayout:true，不默认传坐标。
+仅在 `FLYMIND_NATIVE_PILOT=1` 与显式隔离数据根下启用；G2 前默认仍走旧入口。本节优先于下文旧引擎参数。实际支持集合以 get_drawing_guide 的 capabilities 为准，当前六类已适配（新增technical技术架构图）。get_rendering_config 返回原生 profile/preferences；configure_rendering 先读取 get_rendering_config；当前公开入口仅支持 relayout:true 与可选 orientation，不承诺旧 schema 列出的主题、配色、字体或坐标配置。
 
 原工具名保持。content 必须有 `schemaVersion:1`、稳定 `id` 和全部业务数组（`groups:[]`）。create/patch/update 必须有稳定 `requestId`；同一请求重试保持 payload 不变。AI 新建须质量合格，历史人工草稿的修改不得新增或加重 error 或 warning，只有明确批注才用 annotation；来源缺口不得猜边修复。网页人工保存仍允许结构合法草稿。
 
@@ -14,7 +14,7 @@ AI 提供内容，FlyMind 自动布局并渲染。普通绘图只提交 `content
 
 绘图和修改必须遵循 [绘图内容标准 1.1](DRAWING_STANDARD.md)。`get_drawing_guide` 自动合并返回该标准；也可读取 `flymind://drawing-standard`。`validate_diagram` 返回 `valid` 和 `quality:{standardVersion,passed,score,issues}`，新建或修改不合格内容时返回 `QUALITY_FAILED`，数据库不写入。文字简洁、判断出口、业务连通性、模块/主题抽象各有规则；机器检查之外仍须核对真实业务。
 
-修改时直接改原业务步骤、判断条件、连接或原文案，不得用说明代替流程变更。工具顶层可带 `editIntent:"structure"|"wording"|"annotation"`，默认 structure；只有用户明确要批注时使用 annotation。纯补注释或非卡片说明文字的修改会被默认拒绝，微改节点/边/容器文字也不能绕过。历史问题允许逐步修复，不能新增或加重；网页可保存手工草稿。
+每次增量修改同样遵循完整标准，以 DRAWING_STANDARD.md“增量修改的执行要求”为准。先读取最新图形，逐项对照用户本次要求，直接改原业务步骤、判断条件、连接或原文案，保留稳定ID、未涉及内容与人工几何/样式；完整update也不能省略无关内容。提交前核对quality，提交后检查同修订PNG，不以保存成功或合格分代替业务/视觉验收。不得用说明代替流程变更。工具顶层可带 `editIntent:"structure"|"wording"|"annotation"`，默认 structure；只有用户明确要批注时使用 annotation。纯补注释或非卡片说明文字的修改会被默认拒绝，微改节点/边/容器文字也不能绕过。历史问题允许逐步修复，不能新增或加重；网页可保存手工草稿。
 
 ## 内容标准1.1的强制边界
 

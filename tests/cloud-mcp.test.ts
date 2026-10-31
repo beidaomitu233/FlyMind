@@ -65,6 +65,8 @@ test('real Streamable HTTP SDK uses Java authorization and team native HTTP for 
   session=await createCloudMcpSession({cloudOrigin:base,teamId:'team-a',token,identity,allowInsecureLoopback:true,waitMs:60000,pollMs:100})
   assert.deepEqual(Object.keys(session.binding).sort(),['dataRootId','sessionId','teamId','userId'])
   await client.connect(clientTransport)
+  assert.match(client.getInstructions()!,/增量修改的执行要求/)
+  assert.match(client.getInstructions()!,/每次 patch\/update/)
   const before=introspections,guide=await client.callTool({name:'get_drawing_guide',arguments:{kind:'flowchart'}})
   assert.ok(!guide.isError);assert.ok(introspections>=before+2,'even local guide must traverse authority and cloud HTTP')
   const created=await client.callTool({name:'create_diagram',arguments:{taskName:'云端契约回归任务',content:businessContent('flowchart','cloud-mcp-diagram'),requestId:'sdk-create'}})

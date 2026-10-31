@@ -134,6 +134,11 @@ function existingOccupancy(n:NativeDocument,e:NativeCell,byId:Map<string,RouteBo
  const off=children(g,'mxPoint').find(p=>attr(p,'as')==='offset'),font=Number(styleValue(e,'fontSize')??13),text=readControlledEdge(n,e)??attr(e.object,'label')??attr(e.cell,'value')??'',width=Number(styleValue(e,'labelWidth')??Math.max(24,textUnits(text)*font)),height=Math.ceil(Math.max(1,Math.ceil(textUnits(text)*font/width))*font*1.2)+12,y=Number(attr(g,'y')??0)
  return {points,label:text?{edgeId:e.id,x:anchor.x+normal.x*y+Number(off&&attr(off,'x')||0)-width/2-6,y:anchor.y+normal.y*y+Number(off&&attr(off,'y')||0)-height/2,w:width+12,h:height}:undefined}
 }
+/** Read-only saved routes/labels for local edits; never invokes the solver. */
+export function nativeReadonlyRoutes(n:NativeDocument){
+ const nodes=mainEntries(n).filter(e=>businessType(e)==='node').map(e=>absoluteRouteBox(n,e)),byId=new Map(nodes.map(b=>[b.id,b]))
+ return [...n.cells.values()].filter(e=>attr(e.cell,'edge')==='1'&&(businessType(e)==='edge'||attr(e.object,'fmRole')==='parent-edge')).flatMap(e=>{const occupancy=existingOccupancy(n,e,byId);return occupancy?[{id:e.id,source:attr(e.cell,'source'),target:attr(e.cell,'target'),...occupancy}]:[]})
+}
 /** Native Loop + orthogonal perimeter. Proxy points validate only
  * the free-side envelope / label occupancy; no hand-routed loop points are saved. */
 function nativeLoop(b:RouteBox,obstacles:RouteBox[]){

@@ -16,6 +16,7 @@ import {createCloudReleaseManifest,assertExecutionReleaseAvailable,type CloudRel
 import {runtimeCapabilities} from '../server/runtime-instance/config'
 import {NativeDrawioRenderer} from '../server/rendering/renderer'
 import {businessContent} from './fixtures/native-business'
+import {applicationDrawingGuide} from '../server/mcp-native/guide'
 
 const token='fm_mcp_'+'x'.repeat(43),key='qa_gateway_key_'+'z'.repeat(40)
 const manifest=(releaseId:string,version:string):CloudReleaseManifest=>({releaseId,appVersion:version,policyBundleHash:'a'.repeat(64),standardVersion:'1.1',engineResourceKey:'b'.repeat(64),adapterVersion:'1',migrationLevel:1})
@@ -82,18 +83,25 @@ test('one authenticated SDK config survives two real app restarts with fresh gui
  try{
   const releases=[await boot(0)]
   gateway=createCloudMcpGateway({publicOrigin,applicationOrigin,controlPlaneURL,gatewayKey:key,allowInsecureLoopback:true});await connect()
+  assert.match(client!.getInstructions()!,/qa-app-0/);assert.match(client!.getInstructions()!,/增量修改的执行要求/)
   const sessionId=transport!.sessionId,tools=(await client!.listTools()).tools
   const content=businessContent('flowchart','persistent-update'),created=await client!.callTool({name:'create_diagram',arguments:{taskName:'云端契约回归任务',content,requestId:'create-once'}})
   assert.ok(!created.isError,JSON.stringify(created));let current=created.structuredContent as any
   report.firstExport={status:current.exportStatus,error:current.exportError};assert.equal(current.exportStatus,'succeeded',JSON.stringify(report.firstExport));assert.ok(created.content.some((c:any)=>c.type==='image'))
   const original={jobId:current.jobId,resource:current.resources.png,urls:current.urls,revision:current.revision},image=(await client!.readResource({uri:original.resource})).contents[0] as any,sha=createHash('sha256').update(Buffer.from(image.blob,'base64')).digest('hex')
   for(let index=0;index<3;index++){
-   if(index){await closeApp();await assert.rejects(client!.callTool({name:'get_drawing_guide',arguments:{}}));report.maintenance.push({index,status:'explicit retryable failure; no auto write replay'});applicationServer=createServer();await listen(applicationServer,appPort);releases.push(await boot(index))}
-   const guide=await client!.callTool({name:'get_drawing_guide',arguments:{kind:'flowchart'}});assert.ok(!guide.isError,JSON.stringify(guide));assert.match((guide.structuredContent as any).guide,new RegExp('qa-app-'+index));assert.ok(!(guide.structuredContent as any).guide.includes(root))
+   if(index){await closeApp();await assert.rejects(client!.callTool({name:'get_diagram',arguments:{id:content.id}}));report.maintenance.push({index,status:'explicit retryable failure; no auto write replay'});applicationServer=createServer();await listen(applicationServer,appPort);releases.push(await boot(index))}
+
    assert.deepEqual((await client!.listTools()).tools,tools,'cached v1 schemas do not change with app version')
    assert.equal(transport!.sessionId,sessionId,'app upgrades must not destroy the gateway session')
    const read=await client!.callTool({name:'get_diagram',arguments:{id:content.id}});assert.equal((read.structuredContent as any).revision,current.revision)
-   if(index){const changed=await client!.callTool({name:'patch_diagram',arguments:{id:content.id,expectedRevision:current.revision,requestId:'patch-'+index,editIntent:'wording',operations:[{op:'update_node',id:'task',changes:{label:'复核材料'+index}}]}});assert.ok(!changed.isError,JSON.stringify(changed));current=changed.structuredContent as any;assert.equal(current.revision,index+1);assert.equal(current.exportStatus,'succeeded')}
+   const authoritative=(await applicationDrawingGuide(undefined,releases[index])).guide
+   const fullRules=read.content.filter((part:any)=>part.type==='text'&&part.text.includes('以下完整规则替代')) as {text:string}[]
+   assert.equal(fullRules.length,index?1:0,'same long-lived session receives changed rules without get_drawing_guide')
+   if(index)assert.ok(fullRules[0].text.endsWith(authoritative),'full rule update must exactly match this application release')
+   const repeated=await client!.callTool({name:'get_diagram',arguments:{id:content.id}})
+   assert.ok(!JSON.stringify(repeated.content).includes('以下完整规则替代'),'unchanged policy repeats only a short reminder')
+   if(index){const changed=await client!.callTool({name:'patch_diagram',arguments:{id:content.id,expectedRevision:current.revision,requestId:'patch-'+index,editIntent:'wording',operations:[{op:'update_node',id:'task',changes:{label:'复核材料'+index}}]}});assert.ok(!changed.isError,JSON.stringify(changed));assert.ok(!JSON.stringify(changed.content).includes('以下完整规则替代'));current=changed.structuredContent as any;assert.equal(current.revision,index+1);assert.equal(current.exportStatus,'succeeded')}
    const historical=(await client!.readResource({uri:original.resource})).contents[0] as any;assert.equal(createHash('sha256').update(Buffer.from(historical.blob,'base64')).digest('hex'),sha)
    for(const url of Object.values(current.files))assert.ok(String(url).startsWith(publicOrigin+'/cloud-api/teams/team-a/'))
    assert.ok(!JSON.stringify(current).includes(root));assert.ok(!JSON.stringify(current).includes(token))
@@ -103,7 +111,7 @@ test('one authenticated SDK config survives two real app restarts with fresh gui
   const replay=await client!.callTool({name:'create_diagram',arguments:{taskName:'云端契约回归任务',content,requestId:'create-once'}});assert.ok(!replay.isError);assert.equal((replay.structuredContent as any).revision,1);assert.equal((replay.structuredContent as any).jobId,original.jobId,'original immutable export receipt survives both restarts')
   await gateway.close();gateway=createCloudMcpGateway({publicOrigin,applicationOrigin,controlPlaneURL,gatewayKey:key,allowInsecureLoopback:true})
   await assert.rejects(client!.callTool({name:'get_drawing_guide',arguments:{}}),/404|MCP_SESSION_NOT_FOUND/);report.gatewayRestart.oldSession='404; SDK does not automatically initialize'
-  await client!.close();await connect();const restored=await client!.callTool({name:'get_diagram',arguments:{id:content.id}});assert.equal((restored.structuredContent as any).revision,3);report.gatewayRestart.sameURLNewInitialization=true
+  await client!.close();await connect();assert.match(client!.getInstructions()!,/qa-app-2/);assert.ok(!client!.getInstructions()!.includes('qa-app-0'),'new initialize must use the current application guide rather than gateway bundled rules');const restored=await client!.callTool({name:'get_diagram',arguments:{id:content.id}});assert.equal((restored.structuredContent as any).revision,3);report.gatewayRestart.sameURLNewInitialization=true
   revoked=true;await assert.rejects(client!.readResource({uri:original.resource}));report.revocationDenied=true;report.ok=true
  }catch(error){report.failure=(error as Error).message;throw error}finally{
   await client?.close().catch(()=>{});await gateway?.close();if(application)await closeApp();await stop(publicServer);await stop(authority);await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});report.cleaned=true;const out=process.env.FLYMIND_PROBE_OUTPUT??'output/playwright/cloud-mcp-updates';await mkdir(out,{recursive:true});await writeFile(join(out,'report.json'),JSON.stringify(report,null,2))

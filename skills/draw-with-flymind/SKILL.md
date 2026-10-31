@@ -11,7 +11,9 @@ description: 使用 FlyMind MCP 从业务材料绘制并二次编辑泳道图、
 
 每次绘图或修改前通过 get_drawing_guide 读取绘图内容标准 1.1（也可读 flymind://drawing-standard）。按图形类型使用短动作、短概念、真实关系和完整结果；先 validate_diagram，修复 quality.issues 中的 error，逐条核对 warning。不要搬运 PRD 段落，不要新增重复说明卡片。修改流程须直接改原步骤/条件/连接，不能靠补解释交差。仅用户明确要求批注才使用 editIntent=annotation；其余使用 structure（默认）或 wording。QUALITY_FAILED 不会保存，需按具体问题修正；不能用大段备注绕过标准。items仅架构、badge仅架构/数据卡；note和description均有预算。流程图需起终点及可达结果，泳道允许task业务入口，不强造start/end；架构依赖箭头合法，脑图单链分类也合法。纯组件名/参数预算不是task。新增批注后微改节点/边/容器文字仍不算结构修改；具体额度从正式标准读取。
 
-仅在用户明确要求视觉调整时 get_rendering_config，然后 configure_rendering；内容操作不能附带美化参数。
+增量修改与新建同样遵循正式标准：逐项对照用户要求，落实到原节点、条件和连接，保留稳定ID、无关内容与人工布局；完整update不能省略未涉及内容。提交前核对quality，提交后检查同一修订PNG，不以机器合格分或保存成功代替业务/视觉验收，不满意继续修改同一图。标准正文以docs/DRAWING_STANDARD.md“增量修改的执行要求”为准。
+
+仅用户明确要求整体自动排版或横竖切换时 get_rendering_config，再 configure_rendering；当前公开入口只支持relayout:true与可选orientation，不承诺旧schema列出的主题/配色/字体等配置，内容操作不能附带美化坐标。
 
 独立说明使用 kind:"note"、label 和可选 description/color，不填写角色、阶段、分层、父主题或坐标；文字独立浮在主图之上，不参与节点布局。用户要求恢复已删除图形时，先 list_deleted_diagrams，使用最新 revision/deletedAt 调用 restore_diagram；永久删除只在用户明确要求删除指定回收站图形时调用 permanently_delete_diagram。不能用旧备份覆盖或重新创建已删除 ID。
 

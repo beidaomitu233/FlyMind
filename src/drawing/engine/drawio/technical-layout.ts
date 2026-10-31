@@ -33,9 +33,9 @@ export function technicalDependencyPorts(source:DiagramNode,target:DiagramNode):
  return {}
 }
 /** Called only after initial routing, never on ordinary text patches. */
-export function styleTechnicalDependencies(native:NativeDocument,content:DiagramContent){
+export function styleTechnicalDependencies(native:NativeDocument,content:DiagramContent,only?:ReadonlySet<string>){
  const nodes=new Map(content.nodes.map(node=>[node.id,node]))
- for(const edge of content.edges){const source=nodes.get(edge.source)!,target=nodes.get(edge.target)!,a=technicalCategory(source),b=technicalCategory(target),auxiliary=[a,b].some(c=>['scheduler','messaging','locking','operations','observability'].includes(c)),curved=auxiliary||a==='client'
+ for(const edge of content.edges){if(only&&!only.has(edge.id))continue;const source=nodes.get(edge.source)!,target=nodes.get(edge.target)!,a=technicalCategory(source),b=technicalCategory(target),auxiliary=[a,b].some(c=>['scheduler','messaging','locking','operations','observability'].includes(c)),curved=auxiliary||a==='client'
   const entry=[...native.cells.values()].find(e=>attr(e.object,'fmType')==='edge'&&attr(e.object,'fmRole')==='main'&&attr(e.object,'fmId')===edge.id)
   if(entry)setStyle(entry,{curved:curved?1:0,bezier:0,rounded:0,...(auxiliary?{dashed:1,dashPattern:'6 4'}:{})})
  }

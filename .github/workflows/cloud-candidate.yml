@@ -12,7 +12,7 @@ on:
     # Delivery records do not change the running application or drawing rules.
     paths-ignore: ['AGENTS.md', 'docs/releases/**', 'docs/validation/**']
   pull_request:
-    paths: ['server/**', 'src/**', 'scripts/**', 'integrations/**', 'deploy/**', 'package*.json', '.github/workflows/cloud-candidate.yml']
+    paths: ['server/**', 'src/**', 'scripts/**', 'integrations/**', 'deploy/**', 'package*.json', 'tests/cloud-gateway-deployment.test.mjs', 'tests/install-gateway-publisher.test.py', '.github/workflows/cloud-candidate.yml']
 permissions:
   contents: read
 concurrency:
@@ -43,7 +43,7 @@ jobs:
       - name: Onboarding, editor loading, registration and startup feedback
         run: node --import tsx --test --test-concurrency=1 tests/agent-connect.test.ts tests/onboarding.test.ts tests/drawio-host.test.ts tests/drawio-loading.test.ts tests/native-layout-feedback.test.ts tests/cloud-auth-ui.test.ts tests/runtime-instance.test.ts
       - name: Cloud and local contract gates
-        run: node --import tsx --test --test-concurrency=1 tests/cloud-wire.test.ts tests/cloud-client.test.ts tests/flymind-documentation.test.ts tests/cloud-workspaces.test.ts tests/cloud-http.test.ts tests/cloud-collaboration.test.ts tests/cloud-merge.test.ts tests/cloud-mcp.test.ts tests/cloud-oauth.test.ts tests/cloud-mcp-updates.test.ts tests/cloud-maintenance.test.ts tests/local-auth.test.ts tests/local-auth-runtime.test.ts tests/native-session.test.ts tests/native-text-drafts.test.ts tests/task-groups.test.ts tests/drawio-outer-return.test.ts tests/drawio-technical.test.ts tests/technical-layout.test.ts tests/drawio-architecture-appearance.test.ts tests/native-undo-guard.test.ts tests/native-import-batch.test.ts tests/native-activity.test.ts tests/native-exports.test.ts tests/cloud-deployment.test.mjs tests/cloud-full-stack-deploy.test.mjs tests/cloud-artifact-source.test.mjs tests/cloud-python-extract.test.mjs
+        run: node --import tsx --test --test-concurrency=1 tests/cloud-wire.test.ts tests/cloud-client.test.ts tests/flymind-documentation.test.ts tests/cloud-workspaces.test.ts tests/cloud-http.test.ts tests/cloud-collaboration.test.ts tests/cloud-merge.test.ts tests/cloud-mcp.test.ts tests/native-mcp.test.ts tests/drawio-incremental-layout.test.ts tests/cloud-oauth.test.ts tests/cloud-mcp-updates.test.ts tests/cloud-maintenance.test.ts tests/local-auth.test.ts tests/local-auth-runtime.test.ts tests/native-session.test.ts tests/native-text-drafts.test.ts tests/task-groups.test.ts tests/drawio-outer-return.test.ts tests/drawio-technical.test.ts tests/technical-layout.test.ts tests/drawio-architecture-appearance.test.ts tests/native-undo-guard.test.ts tests/native-import-batch.test.ts tests/native-activity.test.ts tests/native-exports.test.ts tests/cloud-deployment.test.mjs tests/cloud-gateway-deployment.test.mjs tests/cloud-full-stack-deploy.test.mjs tests/cloud-artifact-source.test.mjs tests/cloud-python-extract.test.mjs
       - name: Packaged control-plane smoke contract fixtures (no infrastructure)
         run: node --test tests/control-plane-runtime-smoke.test.mjs tests/cloud-control-plane.test.mjs tests/cloud-full-stack-promote.test.mjs
       - name: Restricted artifact transfer validation (local fake source only)
@@ -54,6 +54,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Forced command validation failed' }
           python tests/cloud-control-plane-install.test.py
           if ($LASTEXITCODE -ne 0) { throw 'Console installer validation failed' }
+          python tests/install-gateway-publisher.test.py
+          if ($LASTEXITCODE -ne 0) { throw 'Gateway static installer validation failed' }
           python tests/cloud-node-ownership-repair.test.py
           if ($LASTEXITCODE -ne 0) { throw 'Fixed Node ownership validation failed' }
       - name: Java control plane

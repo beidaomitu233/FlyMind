@@ -12,7 +12,9 @@ import {createCloudMcpConnection,type CloudMcpOptions} from './mcp-connection'
 export async function createCloudMcpSession(options:CloudMcpOptions){
  options={...options}
  const adapter=await createCloudMcpConnection(options)
- const facade=createNativeMcpServer(async()=>adapter.connection,{waitMs:options.waitMs,pollMs:options.pollMs,editorURL:adapter.editorURL,resourceURL:adapter.resourceURL,remoteApplication:true})
+ let facade:Awaited<ReturnType<typeof createNativeMcpServer>>
+ try{facade=await createNativeMcpServer(async()=>adapter.connection,{waitMs:options.waitMs,pollMs:options.pollMs,editorURL:adapter.editorURL,resourceURL:adapter.resourceURL,remoteApplication:true})}
+ catch(error){await adapter.close();throw error}
  const transport=new StreamableHTTPServerTransport({sessionIdGenerator:()=>randomUUID(),enableJsonResponse:true})
  await facade.server.connect(transport)
  const digest=(s:string)=>createHash('sha256').update(s).digest()
