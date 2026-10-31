@@ -19,11 +19,22 @@ test('gateway fixed production command rejects arbitrary arguments; opt-in only 
   assert.equal(seen.length,failAt+1);assert.ok(!seen.some(x=>x.includes('gateway-promote')))
  }
 })
-async function fixture(fn){const root=await mkdtemp(join(tmpdir(),'flymind-gateway-test-'));try{const link=join(root,'application'),target=join(root,'target'),backup=join(root,'backup');await mkdir(link);await mkdir(target);await writeFile(join(link,'old'),'keep');await fn({root,link,target,backup})}finally{await rm(root,{recursive:true,force:true,maxRetries:3})}}
+async function fixture(fn,tempRoot=tmpdir()){const created=await mkdtemp(join(tempRoot,'flymind-gateway-test-')),root=await realpath(created);try{const link=join(root,'application'),target=join(root,'target'),backup=join(root,'backup');await mkdir(link);await mkdir(target);await writeFile(join(link,'old'),'keep');await fn({root,link,target,backup})}finally{await rm(root,{recursive:true,force:true,maxRetries:3})}}
 test('first fixed directory switches to verified target only after stop proof; original retained',()=>fixture(async f=>{
- const calls=[];const result=await switchGateway(f,{stop:async()=>calls.push('stop'),stopped:async()=>calls.push('stopped'),start:async()=>calls.push('start'),ready:async t=>{calls.push('ready');assert.equal(await realpath(f.link),t)}})
+ const calls=[];const result=await switchGateway(f,{stop:async()=>calls.push('stop'),stopped:async()=>calls.push('stopped'),start:async()=>calls.push('start'),ready:async t=>{calls.push('ready');assert.equal(await realpath(f.link),await realpath(t))}})
  assert.deepEqual(calls,['stop','stopped','start','ready']);assert.equal(result.legacy,true);assert.equal(await readFile(join(f.backup,'old'),'utf8'),'keep')
 }))
+test('temporary parent aliases canonicalize before fixed-directory promotion without changing production checks',async()=>{
+ const parent=await realpath(await mkdtemp(join(tmpdir(),'flymind-gateway-alias-')))
+ try{
+  const actual=join(parent,'actual-temp'),alias=join(parent,'RUNNER~1');await mkdir(actual);await symlink(actual,alias,'junction')
+  await fixture(async f=>{
+   assert.equal(f.root,await realpath(f.root));assert.ok(!f.root.startsWith(alias))
+   const result=await switchGateway(f,{stop:async()=>{},stopped:async()=>{},start:async()=>{},ready:async expected=>assert.equal(await realpath(f.link),await realpath(expected))})
+   assert.equal(result.legacy,true);assert.equal(await readFile(join(f.backup,'old'),'utf8'),'keep')
+  },alias)
+ }finally{await rm(parent,{recursive:true,force:true,maxRetries:3})}
+})
 test('readiness failure restores old actual directory and verifies restarted original',()=>fixture(async f=>{
  let starts=0,reads=0;await assert.rejects(switchGateway(f,{stop:async()=>{},stopped:async()=>{},start:async()=>{starts++},ready:async expected=>{if(++reads===1)throw Error('new failed');assert.equal(expected,f.link);assert.equal(await realpath(f.link),await realpath(expected))}}),e=>{assert.match(e.message,/new failed/);assert.equal(e.safeToUnlock,true);return true})
  assert.equal(starts,2);assert.equal((await lstat(f.link)).isDirectory(),true);assert.equal(await readFile(join(f.link,'old'),'utf8'),'keep')

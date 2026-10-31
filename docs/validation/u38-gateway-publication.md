@@ -25,7 +25,7 @@ sudo -n /usr/local/libexec/flymind-gateway-promote production run-ID-attempt arc
 `install-gateway-publisher.py` 由PM在已授权root控制台执行。先将最终审查commit中 `gateway-promote.mjs`、`ssh-command.py` 放在root保护目录；使用该commit原字节SHA及线上旧dispatcher精确SHA调用：
 
 ```text
-python3 install-gateway-publisher.py --source-directory /root/reviewed-gateway --publisher-sha256 NEW_PUBLISHER_SHA --dispatcher-sha256 NEW_DISPATCHER_SHA --old-dispatcher-sha256 ce137e7b612a8033e2bcb4fd47cad2e7da1e5116a808e9e2d124a59487c2caad7 --deploy-user flymind-deploy
+python3 install-gateway-publisher.py --source-directory /root/reviewed-gateway --publisher-sha256 NEW_PUBLISHER_SHA --dispatcher-sha256 NEW_DISPATCHER_SHA --old-dispatcher-sha256 ce137e7b612a8033e2bcb4fd47cad2e7da1e5116a808e9e2d124a59487c2cad7 --deploy-user flymind-deploy
 ```
 
 安装器只安装publisher、wrapper、dispatcher和专用gateway sudoers，固定Node路径；校验全部源字节、root保护链和原dispatcher preimage，Node --check/visudo先行，取得既有app/CP各自锁。静态备份root0600，逐文件原子替换，失败恢复原字节/权限。无下载、service重启、SQL、环境、SSH key或账号改动。哈希由PM对最终commit冻结，不能把工作区CRLF hash与git blob混用。备份保留在固定libexec下私有随机目录。
