@@ -8,6 +8,8 @@
 /resources/fonts/web/*.woff2 binary
 /resources/fonts/web/manifest.json -text
 /resources/fonts/web/NOTICE.txt -text
+/scripts/browser-font-core.txt text eol=lf
+/src/drawing/engine/browser-font-manifest.ts text eol=lf
 # These files are assembled on Windows and installed on Linux.
 /deploy/cloud/*.sh.example text eol=lf
 /deploy/cloud/*.service text eol=lf

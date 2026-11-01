@@ -19,7 +19,7 @@
 - 源OTF SHA仍 `2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b`。原OTF、OFL、父supply及runtimeFontCSS未改。
 - 95个WOFF2：core1片、common14片、rare80片，合计13,093,180字节。**全量并非消失**，按所用文字分片请求；极多罕见字可接近全量，不承诺任意内容都很小。
 - 全原cmap44,810码点精确、互斥、无丢失；每字advance和side-bearing与OTF相等，unitsPerEm相同；构建保留所有相关OpenType layout features及原UVS记录。原glyph65,535；分片总glyph66,450包含重复依赖闭包，未误把每片变成整字体。
-- 固定manifest记录各片size/SHA/range/字数/glyph数及工具/core语料SHA；manifest SHA为 `c1a69fbfea002f185211f951eca99b28820916502ad85c497b79954a2e693172`。构建工具仅开发环境 `fonttools==4.60.1 / brotli==1.1.0`，生产不安装pip、不联网生成、不引入npm运行依赖。`scripts/build-browser-fonts.py`可离线重建。
+- 固定manifest记录各片size/SHA/range/字数/glyph数及工具/core语料SHA；最终manifest SHA为 `2623cbb72f0481f4b32317ecd3a3b58c9ea5d26485a3cd5adfd6cb01e2033e0d`。发布前只修元数据换行：core与生成TS固定LF，core摘要统一为 `84e3e8a5cf1db706f1fa99b8d3eb75584cdbbb686befed934f5ad604bf5c713d`，95片字体逐文件SHA前后不变，未重生成。NOTICE/manifest原已LF，继续禁止Git文本转换。构建工具仅开发环境 `fonttools==4.60.1 / brotli==1.1.0`，生产不安装pip、不联网生成、不引入npm运行依赖。`scripts/build-browser-fonts.py`可离线重建。
 - assets启动校验整份manifest和95片固定SHA；HTTP只允许固定文件名，返回font/woff2、immutable/nosniff；损坏/未知字节不作为字体返回。setup从包内资源复制/验证到独立缓存，含OTF fallback，不依赖浏览器请求时临时生成。
 - package.files已有 `resources/fonts/`，`build-cloud-bundle.mjs`同样完整复制该目录；云包完整candidate逐文件冻结，新片成为明确的应用资源。compact按目标manifest携带新增文件，通用materializer不需改权限/协议，不能仅跑setup而让线上资源404回退大OTF。原raw font hash不变，但engineResourceKey按现有算法包含引擎/资源服务代码，正常会随本次代码变化，未伪装成旧兼容供应。
 

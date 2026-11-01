@@ -773,7 +773,7 @@
       "glyphs": 104
     }
   ],
-  "coreCorpusSha256": "8ede8fb6bb8d46f1b7b883fbf0ab80f4ec3448c5a902d0bf75752d062f3ac3bf",
+  "coreCorpusSha256": "84e3e8a5cf1db706f1fa99b8d3eb75584cdbbb686befed934f5ad604bf5c713d",
   "partitioning": {
     "common": 256,
     "rare": 512

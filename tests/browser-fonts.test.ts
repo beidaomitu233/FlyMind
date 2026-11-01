@@ -16,6 +16,7 @@ test('fixed WOFF2 supply has exact SHA/size, disjoint Unicode coverage and compl
  const coverage=new Set<number>();let total=0
  assert.equal(BROWSER_FONT_MANIFEST.sourceSha256,RUNTIME_FONT_SHA256)
  assert.equal(BROWSER_FONT_MANIFEST.metricsVerified,true)
+ const core=await readFile(resolve('scripts/browser-font-core.txt'),'utf8');assert.ok(!core.includes('\r'),'fixed font core corpus must use LF');assert.equal(createHash('sha256').update(core).digest('hex'),BROWSER_FONT_MANIFEST.coreCorpusSha256)
  for(const file of BROWSER_FONT_MANIFEST.files){
   const bytes=await readFile(resolve('resources/fonts/web',file.file));assert.equal(bytes.length,file.bytes);assert.equal(bytes.toString('ascii',0,4),'wOF2');assert.equal(createHash('sha256').update(bytes).digest('hex'),file.sha256)
   let count=0
