@@ -19,12 +19,19 @@ export function cloudTeamFetch(role:CloudRole,transport:typeof fetch=fetch):type
 /** Immutable browser identity. The server checks the same header against the cookie on every request. */
 export class CloudIdentityGuard {
  private lost?:NativeApiError
+ private readonly checks=new Map<string|undefined,Promise<CloudMe>>()
  constructor(readonly userId:string,private readonly transport:typeof fetch=globalThis.fetch.bind(globalThis),private readonly onLost:(error:NativeApiError)=>void=()=>{}){}
  invalidate(message='登录身份或团队权限已变化，请重新登录',status=401,code='CLOUD_IDENTITY_CHANGED'){
   if(!this.lost){this.lost=new NativeApiError(message,status,code);this.onLost(this.lost)}return this.lost
  }
  private assertActive(){if(this.lost)throw this.lost}
- async check(teamId?:string):Promise<CloudMe>{
+ check(teamId?:string):Promise<CloudMe>{
+  try{this.assertActive()}catch(error){return Promise.reject(error)}
+  const existing=this.checks.get(teamId);if(existing)return existing
+  const pending=this.readIdentity(teamId).finally(()=>{if(this.checks.get(teamId)===pending)this.checks.delete(teamId)})
+  this.checks.set(teamId,pending);return pending
+ }
+ private async readIdentity(teamId?:string):Promise<CloudMe>{
   this.assertActive()
   const response=await this.transport('/cloud-api/auth/me',{credentials:'same-origin',redirect:'error',cache:'no-store',headers:{'X-FlyMind-User-Id':this.userId}})
   this.assertActive()

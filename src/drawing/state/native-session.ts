@@ -50,10 +50,12 @@ export class NativeSaveSession {
     if(draft){this.latestSeq=draft.latestSeq;this.acknowledgedSeq=draft.acknowledgedSeq;this.inflight=structuredClone(draft.inflight);this.acknowledgedPending=structuredClone(draft.acknowledgedPending);this.reconcileBlocked=draft.reconcileBlocked??false;this.generation=draft.generation+1;this.journalVersion=draft.journalVersion+1;this.backedUp=false;this.status=this.reconcileBlocked?'conflict':this.inflight?'offline':this.dirty?'dirty':'ready';if(this.reconcileBlocked)this.error=new NativeApiError('已提交内容尚未完成协同重基，请保留草稿',409,'COLLABORATION_RECONCILE_BLOCKED',this.baseRevision)}
   }
   static async open(options:NativeSessionOptions):Promise<NativeSaveSession>{
-    const health=await options.transport.health()
+    // Both reads are bound to the requested root by the transport. Do not
+    // expose a session until both finish and their independent checks pass.
+    const [health,record]=await Promise.all([options.transport.health(),options.transport.get(options.diagramId)])
     if(health.dataRootId!==options.dataRootId)throw new NativeApiError('工作区身份已改变，请保留草稿并重新打开',409,'WORKSPACE_MISMATCH')
     if(!health.capabilities.nativePilot||!health.capabilities.nativeDocumentWrites)throw new NativeApiError('Native pilot 未启用',404,'NATIVE_PILOT_DISABLED')
-    const record=await options.transport.get(options.diagramId);checkRecord(record,options.diagramId)
+    checkRecord(record,options.diagramId)
     return new NativeSaveSession(options,record)
   }
   private equivalent(a:string,b:string){

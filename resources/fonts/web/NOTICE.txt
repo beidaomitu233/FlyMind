@@ -1,0 +1,9 @@
+FlyMind CJK Web - browser-only subsets of Noto Sans CJK SC Regular.
+Original: Copyright 2014-2021 Adobe (http://www.adobe.com/).
+Source: notofonts/noto-cjk commit 523d033d6cb47f4a80c58a35753646f5c3608a78.
+License: SIL Open Font License 1.1; full unmodified license in ../OFL.txt.
+Derived offline with fontTools 4.60.1 and Brotli 1.1.0. Internal derivative
+family names are FlyMind CJK Web; original copyright/license metadata retained.
+CSS compatibility aliases do not change the source document's font-family.
+All source Unicode cmap codepoints and horizontal advance/side-bearing metrics
+are verified by scripts/build-browser-fonts.py. Original OTF/export chain remains.

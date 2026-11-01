@@ -54,6 +54,38 @@ test('cloud permission failures remain explicit and are not converted into fake 
  await assert.rejects(()=>api.members('team1'),e=>e instanceof NativeApiError&&e.status===403&&e.code==='FORBIDDEN')
 })
 
+test('concurrent same-team preflights share only an in-flight check and never cache identity',async()=>{
+ const {CloudIdentityGuard}=await import('../src/drawing/services/cloud-client');let reads=0,release!:()=>void,user='u1'
+ const guard=new CloudIdentityGuard('u1',async()=>{reads++;await new Promise<void>(r=>{release=r});return Response.json({code:200,data:{user:{id:user},teams:[{id:'t1'}]}})})
+ const a=guard.check('t1'),b=guard.check('t1');assert.equal(reads,1);release();await Promise.all([a,b])
+ user='u2';const c=guard.check('t1');assert.equal(reads,2);release();await assert.rejects(c,e=>e instanceof NativeApiError&&e.code==='CLOUD_IDENTITY_CHANGED')
+})
+
+test('in-flight identity checks do not cross teams or survive invalidation',async()=>{
+ const {CloudIdentityGuard}=await import('../src/drawing/services/cloud-client');const releases:Array<()=>void>=[]
+ const guard=new CloudIdentityGuard('u1',async()=>{await new Promise<void>(r=>releases.push(r));return Response.json({code:200,data:{user:{id:'u1'},teams:[{id:'t1'},{id:'t2'}]}})})
+ const a=guard.check('t1'),b=guard.check('t2');assert.equal(releases.length,2);guard.invalidate();releases.forEach(r=>r())
+ await Promise.all([assert.rejects(a),assert.rejects(b)])
+})
+
+test('one aborted request does not abort a shared identity check or another request',async()=>{
+ const {CloudIdentityGuard}=await import('../src/drawing/services/cloud-client');let release!:()=>void,checks=0,completed=0
+ const guard=new CloudIdentityGuard('u1',async(input,init)=>{
+  if(String(input).endsWith('/auth/me')){checks++;assert.equal(init?.signal,undefined);await new Promise<void>(r=>{release=r});return Response.json({code:200,data:{user:{id:'u1'},teams:[{id:'t1',role:'editor'}]}})}
+  init?.signal?.throwIfAborted();completed++;return Response.json({ok:true})
+ })
+ const send=guard.fetch('t1'),controller=new AbortController(),a=send('/first',{signal:controller.signal}),b=send('/second')
+ const denied=assert.rejects(a,e=>e instanceof DOMException&&e.name==='AbortError')
+ controller.abort();release();await Promise.all([denied,b]);assert.equal(checks,1);assert.equal(completed,1)
+})
+
+test('a failed shared preflight is removed before the next check',async()=>{
+ const {CloudIdentityGuard}=await import('../src/drawing/services/cloud-client');let calls=0,release!:()=>void
+ const guard=new CloudIdentityGuard('u1',async()=>{calls++;if(calls===1){await new Promise<void>(r=>{release=r});throw new TypeError('fixture connection lost')}return Response.json({code:200,data:{user:{id:'u1'},teams:[]}})})
+ const a=guard.check(),b=guard.check(),both=Promise.all([assert.rejects(a),assert.rejects(b)]);release();await both
+ await guard.check();assert.equal(calls,2)
+})
+
 test('fixed user guard stops cookie account changes before sending a mutation',async()=>{
  const {CloudIdentityGuard}=await import('../src/drawing/services/cloud-client');let mutations=0,lost=0
  const guard=new CloudIdentityGuard('u1',async(input)=>{if(String(input).endsWith('/auth/me'))return Response.json({code:200,data:{user:{id:'u2'},teams:[{id:'t1',role:'editor'}]}});mutations++;return Response.json({code:200})},()=>lost++)

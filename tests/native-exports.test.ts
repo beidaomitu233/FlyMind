@@ -144,13 +144,14 @@ test('crashed lease resumes across store instances and bounded expired attempts 
 
 test('hard deadline covers stalled preparation and publication; late filesystem work stays unregistered',async()=>{
   for(const stage of ['prepare','publish','event-loop'] as const){
-    const s=await setup(),renderer=new Renderer(),gate=deferred<void>();let entered=false,finished=false
+    const s=await setup(),renderer=new Renderer(),gate=deferred<void>();let entered=false,finished=false,preparationError:unknown
     // Leave ample budget for validation under the default suite/build CPU load.
     // The injected stall starts only after the intended stage has been observed.
     const timeoutMs=2000
     const worker=new NativeExportWorker(s.store,renderer,{leaseMs:5000,timeoutMs,prepareArtifacts:async(...args)=>{
       if(stage==='prepare'){entered=true;await gate.promise}
-      const prepared=await prepareNativeArtifacts(...args)
+      let prepared:Awaited<ReturnType<typeof prepareNativeArtifacts>>
+      try{prepared=await prepareNativeArtifacts(...args)}catch(error){preparationError=error;finished=true;throw error}
       if(stage==='event-loop'){entered=true;const until=Date.now()+timeoutMs+250;while(Date.now()<until){};finished=true;return prepared}
       if(stage==='publish')return {...prepared,publish:async()=>{entered=true;await gate.promise;await prepared.publish();finished=true}}
       finished=true;return prepared
@@ -161,6 +162,7 @@ test('hard deadline covers stalled preparation and publication; late filesystem 
       await assert.rejects(s.exports.file(job.id,'png'),(e:any)=>e.code==='EXPORT_NOT_READY')
       const failed=(await s.store.getNativeExport(job.id)).job;assert.equal(failed.leaseOwner,undefined);assert.equal(failed.manifest,undefined)
       gate.resolve();await until(()=>finished);await sleep(5)
+      if(stage==='prepare')assert.equal((preparationError as {code?:string})?.code,'HEAVY_WORK_ABORTED')
       assert.equal((await s.exports.get(job.id)).status,'failed');assert.equal((await s.store.getNativeExport(job.id)).job.manifest,undefined)
     }finally{gate.resolve();await worker.close();await cleanup(s.root)}
   }

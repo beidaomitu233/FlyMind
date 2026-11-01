@@ -9,14 +9,13 @@ import type {DiagramOperation} from '../../src/drawing/core/operations'
 import {validateContent,extractContent,composeDocument,applyContentOperations} from '../../src/drawing/core/layers'
 import {canonicalContentJson} from '../../src/drawing/engine/content-hash'
 import {createDrawingProject,validateDrawingProject} from '../../src/drawing/engine/project'
-import {compileDrawio,patchDrawio} from '../../src/drawing/engine/drawio'
+import {compileDrawio,patchDrawio,configureDrawio,normalizeDrawioEdits} from '../heavy-work/engine'
 import {inspectDrawing,type EditIntent} from '../../src/drawing/core/drawing-quality'
 import {requireNativeAIQuality} from './native-quality'
 import {diffNativeContent} from './native-content-diff'
 import {defaultProfileForKind,drawioCapabilities} from '../../src/drawing/engine/profiles'
 import {mergeNativeSnapshots,CollaborationMergeError} from '../../src/drawing/engine/collaboration/merge'
 import {nativeProtocolPatch} from '../../src/drawing/engine/collaboration/protocol-patch'
-import type {DrawioRenderingChanges,DrawioConfigureResult,DrawingProjectV3} from '../../src/drawing/engine/types'
 
 type Input=Record<string,any>
 function exact(input:unknown,allowed:string[],required:string[]):Input {
@@ -90,9 +89,7 @@ export class NativeDiagramService {
     const base=await this.get(id);this.expected(base,expected)
     const capability=drawioCapabilities().profiles.find(p=>p.kind===base.document.content.kind)
     if(!capability?.configureRendering)throw new StoreError('此profile尚未支持实际渲染配置修改',422,undefined,'NATIVE_RENDERING_EDIT_UNSUPPORTED')
-    const module=await import('../../src/drawing/engine/drawio') as unknown as {configureDrawio?:(base:DrawingProjectV3,changes:DrawioRenderingChanges)=>Promise<DrawioConfigureResult>}
-    if(!module.configureDrawio)throw new StoreError('实际配置引擎未就绪',422,undefined,'NATIVE_RENDERING_EDIT_UNSUPPORTED')
-    const configured=await module.configureDrawio(base.document,value.rendering),candidate=await validateDrawingProject({...base.document,rendering:{profile:configured.profile,preferences:configured.preferences,engine:configured.engine}})
+    const configured=await configureDrawio(base.document,value.rendering),candidate=await validateDrawingProject({...base.document,rendering:{profile:configured.profile,preferences:configured.preferences,engine:configured.engine}})
     if(canonicalContentJson(candidate.content)!==canonicalContentJson(base.document.content))throw new StoreError('渲染配置改变了业务内容，未提交',400,undefined,'CONTENT_DIFF_MISMATCH')
     return this.store.commitNative(id,expected,candidate,m)
   }
@@ -131,7 +128,6 @@ export class NativeDiagramService {
     if(replay)return replay
     const base=await this.store.getNativeDrawing(id);this.expected(base,expected)
     if(isCanvasRecord(base)){const candidate=await createNativeCanvasProject(value.xml,{id:base.document.id,title:base.document.title,createdAt:base.document.createdAt,updatedAt:base.document.updatedAt});return this.store.commitNativeDrawing(id,expected,candidate,m)}
-    const {normalizeDrawioEdits}=await import('../../src/drawing/engine/drawio')
     const normalized=await normalizeDrawioEdits(value.xml,base.document)
     const candidate=await validateDrawingProject({...base.document,content:normalized.content,rendering:{...base.document.rendering,engine:{...base.document.rendering.engine,xml:normalized.xml,contentHash:normalized.contentHash}}})
     return this.store.commitNative(id,expected,candidate,m)
@@ -159,7 +155,6 @@ export class NativeDiagramService {
       let candidate:NativeDrawingRecord['document']
       if(isCanvasRecord(current))candidate=await createNativeCanvasProject(xml,{id:current.document.id,title:current.document.title,createdAt:current.document.createdAt,updatedAt:current.document.updatedAt})
       else{
-        const {normalizeDrawioEdits}=await import('../../src/drawing/engine/drawio')
         const normalized=await normalizeDrawioEdits(xml,current.document)
         candidate=await validateDrawingProject({...current.document,content:normalized.content,rendering:{...current.document.rendering,engine:{...current.document.rendering.engine,xml:normalized.xml,contentHash:normalized.contentHash}}})
       }

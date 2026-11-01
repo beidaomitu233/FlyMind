@@ -40,7 +40,7 @@ export class NativeExportWorker {
         const projected=isNativeCanvasProject(job.snapshot)?undefined:await projectDrawio(rendered.nativeXML,job.snapshot.content);check()
         if(!isNativeCanvasProject(job.snapshot)&&projected?.contentHash!==job.snapshot.rendering.engine.contentHash)throw new StoreError('渲染器返回了不同业务快照',500,undefined,'EXPORT_SNAPSHOT_INVALID')
         if((isNativeCanvasProject(job.snapshot)?nativeCanvasRenderSignature:drawioRenderSignature)(rendered.nativeXML)!==(isNativeCanvasProject(job.snapshot)?nativeCanvasRenderSignature:drawioRenderSignature)(job.snapshot.rendering.engine.xml))throw new StoreError('渲染器改变了快照的人工几何或样式',500,undefined,'EXPORT_SNAPSHOT_INVALID')
-        check();const prepared=await (this.options.prepareArtifacts??prepareNativeArtifacts)(this.store.root,job,rendered,Date.now());check()
+        check();const prepared=await (this.options.prepareArtifacts??prepareNativeArtifacts)(this.store.root,job,rendered,Date.now(),{signal:controller.signal,timeoutMs:Math.max(1,Math.min(30000,deadline-Date.now()))});check()
         await this.store.assertNativeExportLease(job.id,this.owner,job.leaseToken!);check()
         await prepared.publish();check()
         // SQLite completion is synchronous inside its promise; check absolute time

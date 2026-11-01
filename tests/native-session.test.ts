@@ -270,6 +270,20 @@ test('concurrent recovery forks keep independent journals while retrying the sam
   assert.equal(transport.remote.revision,3)
 })
 
+test('open overlaps bound reads but never exposes a session on a failed health or document read',async()=>{
+ for(const fail of ['root','health','record'] as const){
+  const health=deferred<NativeHealth>(),read=deferred<NativeRecord>();let healthStarted=false,readStarted=false
+  const transport:NativeTransport={health:()=>{healthStarted=true;return health.promise},get:()=>{readStarted=true;return read.promise},saveEditor:async()=>{throw Error('unexpected write')}}
+  const opening=NativeSaveSession.open({dataRootId:'workspace-1',diagramId:'diagram-1',transport,drafts:new MemoryDraftRepository()})
+  const rejected=assert.rejects(opening,e=>e instanceof NativeApiError)
+  assert.ok(healthStarted&&readStarted,'both reads start without waiting for the other response')
+  if(fail==='health')health.reject(new NativeApiError('denied',403,'FORBIDDEN'))
+  else health.resolve({dataRootId:fail==='root'?'other-root':'workspace-1',capabilities:{nativePilot:true,nativeDocumentWrites:true}} as NativeHealth)
+  if(fail==='record')read.reject(new NativeApiError('missing',404,'NOT_FOUND'));else read.resolve(record())
+  await rejected
+ }
+})
+
 test('wrong workspace and revision mismatch return blocked recovery data without write-back',async()=>{
   const {session,transport,repo,options}=await setup()
   await session.edit('XML-draft');const saved=(await repo.list())[0]

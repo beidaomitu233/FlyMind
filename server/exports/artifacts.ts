@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto'
 import {mkdir,open,readFile,realpath,rename,stat,utimes} from 'node:fs/promises'
 import {join,sep} from 'node:path'
 import sharp from 'sharp'
-import {DOMParser} from '@xmldom/xmldom'
+import {runHeavyWork} from '../heavy-work/runner'
 import {exportBasename} from '../../src/drawing/core/export-metadata'
 import {canonicalContentJson} from '../../src/drawing/engine/content-hash'
 import {StoreError} from '../store'
@@ -28,16 +28,11 @@ async function parentDirectory(root:string,job:StoredNativeExport){
 async function durableWrite(path:string,value:Buffer,at:number){const file=await open(path,'wx');try{await file.writeFile(value);await file.sync()}finally{await file.close()}await utimes(path,at/1000,at/1000)}
 
 /** Each lease owns a different publication directory; no shared latest file is overwritten. */
-export async function prepareNativeArtifacts(root:string,job:StoredNativeExport,rendered:Awaited<ReturnType<NativeExportRenderer['render']>>,at:number){
+export async function prepareNativeArtifacts(root:string,job:StoredNativeExport,rendered:Awaited<ReturnType<NativeExportRenderer['render']>>,at:number,controls:{signal?:AbortSignal;timeoutMs?:number}={}){
   if(!Buffer.isBuffer(rendered.png)||typeof rendered.svg!=='string')throw new StoreError('渲染器未返回有效图像',500,undefined,'EXPORT_RENDER_INVALID')
   const png=await sharp(rendered.png).metadata()
   if(png.format!=='png'||!png.width||!png.height||png.width!==rendered.width||png.height!==rendered.height||!Number.isFinite(rendered.scale)||rendered.scale<=0)throw new StoreError('PNG 格式或实际尺寸不符',500,undefined,'EXPORT_RENDER_INVALID')
-  let parseFailed=false
-  const svg=new DOMParser({errorHandler:{warning:()=>{parseFailed=true},error:()=>{parseFailed=true},fatalError:()=>{parseFailed=true}}}).parseFromString(rendered.svg,'image/svg+xml')
-  if(parseFailed||svg.documentElement?.localName!=='svg'||/<!DOCTYPE/i.test(rendered.svg))throw new StoreError('SVG 格式无效',500,undefined,'EXPORT_RENDER_INVALID')
-  const viewBox=(svg.documentElement.getAttribute('viewBox')||'').trim().split(/[ ,]+/).map(Number)
-  const svgWidth=parseFloat(svg.documentElement.getAttribute('width')||''),svgHeight=parseFloat(svg.documentElement.getAttribute('height')||'')
-  if(!(viewBox.length===4&&viewBox.every(Number.isFinite)&&viewBox[2]>0&&viewBox[3]>0)&&!(svgWidth>0&&svgHeight>0))throw new StoreError('SVG 尺寸无效',500,undefined,'EXPORT_RENDER_INVALID')
+  await runHeavyWork('svg-metadata',{svg:rendered.svg},controls)
   const canvas=isNativeCanvasProject(job.snapshot)
   const buffers:Partial<Record<NativeExportFormat,Buffer>>={png:rendered.png,svg:Buffer.from(rendered.svg),drawio:Buffer.from(job.snapshot.rendering.engine.xml),'project.json':Buffer.from(JSON.stringify(job.snapshot,null,2))}
   if(!isNativeCanvasProject(job.snapshot))buffers.json=Buffer.from(JSON.stringify(job.snapshot.content,null,2))

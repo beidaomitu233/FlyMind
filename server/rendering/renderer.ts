@@ -1,15 +1,14 @@
 import {createServer,type Server} from 'node:http'
-import {randomUUID,createHash} from 'node:crypto'
-import {readFile} from 'node:fs/promises'
+import {randomUUID} from 'node:crypto'
 import {resolve} from 'node:path'
 import express from 'express'
 import {chromium,type Browser,type BrowserContext} from 'playwright-core'
 import {launchHiddenBrowser,type HiddenBrowser} from './hidden-browser'
-import {inspectNativeSVGResources} from './svg-resources'
 import {resolveRuntimeAssets,checkRuntimeAssets,runtimeAssetsRouter} from './assets'
 import {NativeRenderError,type NativeRenderOptions,type NativeRenderResult,type RuntimeAssetPaths} from './types'
 import {RENDER_BUDGET,exportScale} from './budgets'
-import {packageNativeSVGFonts} from './svg-fonts'
+import {runHeavyWork} from '../heavy-work/runner'
+import {availableHeavyMemory} from '../heavy-work/resources'
 import type {NativeDrawingProject} from '../../src/drawing/engine/types'
 import {validateNativeProject,isNativeCanvasProject,assertNativeResourceSafety,nativeCanvasRenderSignature} from '../../src/drawing/engine/native-canvas'
 import {DRAWIO_VERSION} from '../../src/drawing/engine/constants'
@@ -51,6 +50,8 @@ export class NativeDrawioRenderer {
   if(this.browser)return this.browser
   let owned:HiddenBrowser|undefined
   const launching=(async()=>{
+   if(await availableHeavyMemory()<512*1024*1024)throw new NativeRenderError('RENDER_MEMORY_LOW','可用内存不足，未启动绘图浏览器')
+   if(this.closed)throw new NativeRenderError('RENDERER_CLOSED','renderer 已关闭')
    const browser=process.platform==='win32'?(owned=await launchHiddenBrowser(this.assets.browserExecutable)).browser:await chromium.launch({executablePath:this.assets.browserExecutable,headless:true,chromiumSandbox:true,args:['--disable-background-networking','--disable-component-update']})
    if(owned)this.ownedBrowser=owned
    if(this.closed||browser.version()!==RUNTIME_BROWSER_VERSION){if(owned)await owned.close();else await browser.close();throw new NativeRenderError(this.closed?'RENDERER_CLOSED':'BROWSER_VERSION_MISMATCH',this.closed?'renderer 已关闭':`需要 ${RUNTIME_BROWSER_VERSION}，实际 ${browser.version()}`)}
@@ -74,7 +75,10 @@ export class NativeDrawioRenderer {
   const check=()=>{if(abort.signal.aborted)throw abort.signal.reason;if(this.closed)throw new NativeRenderError('RENDERER_CLOSED','renderer 已关闭')}
   try{return await Promise.race([interrupted,(async()=>{
    const project=await validateNativeProject(structuredClone(input));check();assertNativeResourceSafety(project.rendering.engine.xml);const fonts=fontsUsed(project.rendering.engine.xml),origin=await this.start();check()
-   const beforeBrowser=performance.now(),browser=await this.getBrowser();check();const browserStartMs=performance.now()-beforeBrowser
+   // Admission, not an OS memory quota: retain headroom before a new browser
+   // context and its CPU worker can allocate. Other services can still compete.
+   if(await availableHeavyMemory()<512*1024*1024)throw new NativeRenderError('RENDER_MEMORY_LOW','可用内存不足，未启动本次绘图渲染；请稍后显式重试')
+   check();const beforeBrowser=performance.now(),browser=await this.getBrowser();check();const browserStartMs=performance.now()-beforeBrowser
    context=await browser.newContext({viewport:{width:1800,height:1200},serviceWorkers:'block'});if(abort.signal.aborted||this.closed)await context.close().catch(()=>{});check();const page=await context.newPage();check()
    const external:string[]=[],failures:string[]=[];await context.route('**/*',route=>{const url=route.request().url();if(url.startsWith(origin+'/')||url.startsWith('data:')||url.startsWith('blob:'))return route.continue();external.push(url);return route.abort()})
    page.on('pageerror',e=>{failures.push(e.message);for(const request of pending.values())request.reject(new NativeRenderError('EDITOR_SCRIPT_ERROR',e.message));pending.clear()});const target={},pending=new Map<string,{resolve:(v:any)=>void;reject:(e:Error)=>void}>();let lastLoad:any
@@ -101,11 +105,10 @@ export class NativeDrawioRenderer {
    const exportOne=async(format:'png'|'svg')=>{check();const id=randomUUID(),result=new Promise<any>((resolve,reject)=>pending.set(id,{resolve,reject}));post(JSON.stringify({action:'export',format,message:id,scale,border:8,background:background==='white'?'#ffffff':'none',transparent:background==='transparent',embedImages:true,embedFonts:false,...(format==='svg'?{asText:true}:{})}),origin);return result}
    const svgReply=await exportOne('svg');check();const pngReply=await exportOne('png');check()
    if(typeof svgReply.data!=='string'||Buffer.byteLength(svgReply.data)>RENDER_BUDGET.maxSVGBytes)throw new NativeRenderError('OUTPUT_BUDGET','SVG输出超量或无效')
-   const svg=packageNativeSVGFonts(svgReply.data,await readFile(resolve(this.assets.fontRoot,RUNTIME_FONT_FILE)))
+   const {svg}=await runHeavyWork<{svg:string}>('svg-fonts',{svg:svgReply.data,fontFile:resolve(this.assets.fontRoot,RUNTIME_FONT_FILE)},{signal:abort.signal,timeoutMs:Math.max(1,Math.floor(Math.min(30000,timeout-(performance.now()-started))))})
    if(Buffer.byteLength(svg)>RENDER_BUDGET.maxSVGBytes)throw new NativeRenderError('OUTPUT_BUDGET','封装SVG超出字节预算')
-   const {urls}=inspectNativeSVGResources(svg)
-   const embeddedFonts=urls.filter(url=>/^data:(font\/|application\/(?:x-font-|font|octet-stream))/i.test(url))
-   if(!embeddedFonts.length||embeddedFonts.some(url=>createHash('sha256').update(Buffer.from(url.slice(url.indexOf(',')+1),'base64')).digest('hex')!==RUNTIME_FONT_SHA256))throw new NativeRenderError('FONT_NOT_EMBEDDED','SVG未嵌入固定SHA字体')
+   // Drawing/font/resource checks run in the bounded CPU worker; a synchronous
+   // SVG parse cannot prevent HTTP timers or the export heartbeat from running.
    if(typeof pngReply.data!=='string'||!pngReply.data.startsWith('data:image/png;base64,')||pngReply.data.length>RENDER_BUDGET.maxPNGBytes*4/3+100)throw new NativeRenderError('OUTPUT_BUDGET','PNG输出超量或无效')
    const png=Buffer.from(pngReply.data.slice(pngReply.data.indexOf(',')+1),'base64');if(png.length<24||png.subarray(0,8).toString('hex')!=='89504e470d0a1a0a')throw new NativeRenderError('INVALID_PNG','原生PNG无效')
    const width=png.readUInt32BE(16),height=png.readUInt32BE(20);if(width>RENDER_BUDGET.maxDimension||height>RENDER_BUDGET.maxDimension||width*height>RENDER_BUDGET.maxPixels)throw new NativeRenderError('DIMENSION_BUDGET','原生PNG超出像素预算')

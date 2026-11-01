@@ -5,6 +5,9 @@
 /resources/fonts/OFL.txt -text
 /resources/fonts/supply.json -text
 /resources/fonts/NotoSansCJKsc-Regular.otf binary
+/resources/fonts/web/*.woff2 binary
+/resources/fonts/web/manifest.json -text
+/resources/fonts/web/NOTICE.txt -text
 # These files are assembled on Windows and installed on Linux.
 /deploy/cloud/*.sh.example text eol=lf
 /deploy/cloud/*.service text eol=lf

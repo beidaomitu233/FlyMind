@@ -3,6 +3,7 @@ import {onMounted,onBeforeUnmount,ref,watch,nextTick} from 'vue'
 import {DrawioHostController,DrawioHostProtocolError,type HostReady,type HostXML,type HostError,type HostSaveRequested} from '../engine/drawio-host/controller'
 import {drawioHostURL} from '../engine/drawio-host/library'
 import {applyDrawioAppearance,type DrawioAppearance} from '../engine/drawio-host/appearance'
+import {applyBrowserFonts} from '../engine/browser-fonts'
 import {hasUncommittedNativeText} from '../engine/drawio-host/editing'
 
 const props=defineProps<{sessionKey:string;initialXML:string;title?:string;appearance?:DrawioAppearance;collaboration?:boolean}>()
@@ -12,7 +13,7 @@ let initial={sessionKey:props.sessionKey,initialXML:props.initialXML,title:props
 const iframe=ref<HTMLIFrameElement>(),src=ref<string>(),visible=ref(false),loadFailed=ref(false),attempt=ref(0)
 let disposed=false,paintFrame:number|undefined,paintGeneration=0
 function cancelReveal(){paintGeneration++;if(paintFrame!==undefined)cancelAnimationFrame(paintFrame);paintFrame=undefined}
-function applyAppearance(){const document=iframe.value?.contentDocument;if(document?.head)applyDrawioAppearance(document,props.appearance??'light')}
+function applyAppearance(){const document=iframe.value?.contentDocument;if(document?.head){applyBrowserFonts(document);applyDrawioAppearance(document,props.appearance??'light')}}
 let historyDocument:Document|undefined
 let interactionUntil=0,pointerStarted=0
 function pointerDown(){pointerStarted=Date.now();interactionUntil=Date.now()+300}
@@ -35,8 +36,8 @@ function boot(initializedEngine=false){
   if(disposed)return
   visible.value=false;loadFailed.value=false;cancelReveal()
   try{
-    controller=new DrawioHostController({...initial,initializedEngine,requireDocumentIdentity:initial.initialXML.includes('fmDocumentId='),collaboration:props.collaboration,origin:window.location.origin,source:()=>iframe.value?.contentWindow,
-      post:(data,origin)=>{if(!iframe.value?.contentWindow)throw new Error('编辑器窗口不存在');iframe.value.contentWindow.postMessage(data,origin)},
+    controller=new DrawioHostController({...initial,initializedEngine,browserFonts:true,requireDocumentIdentity:initial.initialXML.includes('fmDocumentId='),collaboration:props.collaboration,origin:window.location.origin,source:()=>iframe.value?.contentWindow,
+      post:(data,origin)=>{if(!iframe.value?.contentWindow)throw new Error('编辑器窗口不存在');if(data.startsWith('{"action":"configure",')||data.startsWith('{"action":"load",')){const document=iframe.value.contentDocument;if(document?.head)applyBrowserFonts(document)}iframe.value.contentWindow.postMessage(data,origin)},
       readViewport:()=>{const el=iframe.value?.contentDocument?.querySelector('.geDiagramContainer');if(!el||!Number.isFinite(el.scrollLeft)||!Number.isFinite(el.scrollTop))throw new DrawioHostProtocolError('VIEWPORT_UNAVAILABLE','当前画布不可读');return {scrollLeft:el.scrollLeft,scrollTop:el.scrollTop}},
       onReady:reveal,onXML:e=>emit('xml',e),onError:e=>{if(!visible.value){cancelReveal();loadFailed.value=true}emit('error',e)},onSaveRequested:e=>emit('saveRequested',e)})
     window.addEventListener('message',receive);if(initializedEngine)return;const url=new URL(drawioHostURL(window.location.origin,initial.initialXML));url.searchParams.set('tooltips','0');url.searchParams.set('dark','0');src.value=url.href

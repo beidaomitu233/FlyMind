@@ -13,9 +13,10 @@ const prototypes=[
 ] as const
 
 /** Inline data works with the fixed editor's offline=1; no URL library fetch. */
-export function businessLibraryConfiguration(fontFamilies?:readonly string[]){
+export function businessLibraryConfiguration(fontFamilies?:readonly string[],browserFonts=false){
+  const originalFontCSS=runtimeFontCSS(fontFamilies)
   return {
-    defaultFonts:[RUNTIME_FONT_FAMILY],fontCss:runtimeFontCSS(fontFamilies),
+    defaultFonts:[RUNTIME_FONT_FAMILY],fontCss:browserFonts?'':originalFontCSS,
     defaultVertexStyle:{fontFamily:RUNTIME_FONT_FAMILY},
     defaultEdgeStyle:{edgeStyle:'orthogonalEdgeStyle',rounded:'0',jettySize:'auto',orthogonalLoop:'1',fontFamily:RUNTIME_FONT_FAMILY},
     libraries:[{title:{main:'FlyMind 业务'},entries:[{id:'fm-business',title:{main:'FlyMind 业务节点'},libs:[{title:{main:'业务节点（按图形类型设置归属）'},data:prototypes.map(p=>({
