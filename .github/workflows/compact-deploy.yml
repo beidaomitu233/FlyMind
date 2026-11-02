@@ -34,6 +34,10 @@ on:
         description: Publish after the reviewed static materializer is installed
         type: boolean
         default: false
+      deploy_control_plane:
+        description: Also publish Java (app-only requires identical backend source and migrations)
+        type: boolean
+        default: true
       deploy_gateway:
         description: Upgrade stable gateway (requires reviewed root entry already installed; reconnects MCP sessions)
         type: boolean
@@ -77,6 +81,21 @@ jobs:
           COMPACT_TARGET_RUN: ${{ inputs.source_run_id || '40071395983' }}
           COMPACT_BASELINE_RUN: ${{ inputs.baseline_run_id || '39994902799' }}
         run: node scripts/check-compact-source.mjs
+      - name: Require unchanged backend source and migrations for app-only publication
+        if: github.event_name == 'workflow_dispatch' && inputs.deploy_control_plane == false
+        env:
+          BASE_SHA: ${{ steps.provenance.outputs.baseline_sha }}
+          TARGET_SHA: ${{ steps.provenance.outputs.target_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$BASE_SHA" =~ ^[a-f0-9]{40}$ && "$TARGET_SHA" =~ ^[a-f0-9]{40}$ ]]
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" "$TARGET_SHA"
+          if ! git diff --quiet "$BASE_SHA" "$TARGET_SHA" -- integrations/xinghui-admin/backend; then
+            echo 'Java source or migrations changed; a full-stack publication is required.'
+            exit 1
+          fi
+          echo 'APP_ONLY_COMPATIBILITY_OK: backend source and migrations unchanged'
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         if: github.event_name == 'workflow_dispatch'
         with:
@@ -150,7 +169,7 @@ jobs:
       - name: Publish only the verified compact candidate
         env:
           DEPLOY_ENVIRONMENT: production
-          DEPLOY_CONTROL_PLANE_DEPLOY: 'true'
+          DEPLOY_CONTROL_PLANE_DEPLOY: ${{ inputs.deploy_control_plane && 'true' || 'false' }}
           DEPLOY_GATEWAY_DEPLOY: ${{ inputs.deploy_gateway == true && 'true' || 'false' }}
           DEPLOY_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
           DEPLOY_SOURCE_SHA: ${{ needs.prepare.outputs.target_sha }}
