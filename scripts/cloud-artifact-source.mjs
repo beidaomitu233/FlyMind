@@ -31,8 +31,14 @@ export function validateArtifactURL(value){
  return value
 }
 export async function artifactFetchMetadata(env,tarBytes,fetchImpl=fetch){
- const repo=env.GITHUB_REPOSITORY,run=env.DEPLOY_SOURCE_RUN_ID,sha=env.DEPLOY_SOURCE_SHA
- if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo??'')||!(/^[1-9]\d*$/).test(run??'')||!/^[a-f0-9]{40}$/.test(sha??'')||!env.GITHUB_TOKEN||!Number.isSafeInteger(tarBytes)||tarBytes<1||tarBytes>2_000_000_000)throw Error('Artifact source identity invalid')
+ const repo=env.GITHUB_REPOSITORY,sourceRun=env.DEPLOY_SOURCE_RUN_ID,sourceSHA=env.DEPLOY_SOURCE_SHA
+ if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo??'')||!(/^[1-9]\d*$/).test(sourceRun??'')||!/^[a-f0-9]{40}$/.test(sourceSHA??'')||!env.GITHUB_TOKEN||!Number.isSafeInteger(tarBytes)||tarBytes<1||tarBytes>2_000_000_000)throw Error('Artifact source identity invalid')
+ // A compact transport is produced by a different reviewed Actions run. This
+ // never changes the business source identity used by readCandidateIdentity.
+ const override=[env.DEPLOY_ARTIFACT_RUN_ID,env.DEPLOY_ARTIFACT_NAME,env.DEPLOY_ARTIFACT_SHA],provided=override.filter(value=>value!==undefined).length
+ if(provided!==0&&provided!==3)throw Error('Artifact producer override must be complete')
+ const run=provided?override[0]:sourceRun,name=provided?override[1]:'flymind-linux-x64',sha=provided?override[2]:sourceSHA
+ if(!/^[1-9]\d*$/.test(run??'')||!/^[a-f0-9]{40}$/.test(sha??'')||!['flymind-linux-x64','flymind-compact-linux-x64'].includes(name))throw Error('Artifact producer identity invalid')
  const root='https://api.github.com/repos/'+repo+'/actions'
  const request=async(path,redirect='error')=>{
   try{return await fetchImpl(root+path,{headers:{Authorization:'Bearer '+env.GITHUB_TOKEN,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},redirect,signal:AbortSignal.timeout(15000)})}
@@ -43,7 +49,7 @@ export async function artifactFetchMetadata(env,tarBytes,fetchImpl=fetch){
  const raw=await response.text();if(raw.length>1024*1024)throw Error('Artifact inventory budget exceeded')
  let inventory;try{inventory=JSON.parse(raw)}catch{throw Error('Artifact inventory JSON invalid')}
  if(!Number.isSafeInteger(inventory.total_count)||inventory.total_count>100)throw Error('Artifact inventory incomplete')
- const matches=inventory.artifacts?.filter(a=>a.name==='flymind-linux-x64'&&!a.expired)
+ const matches=inventory.artifacts?.filter(a=>a.name===name&&!a.expired)
  if(matches?.length!==1)throw Error('Expected exactly one immutable Linux artifact')
  const artifact=matches[0]
  if(!Number.isSafeInteger(artifact.id)||artifact.id<1||!Number.isSafeInteger(artifact.size_in_bytes)||artifact.size_in_bytes<1||artifact.size_in_bytes>2_000_000_000||!/^sha256:[a-f0-9]{64}$/.test(artifact.digest??'')||String(artifact.workflow_run?.id)!==run||artifact.workflow_run?.head_sha!==sha||artifact.workflow_run?.head_branch!=='main')throw Error('Artifact provenance/digest invalid')

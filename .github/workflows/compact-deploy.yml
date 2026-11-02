@@ -38,6 +38,11 @@ on:
         description: Upgrade stable gateway (requires reviewed root entry already installed; reconnects MCP sessions)
         type: boolean
         default: false
+      transport:
+        description: Use server-side HTTPS download when the SSH byte stream is unstable
+        type: choice
+        options: [bytes, artifact-https]
+        default: bytes
 
 permissions:
   contents: read
@@ -149,7 +154,13 @@ jobs:
           DEPLOY_GATEWAY_DEPLOY: ${{ inputs.deploy_gateway == true && 'true' || 'false' }}
           DEPLOY_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
           DEPLOY_SOURCE_SHA: ${{ needs.prepare.outputs.target_sha }}
-          DEPLOY_TRANSPORT: bytes
+          DEPLOY_TRANSPORT: ${{ inputs.transport || 'bytes' }}
+          # The compact archive belongs to this workflow; its candidate manifest
+          # still binds the independently verified business source above.
+          DEPLOY_ARTIFACT_RUN_ID: ${{ github.run_id }}
+          DEPLOY_ARTIFACT_NAME: flymind-compact-linux-x64
+          DEPLOY_ARTIFACT_SHA: ${{ github.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
           DEPLOY_SSH_HOST: ${{ secrets.SSH_HOST }}
           DEPLOY_SSH_USER: ${{ secrets.SSH_USER }}
           DEPLOY_SSH_PORT: ${{ secrets.SSH_PORT }}
