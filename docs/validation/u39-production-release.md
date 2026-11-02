@@ -22,3 +22,7 @@
 必须区分两种来源：业务candidate仍绑定41330814304/c6ec126；精简归档是当前compact workflow的 `flymind-compact-linux-x64` artifact，不能错误地从业务source run取完整Linux包。显式artifact producer run/name/SHA三项绑定当前workflow，业务manifest身份仍独立校验。未知名字、半覆盖、来源/摘要不符均拒绝。最终生产回执随后追加，不以传输后备已准备代替上线。
 
 PM已审查并独立运行传输/发布相关回归：23项中22通过、1项Windows不适用Linux权限专测跳过，0失败；日志`output/u39-https-transport-tests.log`。代理专项7/7通过，既有服务端helper/SSH权限不变，不混入未提交的artifact-fetch续传草稿。不重建业务候选；仅发布工具读取当前compact制品的来源有独立绑定。
+
+部署工具修复`1705631ff1d79043ab918155ef0e58e3b809be41`已推送，[Linux发布工具41463417873](https://github.com/beidaomitu233/FlyMind/actions/runs/41463417873)通过（push校验模式，不含生产发布），Verify41463417877仍在运行。重复业务候选41463417983已取消，仍使用四门槛全部通过的c6ec126业务包。
+
+[独立公网检查41463119883](https://github.com/beidaomitu233/FlyMind/actions/runs/41463119883)再次失败，域名和原1.14.176.76均不可达；原上传结束十余分钟后本机直连源站4秒仍无法建立连接。日志`output/u39-production-health-after-upload.log`。已询问用户当前控制台终端状态，尚未得到回复；当前保持不并发重试，不改发布基线检查、服务锁或权限。HTTPS备用仅准备并验证，尚未现场执行或声称部署成功。需要主机恢复且独立验证通过后继续。
