@@ -10,8 +10,9 @@ import {DiagramStore} from '../server/store'
 import {NativeDiagramService} from '../server/application/native-diagrams'
 import {NativeExportService} from '../server/application/native-exports'
 import {NativeExportWorker} from '../server/exports/worker'
+import {CloudExportPool} from '../server/cloud/export-pool'
 import {EXPORT_FORMATS,type NativeExportRenderer} from '../server/exports/types'
-import {sha256,exportSnapshotHash,prepareNativeArtifacts} from '../server/exports/artifacts'
+import {sha256,exportSnapshotHash,prepareNativeArtifacts,verifyNativeArtifact} from '../server/exports/artifacts'
 import {exportBasename} from '../src/drawing/core/export-metadata'
 import type {DrawingProjectV3} from '../src/drawing/engine/types'
 import type {DiagramContent} from '../src/drawing/core/model'
@@ -21,6 +22,7 @@ const content:DiagramContent={schemaVersion:1,id:'export-test',title:'导出隔�
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms))
 function deferred<T>(){let resolve!:(v:T)=>void;const promise=new Promise<T>(r=>resolve=r);return {promise,resolve}}
 async function until(fn:()=>boolean,timeoutMs=10000){const deadline=Date.now()+timeoutMs;while(Date.now()<deadline){if(fn())return;await sleep(5)}assert.fail('expected checkpoint not reached within wall-clock allowance')}
+async function untilAsync(fn:()=>Promise<boolean>,timeoutMs=10000){const deadline=Date.now()+timeoutMs;while(Date.now()<deadline){if(await fn())return;await sleep(5)}assert.fail('expected async checkpoint not reached within wall-clock allowance')}
 async function rendered(project:DrawingProjectV3){return {png:await sharp({create:{width:20,height:12,channels:4,background:'#4266aa'}}).png().toBuffer(),svg:'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="12" viewBox="0 0 20 12"><rect width="20" height="12" fill="#4266aa"/></svg>',width:20,height:12,scale:1,nativeXML:project.rendering.engine.xml,runtime:{drawioVersion:'unit-mock',browserVersion:'unit-mock',fontFamily:'unit-mock',fontSha256:'0'.repeat(64)},timings:{totalMs:1,browserStartMs:0,loadMs:0,exportMs:1},warnings:[]}}
 class Renderer implements NativeExportRenderer {
   calls:DrawingProjectV3[]=[];active=0;maxActive=0;closed=false
@@ -87,6 +89,20 @@ test('single worker publishes five verified files from one snapshot without chan
   }finally{await worker.close();assert.equal(renderer.closed,true);await cleanup(s.root)}
 })
 
+test('large UTF8 SVG writes across chunk boundaries and path delivery verifies without returning a file buffer',async()=>{
+ const s=await setup(),renderer=new Renderer(),worker=new NativeExportWorker(s.store,renderer)
+ const prefix='<svg xmlns="http://www.w3.org/2000/svg" width="20" height="12"><text>',svg=prefix+'中'.repeat(65535-prefix.length)+'😀尾</text></svg>'
+ renderer.action=async project=>({...await rendered(project),svg})
+ try{
+  const task=await create(s);await worker.runOnce();const {job}=await s.store.getNativeExport(task.id)
+  assert.equal(job.status,'succeeded',JSON.stringify(job.error));const checked=await verifyNativeArtifact(s.root,job,'svg')
+  assert.ok(!('buffer'in checked));assert.equal(checked.bytes,Buffer.byteLength(svg));assert.equal(checked.sha256,sha256(svg))
+  assert.equal((await s.exports.file(task.id,'svg')).buffer.toString('utf8'),svg)
+  const delivery=await s.exports.delivery(task.id);assert.equal(delivery.files.svg,checked.path)
+  await writeFile(checked.path,svg.replace('😀','😁'));await assert.rejects(s.exports.delivery(task.id),(e:any)=>e.code==='EXPORT_ARTIFACT_CORRUPT')
+ }finally{await worker.close();await cleanup(s.root)}
+})
+
 test('failed r1 retry after r2 preserves snapshot metadata and delivery rejects unregistered or corrupt files',async()=>{
  const s=await setup(),renderer=new Renderer(),worker=new NativeExportWorker(s.store,renderer)
  try{
@@ -117,19 +133,21 @@ test('expired leases can restart; a late old worker cannot publish over the new 
     const token=completed.leaseToken;gate.resolve(await rendered(s.record.document));await late
     const after=(await s.store.getNativeExport(job.id)).job;assert.equal(after.leaseToken,token);assert.equal(after.manifest!.exportedAt,completed.manifest!.exportedAt);assert.equal((await s.exports.file(job.id,'png')).sha256,completed.manifest!.files.png.sha256)
     const folders=await readdir(join(s.root,'artifacts',content.id,'r1','exports',job.id));assert.ok(folders.some(f=>f.startsWith('.')),'late staging may remain but is not registered or publicly readable')
-  }finally{await first.close();await second.close();await cleanup(s.root)}
+  }finally{gate.resolve(await rendered(s.record.document));await first.close();await second.close();await cleanup(s.root)}
 })
 
 test('timeout ignores a renderer that resolves late, and explicit retry gets a new immutable job',async()=>{
   const s=await setup(),renderer=new Renderer(),gate=deferred<Awaited<ReturnType<NativeExportRenderer['render']>>>(),worker=new NativeExportWorker(s.store,renderer,{leaseMs:5000,timeoutMs:2000})
   try{
-    renderer.action=()=>gate.promise;const original=await create(s),attempt=worker.runOnce();await until(()=>renderer.calls.length===1);await attempt;const failed=await s.exports.get(original.id);assert.equal(failed.status,'failed');assert.equal(failed.error?.code,'EXPORT_TIMEOUT');assert.equal(failed.files,undefined)
-    gate.resolve(await rendered(s.record.document));await sleep(10);assert.equal((await s.exports.get(original.id)).status,'failed');await assert.rejects(s.exports.file(original.id,'png'))
+    renderer.action=()=>gate.promise;const original=await create(s),attempt=worker.runOnce();await until(()=>renderer.calls.length===1);await untilAsync(async()=>(await s.exports.get(original.id)).status==='failed');const failed=await s.exports.get(original.id);assert.equal(failed.error?.code,'EXPORT_TIMEOUT');assert.equal(failed.files,undefined)
+    const queued=await create(s,'behind-timeout');let finished=false;void attempt.then(()=>{finished=true});assert.strictEqual(worker.runOnce(),attempt);await sleep(20);assert.equal(finished,false);assert.equal((await s.store.getNativeExport(queued.id)).job.attempts,0)
+    gate.resolve(await rendered(s.record.document));await attempt;assert.equal((await s.exports.get(original.id)).status,'failed');await assert.rejects(s.exports.file(original.id,'png'))
+    renderer.action=rendered;await worker.runOnce();assert.equal((await s.exports.get(queued.id)).status,'succeeded')
     await s.diagrams.patchContent(content.id,{expectedRevision:1,requestId:'after-failure',operations:[{op:'set_title',title:'新业务修订'}]})
     const retry=await s.exports.retry(original.id,{requestId:'retry-failed'},s.identity);assert.notEqual(retry.id,original.id);assert.equal(retry.sourceJobId,original.id);assert.equal(retry.revision,1);assert.equal(retry.isCurrentRevision,false)
     const successRenderer=new Renderer(),retryWorker=new NativeExportWorker(s.store,successRenderer)
-    try{await retryWorker.runOnce();assert.equal((await s.exports.get(retry.id)).status,'succeeded');assert.equal((await s.exports.retry(original.id,{requestId:'retry-failed'},s.identity)).id,retry.id)}finally{await retryWorker.close()}
-  }finally{await worker.close();await cleanup(s.root)}
+    try{await retryWorker.runOnce();const retried=await s.exports.get(retry.id);assert.equal(retried.status,'succeeded',JSON.stringify(retried.error));assert.equal((await s.exports.retry(original.id,{requestId:'retry-failed'},s.identity)).id,retry.id)}finally{await retryWorker.close()}
+  }finally{gate.resolve(await rendered(s.record.document));await worker.close();await cleanup(s.root)}
 })
 
 test('crashed lease resumes across store instances and bounded expired attempts become explicit failure',async()=>{
@@ -140,6 +158,144 @@ test('crashed lease resumes across store instances and bounded expired attempts 
     await assert.rejects(s.store.renewNativeExport(job.id,'crashed-owner',lease!.leaseToken!,10,now+12),(e:any)=>e.code==='EXPORT_LEASE_LOST')
     await replacement.claimNativeExport('third-owner',10,now+22);assert.equal(await replacement.claimNativeExport('exhausted-owner',10,now+33),undefined);assert.equal((await s.exports.get(job.id)).error?.code,'EXPORT_LEASE_EXPIRED')
   }finally{await cleanup(s.root)}
+})
+
+test('cloud pool holds all teams after cancellation until the old pipeline settles',async()=>{
+ const a=await setup(),b=await setup(),renderer=new Renderer(),gate=deferred<Awaited<ReturnType<NativeExportRenderer['render']>>>()
+ const pool=new CloudExportPool(renderer,2);let releaseA:(()=>void)|undefined,releaseB:(()=>void)|undefined
+ try{
+  releaseA=pool.reserve({store:a.store,dataRootId:a.identity});releaseB=pool.reserve({store:b.store,dataRootId:b.identity})
+  const first=await create(a,'pool-a'),second=await create(b,'pool-b')
+  renderer.action=project=>renderer.calls.length===1?gate.promise:rendered(project)
+  releaseA();releaseA=undefined;releaseB();releaseB=undefined
+  await until(()=>renderer.calls.length===1)
+  const worker=(pool as any).entries.get(a.identity).worker as NativeExportWorker
+  ;(worker as any).controller.abort(Object.assign(new Error('cancelled fixture'),{code:'TEST_CANCELLED'}))
+  await untilAsync(async()=>(await a.exports.get(first.id)).status==='failed')
+  const pending=(await b.store.getNativeExport(second.id)).job;assert.equal(pending.status,'queued');assert.equal(pending.attempts,0)
+  assert.equal(renderer.calls.length,1);await sleep(20);assert.equal(renderer.calls.length,1)
+  gate.resolve(await rendered(a.record.document))
+  await untilAsync(async()=>(await b.exports.get(second.id)).status==='succeeded')
+  assert.equal(renderer.calls.length,2);assert.equal(renderer.maxActive,1)
+  assert.equal((await a.exports.get(first.id)).status,'failed');await assert.rejects(a.exports.file(first.id,'png'),(e:any)=>e.code==='EXPORT_NOT_READY')
+ }finally{releaseA?.();releaseB?.();gate.resolve(await rendered(a.record.document));await pool.close();await cleanup(a.root);await cleanup(b.root)}
+})
+
+test('cloud pool waits for the tracked renderer quiescence after result cancellation',async()=>{
+ const a=await setup(),b=await setup(),renderer=new Renderer(),gate=deferred<void>(),pool=new CloudExportPool(renderer,2)
+ let releaseA:(()=>void)|undefined,releaseB:(()=>void)|undefined
+ ;(renderer as any).renderTracked=(project:DrawingProjectV3,options:{signal:AbortSignal})=>{
+  const first=renderer.calls.length===0
+  renderer.action=first?()=>new Promise((_yes,no)=>options.signal.addEventListener('abort',()=>no(options.signal.reason),{once:true})):rendered
+  return {result:renderer.render(project),quiescence:first?gate.promise:Promise.resolve()}
+ }
+ try{
+  releaseA=pool.reserve({store:a.store,dataRootId:a.identity});releaseB=pool.reserve({store:b.store,dataRootId:b.identity})
+  const first=await create(a,'tracked-pool-a'),second=await create(b,'tracked-pool-b');releaseA();releaseA=undefined;releaseB();releaseB=undefined
+  await until(()=>renderer.calls.length===1);const worker=(pool as any).entries.get(a.identity).worker as NativeExportWorker
+  ;(worker as any).controller.abort(Object.assign(Error('cancelled fixture'),{code:'TEST_CANCELLED'}))
+  await untilAsync(async()=>(await a.exports.get(first.id)).status==='failed');await sleep(20)
+  assert.equal(renderer.calls.length,1);assert.equal((await b.store.getNativeExport(second.id)).job.attempts,0)
+  gate.resolve();await untilAsync(async()=>(await b.exports.get(second.id)).status==='succeeded')
+  assert.equal(renderer.calls.length,2);assert.equal((await a.exports.get(first.id)).status,'failed');await assert.rejects(a.exports.file(first.id,'png'),(e:any)=>e.code==='EXPORT_NOT_READY')
+ }finally{releaseA?.();releaseB?.();gate.resolve();await pool.close();await cleanup(a.root);await cleanup(b.root)}
+})
+
+test('tracked cleanup rejection faults all teams and reports close and maintenance failure',async()=>{
+ const a=await setup(),b=await setup(),renderer=new Renderer(),pool=new CloudExportPool(renderer,2);let rejectQuiescence!:(error:Error)=>void
+ const quiescence=new Promise<void>((_yes,no)=>{rejectQuiescence=no})
+ void quiescence.catch(()=>{})
+ ;(renderer as any).renderTracked=(project:DrawingProjectV3,options:{signal:AbortSignal})=>{
+  renderer.action=()=>new Promise((_yes,no)=>options.signal.addEventListener('abort',()=>no(options.signal.reason),{once:true}))
+  return {result:renderer.render(project),quiescence}
+ }
+ let releaseA:(()=>void)|undefined,releaseB:(()=>void)|undefined
+ try{
+  releaseA=pool.reserve({store:a.store,dataRootId:a.identity});releaseB=pool.reserve({store:b.store,dataRootId:b.identity})
+  const first=await create(a,'cleanup-failed-a'),second=await create(b,'cleanup-failed-b');releaseA();releaseA=undefined;releaseB();releaseB=undefined
+  await until(()=>renderer.calls.length===1);const worker=(pool as any).entries.get(a.identity).worker as NativeExportWorker
+  ;(worker as any).controller.abort(Object.assign(Error('cancelled fixture'),{code:'TEST_CANCELLED'}))
+  await untilAsync(async()=>(await a.exports.get(first.id)).status==='failed');rejectQuiescence(Error('private cleanup detail'))
+  await until(()=>worker.cleanupFailure?.code==='EXPORT_CLEANUP_UNCERTAIN');await until(()=>!!(pool as any).cleanupError)
+  assert.equal((await b.store.getNativeExport(second.id)).job.attempts,0);assert.equal(renderer.calls.length,1)
+  assert.throws(()=>pool.reserve({store:b.store,dataRootId:b.identity}),(e:any)=>e.code==='EXPORT_CLEANUP_UNCERTAIN')
+  await assert.rejects(pool.quiesce({timeoutMs:25}),(e:any)=>e.code==='EXPORT_CLEANUP_UNCERTAIN')
+  await assert.rejects(pool.close(),(e:any)=>e.code==='EXPORT_CLEANUP_UNCERTAIN');assert.equal(renderer.closed,true)
+ }finally{releaseA?.();releaseB?.();rejectQuiescence(Error('cleanup'));await pool.close().catch(()=>{});await cleanup(a.root);await cleanup(b.root)}
+})
+
+test('stop is idempotent and waits for cancelled pipeline without claiming the next job',async()=>{
+ const s=await setup(),renderer=new Renderer(),gate=deferred<Awaited<ReturnType<NativeExportRenderer['render']>>>(),worker=new NativeExportWorker(s.store,renderer)
+ let closeCalls=0;renderer.close=async()=>{closeCalls++;renderer.closed=true}
+ try{
+  const first=await create(s,'stop-a'),second=await create(s,'stop-b');renderer.action=()=>gate.promise
+  const running=worker.runOnce();await until(()=>renderer.calls.length===1)
+  const closing=worker.close();assert.strictEqual(worker.close(),closing)
+  await untilAsync(async()=>(await s.exports.get(first.id)).status==='failed');assert.equal(closeCalls,1)
+  let finished=false;void closing.then(()=>{finished=true});await sleep(20);assert.equal(finished,false)
+  assert.equal((await s.store.getNativeExport(second.id)).job.attempts,0)
+  gate.resolve(await rendered(s.record.document));await Promise.all([running,closing])
+  assert.equal((await s.exports.get(first.id)).status,'failed');await assert.rejects(s.exports.file(first.id,'png'),(e:any)=>e.code==='EXPORT_NOT_READY')
+  assert.equal(await worker.runOnce(),undefined);assert.equal(renderer.calls.length,1)
+ }finally{gate.resolve(await rendered(s.record.document));await worker.close();await cleanup(s.root)}
+})
+
+test('stop during claim does not wait for an unresolved release or start rendering',async()=>{
+ const s=await setup(),renderer=new Renderer(),claimGate=deferred<void>(),releaseGate=deferred<CloudReleaseManifest>(),claimStarted=deferred<void>()
+ const originalClaim=s.store.claimNativeExport.bind(s.store)
+ s.store.claimNativeExport=async(...args)=>{claimStarted.resolve();await claimGate.promise;return originalClaim(...args)}
+ const worker=new NativeExportWorker(s.store,renderer,{release:releaseGate.promise})
+ try{
+  const job=await create(s,'claim-stop'),running=worker.runOnce();await claimStarted.promise
+  const closing=worker.close();claimGate.resolve()
+  await Promise.race([closing,sleep(2000).then(()=>{throw Error('stop waited for unresolved release')})]);await running
+  assert.equal((await s.exports.get(job.id)).status,'failed');assert.equal((await s.exports.get(job.id)).error?.code,'EXPORT_WORKER_STOPPED');assert.equal(renderer.calls.length,0);assert.equal(renderer.closed,true)
+ }finally{claimGate.resolve();releaseGate.resolve({releaseId:'unused',appVersion:'1',policyBundleHash:'a'.repeat(64),standardVersion:'1',engineResourceKey:'b'.repeat(64),adapterVersion:'1',migrationLevel:1});await worker.close();await cleanup(s.root)}
+})
+
+test('pool close attempts worker and renderer cleanup after scan and synchronous close failures',async()=>{
+ const scanError=Error('scan fixture'),closeError=Error('renderer close fixture');let workers=0,renders=0
+ const pool=new CloudExportPool({render:async()=>{throw Error('unused')},close:(()=>{renders++;throw closeError}) as any},1)
+ pool.reserve({store:{} as DiagramStore,dataRootId:'fixture'})
+ ;(pool as any).entries.get('fixture').worker.close=async()=>{workers++}
+ ;(pool as any).scanning=Promise.reject(scanError)
+ const closing=pool.close();assert.strictEqual(pool.close(),closing)
+ await assert.rejects(closing,error=>error===scanError);assert.equal(workers,1);assert.equal(renders,1)
+})
+
+test('stop cancels an already waiting release without waiting for it to settle',async()=>{
+ const s=await setup(),renderer=new Renderer(),releaseGate=deferred<CloudReleaseManifest>();let entered=false
+ const release={then:(yes:(value:CloudReleaseManifest)=>unknown,no:(error:unknown)=>unknown)=>{entered=true;return releaseGate.promise.then(yes,no)}} as unknown as Promise<CloudReleaseManifest>
+ const worker=new NativeExportWorker(s.store,renderer,{release})
+ try{
+  const job=await create(s,'release-stop'),running=worker.runOnce();await until(()=>entered)
+  const closing=worker.close();await Promise.race([closing,sleep(2000).then(()=>{throw Error('stop waited for unresolved release')})]);await running
+  const failed=await s.exports.get(job.id);assert.equal(failed.status,'failed');assert.equal(failed.error?.code,'EXPORT_WORKER_STOPPED');assert.equal(renderer.calls.length,0)
+ }finally{releaseGate.resolve({releaseId:'unused',appVersion:'1',policyBundleHash:'a'.repeat(64),standardVersion:'1',engineResourceKey:'b'.repeat(64),adapterVersion:'1',migrationLevel:1});await worker.close();await cleanup(s.root)}
+})
+
+test('pool awaits workers even when shared renderer close throws synchronously',async()=>{
+ const closeError=Error('renderer close fixture'),gate=deferred<void>();let workers=0
+ const pool=new CloudExportPool({render:async()=>{throw Error('unused')},close:(()=>{throw closeError}) as any},1)
+ pool.reserve({store:{} as DiagramStore,dataRootId:'fixture'})
+ ;(pool as any).entries.get('fixture').worker.close=async()=>{workers++;await gate.promise}
+ try{let finished=false;const closing=pool.close();void closing.catch(()=>{finished=true});await until(()=>workers===1);await sleep(20);assert.equal(finished,false);gate.resolve();await assert.rejects(closing,error=>error===closeError)}finally{gate.resolve()}
+})
+
+test('cloud maintenance refuses to drain a failed but still unsettled pipeline',async()=>{
+ const s=await setup(),renderer=new Renderer(),gate=deferred<Awaited<ReturnType<NativeExportRenderer['render']>>>(),pool=new CloudExportPool(renderer,1)
+ let release:(()=>void)|undefined
+ try{
+  release=pool.reserve({store:s.store,dataRootId:s.identity});const first=await create(s,'maintenance-a'),second=await create(s,'maintenance-b')
+  renderer.action=()=>gate.promise;release();release=undefined;await until(()=>renderer.calls.length===1)
+  const worker=(pool as any).entries.get(s.identity).worker as NativeExportWorker
+  ;(worker as any).controller.abort(Object.assign(new Error('cancelled fixture'),{code:'TEST_CANCELLED'}))
+  await untilAsync(async()=>(await s.exports.get(first.id)).status==='failed')
+  await assert.rejects(pool.quiesce({timeoutMs:25}),(e:any)=>e.code==='CLOUD_EXPORT_DRAIN_TIMEOUT')
+  assert.equal((await s.store.getNativeExport(second.id)).job.attempts,0);assert.equal(renderer.calls.length,1)
+  gate.resolve(await rendered(s.record.document));await pool.quiesce({timeoutMs:2000})
+  assert.equal((await s.exports.get(first.id)).status,'failed');assert.equal((await s.exports.get(second.id)).status,'queued')
+ }finally{release?.();gate.resolve(await rendered(s.record.document));await pool.close();await cleanup(s.root)}
 })
 
 test('hard deadline covers stalled preparation and publication; late filesystem work stays unregistered',async()=>{
@@ -157,11 +313,11 @@ test('hard deadline covers stalled preparation and publication; late filesystem 
       finished=true;return prepared
     }})
     try{
-      const job=await create(s),attempt=worker.runOnce();await until(()=>entered);await attempt
+      const job=await create(s),attempt=worker.runOnce();await until(()=>entered);await untilAsync(async()=>(await s.exports.get(job.id)).status==='failed')
       assert.equal((await s.exports.get(job.id)).status,'failed');assert.equal((await s.exports.get(job.id)).error?.code,'EXPORT_TIMEOUT')
       await assert.rejects(s.exports.file(job.id,'png'),(e:any)=>e.code==='EXPORT_NOT_READY')
       const failed=(await s.store.getNativeExport(job.id)).job;assert.equal(failed.leaseOwner,undefined);assert.equal(failed.manifest,undefined)
-      gate.resolve();await until(()=>finished);await sleep(5)
+      gate.resolve();await attempt;await until(()=>finished);await sleep(5)
       if(stage==='prepare')assert.equal((preparationError as {code?:string})?.code,'HEAVY_WORK_ABORTED')
       assert.equal((await s.exports.get(job.id)).status,'failed');assert.equal((await s.store.getNativeExport(job.id)).job.manifest,undefined)
     }finally{gate.resolve();await worker.close();await cleanup(s.root)}

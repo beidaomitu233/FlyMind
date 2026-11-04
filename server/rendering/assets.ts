@@ -1,7 +1,8 @@
 import {Router} from 'express'
 import {readFile,stat,open} from 'node:fs/promises'
-import {constants} from 'node:fs'
+import {constants,createReadStream} from 'node:fs'
 import {createHash} from 'node:crypto'
+import {StringDecoder} from 'node:string_decoder'
 import {dirname,resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {drawioStaticRouter} from '../native-routes'
@@ -11,6 +12,14 @@ import {NativeRenderError,type RuntimeAssetPaths} from './types'
 import {PACKAGE_ROOT} from '../package-paths'
 import {BROWSER_FONT_MANIFEST} from '../../src/drawing/engine/browser-fonts'
 export type {RuntimeAssetPaths} from './types'
+/** Read through EOF even after a match, so later I/O errors remain visible. */
+export async function streamContainsUTF8(source:AsyncIterable<Uint8Array>,needle:string){
+ const decoder=new StringDecoder('utf8');let tail='',found=needle.length===0
+ const scan=(part:string)=>{const text=tail+part;if(!found&&text.includes(needle))found=true;tail=needle.length>1?text.slice(-(needle.length-1)):''}
+ for await(const chunk of source)scan(decoder.write(chunk))
+ scan(decoder.end());return found
+}
+export async function streamAssetSHA256(source:AsyncIterable<Uint8Array>){const hash=createHash('sha256');for await(const chunk of source)hash.update(chunk);return hash.digest('hex')}
 export function resolveRuntimeAssets(projectRoot=PACKAGE_ROOT):RuntimeAssetPaths{
  const resources=process.env.FLYMIND_RESOURCES_DIR?resolve(process.env.FLYMIND_RESOURCES_DIR):resolve(projectRoot,'resources')
  const shell=process.platform==='win32'?'chrome-headless-shell-win64/chrome-headless-shell.exe':process.platform==='linux'?'chrome-headless-shell-linux64/chrome-headless-shell':`chrome-headless-shell-mac-${process.arch==='arm64'?'arm64':'x64'}/chrome-headless-shell`
@@ -18,8 +27,8 @@ export function resolveRuntimeAssets(projectRoot=PACKAGE_ROOT):RuntimeAssetPaths
 }
 export async function checkRuntimeAssets(assets=resolveRuntimeAssets()){
  for(const [code,path] of [['DRAWIO_MISSING',resolve(assets.drawioRoot,'js/app.min.js')],['FONT_MISSING',resolve(assets.fontRoot,RUNTIME_FONT_FILE)],['FONT_LICENSE_MISSING',resolve(assets.fontRoot,'OFL.txt')],['BROWSER_MISSING',assets.browserExecutable]] as const){try{if(!(await stat(path)).isFile())throw Error()}catch{throw new NativeRenderError(code,`${path}；运行 node scripts/setup-drawio-runtime.mjs`)}}
- const app=await readFile(resolve(assets.drawioRoot,'js/app.min.js'),'utf8');if(!app.includes(`EditorUi.VERSION="${DRAWIO_VERSION}"`))throw new NativeRenderError('DRAWIO_VERSION_MISMATCH','本地 draw.io 不是固定版本')
- const fontHash=createHash('sha256').update(await readFile(resolve(assets.fontRoot,RUNTIME_FONT_FILE))).digest('hex');if(fontHash!==RUNTIME_FONT_SHA256)throw new NativeRenderError('FONT_HASH_MISMATCH','本地字体 SHA256 不匹配')
+ if(!await streamContainsUTF8(createReadStream(resolve(assets.drawioRoot,'js/app.min.js')),`EditorUi.VERSION="${DRAWIO_VERSION}"`))throw new NativeRenderError('DRAWIO_VERSION_MISMATCH','本地 draw.io 不是固定版本')
+ const fontHash=await streamAssetSHA256(createReadStream(resolve(assets.fontRoot,RUNTIME_FONT_FILE)));if(fontHash!==RUNTIME_FONT_SHA256)throw new NativeRenderError('FONT_HASH_MISMATCH','本地字体 SHA256 不匹配')
  if(createHash('sha256').update(await readFile(resolve(assets.fontRoot,'OFL.txt'))).digest('hex')!=='6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2')throw new NativeRenderError('FONT_LICENSE_HASH_MISMATCH','字体许可 SHA256 不匹配')
  await verifyBrowserFonts(assets.fontRoot)
  return {fontHash,drawioVersion:DRAWIO_VERSION}
@@ -30,10 +39,26 @@ async function browserFontBytes(fontRoot:string,file:typeof BROWSER_FONT_MANIFES
  catch{throw new NativeRenderError('BROWSER_FONT_HASH_MISMATCH','浏览器字体缺失或SHA256不匹配；运行setup:runtime')}
  finally{await handle?.close()}
 }
+type FontReadHandle={stat:()=>Promise<{isFile:()=>boolean;size:number}>;read:(buffer:Buffer,offset:number,length:number,position:null)=>Promise<{bytesRead:number}>;close:()=>Promise<void>}
+type FontOpen=(path:string,flags:number)=>Promise<FontReadHandle>
+/** Startup-only integrity check; HTTP continues to verify and return its own bytes. */
+export async function verifyBrowserFontStream(fontRoot:string,file:{file:string;bytes:number;sha256:string},openFont:FontOpen=open,buffer:Buffer=Buffer.allocUnsafe(64*1024)){
+ let handle:FontReadHandle|undefined
+ try{
+  if(!buffer.length)throw Error()
+  handle=await openFont(resolve(fontRoot,'web',file.file),constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK)
+  const info=await handle.stat();if(!info.isFile()||info.size!==file.bytes)throw Error()
+  const hash=createHash('sha256');let total=0
+  for(;;){const {bytesRead}=await handle.read(buffer,0,buffer.length,null);if(bytesRead===0)break;total+=bytesRead;if(total>file.bytes)throw Error();hash.update(buffer.subarray(0,bytesRead))}
+  if(total!==file.bytes||hash.digest('hex')!==file.sha256)throw Error()
+ }catch{throw new NativeRenderError('BROWSER_FONT_HASH_MISMATCH','浏览器字体缺失或SHA256不匹配；运行setup:runtime')}
+ finally{await handle?.close()}
+}
 export async function verifyBrowserFonts(fontRoot:string){
  const manifest=await readFile(resolve(fontRoot,'web','manifest.json'),'utf8').catch(()=>{throw new NativeRenderError('BROWSER_FONT_MISSING','浏览器字体清单缺失；运行setup:runtime')})
  if(JSON.stringify(JSON.parse(manifest))!==JSON.stringify(BROWSER_FONT_MANIFEST))throw new NativeRenderError('BROWSER_FONT_MANIFEST_MISMATCH','浏览器字体清单与固定供应不一致')
- for(const file of BROWSER_FONT_MANIFEST.files)await browserFontBytes(fontRoot,file)
+ const buffer=Buffer.allocUnsafe(64*1024)
+ for(const file of BROWSER_FONT_MANIFEST.files)await verifyBrowserFontStream(fontRoot,file,open,buffer)
  return {files:BROWSER_FONT_MANIFEST.files.length,characters:BROWSER_FONT_MANIFEST.characters}
 }
 /** Root mount: app.use(runtimeAssetsRouter()). No parent-directory fallback. */

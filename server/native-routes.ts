@@ -14,7 +14,7 @@ export function nativeError(error:unknown){
   const code=e.code||e.message?.match(/^([A-Z][A-Z0-9_]+):/)?.[1]||'VALIDATION_FAILED'
   return {status:e.status&&e.status>=400&&e.status<=599?e.status:400,body:{error:e.message||'原生文档操作失败',code,...(e.currentRevision!==undefined?{currentRevision:e.currentRevision}:{}),...(e.quality?{quality:e.quality}:{})}}
 }
-export function nativeRouter(service:NativeDiagramService,exports?:NativeExportService,options:{release?:CloudReleaseManifest}={}){
+export function nativeRouter(service:NativeDiagramService,exports?:NativeExportService,options:{release?:CloudReleaseManifest;assertExportAdmission?:()=>void}={}){
   const router=Router()
   const imports=new NativeImportService(service)
   router.use((_req,_res,next)=>{if(!service.enabled)next(new StoreError('Native pilot 未启用',404,undefined,'NATIVE_PILOT_DISABLED'));else next()})
@@ -59,12 +59,12 @@ export function nativeRouter(service:NativeDiagramService,exports?:NativeExportS
   router.post('/ai/diagrams/:id/content-patch',async(req,res)=>res.json(await service.patchAI(req.params.id,req.body,req.get('X-FlyMind-DataRoot-Id'))))
   router.post('/ai/diagrams/:id/content-update',async(req,res)=>res.json(await service.updateAI(req.params.id,req.body,req.get('X-FlyMind-DataRoot-Id'))))
   if(exports){
-    router.post('/diagrams/:id/exports/snapshot',async(req,res)=>res.status(202).json(await exports.createSnapshot(req.params.id,req.body,req.get('X-FlyMind-DataRoot-Id'))))
-    router.post('/diagrams/:id/exports',async(req,res)=>res.status(202).json(await exports.create(req.params.id,req.body,req.get('X-FlyMind-DataRoot-Id'))))
+    router.post('/diagrams/:id/exports/snapshot',async(req,res)=>res.status(202).json(await exports.createSnapshot(req.params.id,req.body,req.get('X-FlyMind-DataRoot-Id'),options.assertExportAdmission)))
+    router.post('/diagrams/:id/exports',async(req,res)=>res.status(202).json(await exports.create(req.params.id,req.body,req.get('X-FlyMind-DataRoot-Id'),options.assertExportAdmission)))
     router.get('/exports/:jobId',async(req,res)=>{res.set('Cache-Control','no-store');res.json(await exports.get(req.params.jobId))})
     router.get('/exports/:jobId/delivery',async(req,res)=>{res.set('Cache-Control','no-store');res.json(await exports.delivery(req.params.jobId))})
     router.get('/exports/:jobId/snapshot',async(req,res)=>{res.set('Cache-Control','no-store');res.json(await exports.snapshot(req.params.jobId))})
-    router.post('/exports/:jobId/retry',async(req,res)=>res.status(202).json(await exports.retry(req.params.jobId,req.body,req.get('X-FlyMind-DataRoot-Id'))))
+    router.post('/exports/:jobId/retry',async(req,res)=>res.status(202).json(await exports.retry(req.params.jobId,req.body,req.get('X-FlyMind-DataRoot-Id'),options.assertExportAdmission)))
     router.get('/exports/:jobId/files/:format',async(req,res)=>{const file=await exports.file(req.params.jobId,req.params.format);res.set('Cache-Control','no-store');res.set('X-Content-Type-Options','nosniff');res.attachment(file.filename);res.type(file.mediaType);res.send(file.buffer)})
   }
   router.use((error:unknown,_req:express.Request,res:express.Response,_next:express.NextFunction)=>{const result=nativeError(error);res.status(result.status).json(result.body)})

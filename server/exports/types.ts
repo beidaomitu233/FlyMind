@@ -1,8 +1,9 @@
 import type {NativeDrawingProject} from '../../src/drawing/engine/types'
 import {isNativeCanvasProject} from '../../src/drawing/engine/native-canvas'
 import type {CloudReleaseManifest} from '../cloud/mcp-compat'
+import {EXPORT_FORMATS} from './formats'
 
-export const EXPORT_FORMATS=['png','svg','drawio','json','project.json'] as const
+export {EXPORT_FORMATS} from './formats'
 export type NativeExportFormat=typeof EXPORT_FORMATS[number]
 export const nativeExportFormats=(project:NativeDrawingProject):readonly NativeExportFormat[]=>isNativeCanvasProject(project)?['png','svg','drawio','project.json']:EXPORT_FORMATS
 export type NativeExportFiles<T>=Record<Exclude<NativeExportFormat,'json'>,T>&Partial<Record<'json',T>>
@@ -44,5 +45,7 @@ export interface NativeExportRenderer {
     png:Buffer;svg:string;width:number;height:number;scale:number;nativeXML:string
     runtime:Record<string,unknown>;timings:{totalMs:number;browserStartMs:number;loadMs:number;exportMs:number};warnings:string[]
   }>
+  /** Internal renderer lifecycle; never derived from request options. */
+  renderTracked?(project:NativeDrawingProject,options?:NativeExportOptions&{timeoutMs?:number;signal?:AbortSignal}):{result:ReturnType<NativeExportRenderer['render']>;quiescence:Promise<void>}
   close():Promise<void>
 }

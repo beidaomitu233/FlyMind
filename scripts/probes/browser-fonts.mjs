@@ -15,6 +15,8 @@ import {sampleFor} from '../../src/drawing/core/samples.ts'
 import {technicalReferenceContent} from '../../src/drawing/core/technical-sample.ts'
 import {NativeDrawioRenderer} from '../../server/rendering/renderer.ts'
 import {RUNTIME_FONT_SHA256} from '../../src/drawing/engine/runtime-assets.ts'
+import {BROWSER_FONT_MANIFEST} from '../../src/drawing/engine/browser-font-manifest.ts'
+import {inspectNativeSVGResources} from '../../server/rendering/svg-resources.ts'
 import {browserFontCSS} from '../../src/drawing/engine/browser-fonts.ts'
 const out=process.env.FLYMIND_PROBE_OUTPUT??'output/playwright/u39-browser-fonts',report={cases:[]};let owned,server,renderer
 await mkdir(out,{recursive:true});await checkRuntimeAssets()
@@ -50,6 +52,6 @@ try{
   }finally{controller?.dispose();await context.close()}
  }
  await owned.close();owned=undefined
- renderer=new NativeDrawioRenderer();const exported=await renderer.render(editedProject);assert.ok(exported.svg.includes('校验𠮷结果'));const match=/data:font\/otf;base64,([^"\)]+)/.exec(exported.svg);assert.ok(match);assert.equal(createHash('sha256').update(Buffer.from(match[1],'base64')).digest('hex'),RUNTIME_FONT_SHA256);assert.ok(!exported.svg.includes('FlyMindCJKWeb-'))
- await writeFile(out+'/edited-export.png',exported.png);await writeFile(out+'/edited-export.svg',exported.svg);report.export={sameChineseLabel:true,originalOTFFontSHA:RUNTIME_FONT_SHA256,pngBytes:exported.png.length};report.ok=true
+ renderer=new NativeDrawioRenderer();const exported=await renderer.render(editedProject);assert.ok(exported.svg.includes('校验𠮷结果'));const fonts=inspectNativeSVGResources(exported.svg).urls.filter(url=>/^data:font\/(?:otf|woff2);base64,/i.test(url));assert.ok(fonts.length);const approved=new Set(BROWSER_FONT_MANIFEST.files.map(file=>file.sha256));for(const url of fonts){const hash=createHash('sha256').update(Buffer.from(url.slice(url.indexOf(',')+1),'base64')).digest('hex');assert.ok(url.startsWith('data:font/otf;')?hash===RUNTIME_FONT_SHA256:approved.has(hash))}
+ await writeFile(out+'/edited-export.png',exported.png);await writeFile(out+'/edited-export.svg',exported.svg);report.export={sameChineseLabel:true,pinnedFontResources:fonts.length,pngBytes:exported.png.length};report.ok=true
 }catch(e){report.error=e.message;process.exitCode=1}finally{await owned?.close();await renderer?.close();if(server){server.closeAllConnections();await new Promise(r=>server.close(r))}await writeFile(out+'/report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report))}

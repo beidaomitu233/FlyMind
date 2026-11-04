@@ -1,0 +1,8 @@
+[Unit]
+Description=FlyMind application services aggregate resource boundary
+
+[Slice]
+MemoryAccounting=yes
+MemoryHigh=896M
+MemoryMax=1024M
+MemorySwapMax=0

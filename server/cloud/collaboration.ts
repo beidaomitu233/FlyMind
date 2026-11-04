@@ -6,7 +6,8 @@ import {nativeProtocolPatch} from '../../src/drawing/engine/collaboration/protoc
 
 export interface CollaborationEvent {revision:number;record:NativeDrawingRecord;fromRevision?:number;patch?:Record<string,unknown>}
 const identity=(p:CloudPrincipal)=>JSON.stringify([p.user.id,p.session.id,p.team.id,p.authorization?.clientId??''])
-interface Peer {team:string;id:string;root:string;token:string;binding:string;response:Response;last?:NativeDrawingRecord;busy:boolean;closed:boolean;opened:number;draining?:boolean;drainTimer?:ReturnType<typeof setTimeout>}
+interface PeerSnapshot {readonly revision:number;readonly xml:string}
+interface Peer {team:string;id:string;root:string;token:string;binding:string;response:Response;last?:PeerSnapshot;busy:boolean;closed:boolean;opened:number;draining?:boolean;drainTimer?:ReturnType<typeof setTimeout>}
 /** A bounded, single-process notification layer. SQLite revisions are the durable
  * cursor. Lost/expired history falls back to a snapshot, never a fabricated log.
  * Polling also observes MCP and other HTTP commits without changing the store. */
@@ -24,7 +25,7 @@ export class CloudCollaborationRooms {
   const room=(p:Peer)=>JSON.stringify([p.team,p.id]),key=JSON.stringify([input.team,input.id]),existing=[...this.peers]
   if(existing.length>=(this.options.maxConnections??128)||existing.filter(p=>room(p)===key).length>=(this.options.maxPerRoom??16)||!existing.some(p=>room(p)===key)&&new Set(existing.map(room)).size>=(this.options.maxRooms??64))throw new CloudAccessError(503,'COLLABORATION_CAPACITY','协同连接已满，请稍后重试')
   const record=await input.workspace.diagrams.getDrawing(input.id)
-  const peer:Peer={...input,binding:identity(input.principal),busy:true,closed:false,opened:Date.now()}
+  const peer:Peer={team:input.team,id:input.id,root:input.root,token:input.token,response:input.response,binding:identity(input.principal),busy:true,closed:false,opened:Date.now()}
   // Admission is repeated after async storage access; no concurrent overflow.
   if(this.closed)throw new CloudAccessError(503,'CLOUD_STOPPING','服务正在关闭')
   if(this.peers.size>=(this.options.maxConnections??128)||[...this.peers].filter(p=>room(p)===key).length>=(this.options.maxPerRoom??16)||![...this.peers].some(p=>room(p)===key)&&new Set([...this.peers].map(room)).size>=(this.options.maxRooms??64))throw new CloudAccessError(503,'COLLABORATION_CAPACITY','协同连接已满，请稍后重试')
@@ -32,11 +33,16 @@ export class CloudCollaborationRooms {
   input.response.status(200).set({'Content-Type':'text/event-stream; charset=utf-8','Cache-Control':'no-store','X-Accel-Buffering':'no'}).flushHeaders()
   input.response.once('close',()=>this.drop(peer))
   try{
-   if(input.since!==undefined&&input.since<=record.revision){try{peer.last=await input.workspace.store.getNativeDrawingRevision(input.id,input.since)}catch{/* History may have expired: send latest snapshot. */}}
+   if(input.since!==undefined&&input.since<=record.revision){try{const historical=await input.workspace.store.getNativeDrawingRevision(input.id,input.since);if(!peer.closed)peer.last=this.snapshot(peer,historical)}catch{/* History may have expired: send latest snapshot. */}}
    this.sendRecord(peer,record,true)
   }catch{this.drop(peer)}finally{peer.busy=false}
  }
- private drop(peer:Peer){if(peer.closed)return;peer.closed=true;clearTimeout(peer.drainTimer);this.peers.delete(peer);peer.response.end()}
+ private drop(peer:Peer){if(peer.closed)return;peer.closed=true;peer.last=undefined;clearTimeout(peer.drainTimer);this.peers.delete(peer);peer.response.end()}
+ private snapshot(peer:Peer,record:NativeDrawingRecord):PeerSnapshot{
+  const revision=record.revision,xml=record.document.rendering.engine.xml
+  for(const other of this.peers)if(!other.closed&&other.team===peer.team&&other.id===peer.id&&other.root===peer.root&&other.last?.revision===revision&&other.last.xml===xml)return other.last
+  return {revision,xml}
+ }
  private send(peer:Peer,event:string,data:unknown,revision?:number){
   if(peer.closed||peer.response.destroyed||peer.response.writableEnded){this.drop(peer);return false}
   const frame=(revision===undefined?'':'id: '+revision+'\n')+'event: '+event+'\ndata: '+JSON.stringify(data)+'\n\n'
@@ -52,9 +58,9 @@ export class CloudCollaborationRooms {
   if(!initial&&peer.last?.revision===record.revision){this.send(peer,'heartbeat',{revision:record.revision});return}
   const prior=peer.last
   let delta:Record<string,unknown>|undefined
-  if(prior)try{delta=nativeProtocolPatch(prior.document.rendering.engine.xml,record.document.rendering.engine.xml)}catch{/* Page identity changes require snapshot. */}
+  if(prior)try{delta=nativeProtocolPatch(prior.xml,record.document.rendering.engine.xml)}catch{/* Page identity changes require snapshot. */}
   const event:CollaborationEvent={revision:record.revision,record,...(delta?{fromRevision:prior!.revision,patch:delta}:{})}
-  if(this.send(peer,delta?'revision':'snapshot',event,record.revision))peer.last=record
+  if(this.send(peer,delta?'revision':'snapshot',event,record.revision)&&!peer.closed)peer.last=this.snapshot(peer,record)
  }
  kick(){if(this.closed)return;for(const peer of this.peers)if(!peer.busy&&!peer.draining){peer.busy=true;void this.poll(peer).finally(()=>{peer.busy=false})}}
  private async poll(peer:Peer){

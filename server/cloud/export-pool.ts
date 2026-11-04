@@ -26,6 +26,7 @@ export class CloudExportPool {
  private stopping=false
  private quiescing=false
  private closing:Promise<void>|undefined
+ private cleanupError:CloudAccessError|undefined
  private readonly recovery:CloudRecoveryOptions|undefined
  constructor(private readonly renderer:NativeExportRenderer,private readonly maxTeams=32,recovery?:CloudRecoveryOptions){
   if(!Number.isSafeInteger(maxTeams)||maxTeams<1||maxTeams>256)throw Error('Invalid cloud export queue capacity')
@@ -35,20 +36,31 @@ export class CloudExportPool {
   let entry=this.entries.get(workspace.dataRootId)
   if(!entry){
    if(this.entries.size>=this.maxTeams)throw new CloudAccessError(503,'EXPORT_CAPACITY','导出队列繁忙，请稍后重试')
-   const borrowed:NativeExportRenderer={render:(...args)=>this.renderer.render(...args),close:async()=>{}}
+   const borrowed:NativeExportRenderer={render:(...args)=>this.renderer.render(...args),...(this.renderer.renderTracked?{renderTracked:(...args:Parameters<NonNullable<NativeExportRenderer['renderTracked']>>)=>this.renderer.renderTracked!(...args)}:{}),close:async()=>{}}
    entry={workspace,worker:new NativeExportWorker(workspace.store,borrowed,{release:this.recovery?.release}),reservations:0};this.entries.set(workspace.dataRootId,entry)
   }
   return entry
  }
+ private observeCleanupFailure(){
+  if(!this.cleanupError&&[...this.entries.values()].some(entry=>entry.worker.cleanupFailure)){
+   this.cleanupError=new CloudAccessError(503,'EXPORT_CLEANUP_UNCERTAIN','渲染清理状态不明，导出队列已暂停');clearTimeout(this.scanTimer);clearTimeout(this.wakeTimer)
+  }
+  return this.cleanupError
+ }
  reserve(workspace:Workspace){
+  const error=this.observeCleanupFailure();if(error)throw error
   if(this.stopping)throw new CloudAccessError(503,'CLOUD_STOPPING','服务正在关闭')
   if(this.quiescing)throw new CloudUpdatingError()
   const entry=this.add(workspace);entry.reservations++;let released=false
   return ()=>{if(released)return;released=true;entry.reservations--;entry.nextAttemptAt=undefined;this.kick()}
  }
- private ready(){return [...this.entries.values()].some(entry=>!entry.reservations&&(entry.nextAttemptAt??0)<=Date.now())}
+ /** A faulted pool accepts requests only to resolve existing idempotent jobs. */
+ reserveForExportRequest(workspace:Workspace){if(this.observeCleanupFailure()&&!this.stopping&&!this.quiescing)return ()=>{};return this.reserve(workspace)}
+ assertCanEnqueue(){const error=this.observeCleanupFailure();if(error)throw error}
+ hasCleanupFailure(){return !!this.observeCleanupFailure()}
+ private ready(){return !this.cleanupError&&[...this.entries.values()].some(entry=>!entry.reservations&&(entry.nextAttemptAt??0)<=Date.now())}
  private kick(){
-  if(this.stopping||this.quiescing||this.active)return
+  if(this.stopping||this.quiescing||this.cleanupError||this.active)return
   const work=this.drain().finally(()=>{if(this.active===work)this.active=undefined;this.scheduleWake();if(!this.stopping&&!this.quiescing&&this.ready())this.kick();if(!this.stopping&&!this.quiescing&&!this.scanning&&this.directory&&this.entries.size<this.maxTeams){clearTimeout(this.scanTimer);this.scheduleScan(0)}});this.active=work
  }
  private async drain(){
@@ -64,19 +76,19 @@ export class CloudExportPool {
      entry.nextAttemptAt=undefined
      const job=await entry.worker.runOnce();if(job)progressed=true
      else{const after=await entry.workspace.store.nativeExportQueueState();entry.nextAttemptAt=after.nextAttemptAt??Date.now()+1000}
-    }catch{entry.nextAttemptAt=Date.now()+1000} // Bounded retry, never a busy loop or private-path log.
+    }catch{if(this.observeCleanupFailure())return;entry.nextAttemptAt=Date.now()+1000} // Bounded retry, never a busy loop or private-path log.
    }
    if(!progressed)return
   }
  }
  private scheduleWake(){
   clearTimeout(this.wakeTimer);this.wakeTimer=undefined
-  if(this.stopping||this.quiescing)return
+  if(this.stopping||this.quiescing||this.cleanupError)return
   const times=[...this.entries.values()].filter(e=>!e.reservations&&e.nextAttemptAt!==undefined).map(e=>e.nextAttemptAt!)
   if(times.length){this.wakeTimer=setTimeout(()=>{this.wakeTimer=undefined;this.kick()},Math.max(1,Math.min(60000,Math.min(...times)-Date.now())));this.wakeTimer.unref()}
  }
  private scheduleScan(delay:number){
-  if(this.stopping||this.quiescing||!this.recovery)return
+  if(this.stopping||this.quiescing||this.cleanupError||!this.recovery)return
   this.scanTimer=setTimeout(()=>{this.scanTimer=undefined;const scan=this.scanBatch().catch(()=>{}).finally(()=>{if(this.scanning===scan)this.scanning=undefined;this.scheduleScan(this.directory&&this.entries.size<this.maxTeams?25:this.recovery!.intervalMs!)});this.scanning=scan},delay);this.scanTimer.unref()
  }
  private async closeDirectory(){const directory=this.directory;this.directory=undefined;if(directory)await directory.close().catch(()=>{})}
@@ -113,14 +125,24 @@ export class CloudExportPool {
   this.scheduleWake();if(this.ready())this.kick()
  }
  async quiesce(options:DrainOptions={}){
+  if(this.cleanupError)throw this.cleanupError
   const timeoutMs=drainBudget(options);this.quiescing=true;clearTimeout(this.scanTimer);clearTimeout(this.wakeTimer)
   let timer:ReturnType<typeof setTimeout>|undefined
-  try{await Promise.race([Promise.all([this.scanning,this.active]),new Promise<never>((_yes,no)=>{timer=setTimeout(()=>no(new CloudUpdatingError('CLOUD_EXPORT_DRAIN_TIMEOUT','后台导出尚未完成；保持维护状态与原写入者，不能并行启动替代实例')),timeoutMs)})]);await this.closeDirectory()}
+  try{await Promise.race([Promise.all([this.scanning,this.active]),new Promise<never>((_yes,no)=>{timer=setTimeout(()=>no(new CloudUpdatingError('CLOUD_EXPORT_DRAIN_TIMEOUT','后台导出尚未完成；保持维护状态与原写入者，不能并行启动替代实例')),timeoutMs)})]);if(this.cleanupError)throw this.cleanupError;await this.closeDirectory()}
   finally{clearTimeout(timer)}
  }
  close(){
   if(this.closing)return this.closing
   this.stopping=true;clearTimeout(this.scanTimer);clearTimeout(this.wakeTimer)
-  this.closing=(async()=>{try{await this.scanning;await this.closeDirectory();await Promise.all([...this.entries.values()].map(entry=>entry.worker.close()));await this.active}finally{this.entries.clear();await this.renderer.close()}})();return this.closing
+  this.closing=(async()=>{let failure:unknown=this.cleanupError
+   try{
+    try{await this.scanning}catch(error){failure??=error}
+    try{await this.closeDirectory()}catch(error){failure??=error}
+    const results=await Promise.allSettled([...this.entries.values()].map(entry=>Promise.resolve().then(()=>entry.worker.close())).concat(Promise.resolve().then(()=>this.renderer.close())))
+    for(const result of results)if(result.status==='rejected')failure??=result.reason
+    try{await this.active}catch(error){failure??=error}
+    if(failure!==undefined)throw failure
+   }finally{this.entries.clear()}
+  })();return this.closing
  }
 }

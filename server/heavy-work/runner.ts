@@ -1,9 +1,47 @@
 import {fork,type ChildProcess} from 'node:child_process'
 import {fileURLToPath} from 'node:url'
+import {types as utilTypes} from 'node:util'
+import {constants as bufferConstants} from 'node:buffer'
 import {availableHeavyMemory,childRSS} from './resources'
 import {HeavyWorkError,type HeavyOperation,type HeavyReply} from './protocol'
 export {HeavyWorkError} from './protocol'
 const MiB=1024*1024
+export const SVG_HEAVY_WORK_ADMISSION_BYTES=512*MiB
+/** Exact UTF-8 size of a JSON string, without materializing its escaped copy. */
+function jsonStringBytes(value:string){
+ let bytes=2,units=value.length+2
+ for(let start=0;start<value.length;){
+  let end=Math.min(start+64*1024,value.length)
+  // Keep a surrogate pair in the same UTF-8 counting chunk.
+  if(end<value.length&&value.charCodeAt(end-1)>=0xd800&&value.charCodeAt(end-1)<=0xdbff&&value.charCodeAt(end)>=0xdc00&&value.charCodeAt(end)<=0xdfff)end++
+  bytes+=Buffer.byteLength(value.slice(start,end))
+  for(let i=start;i<end;i++){
+   const c=value.charCodeAt(i)
+   if(c===0x22||c===0x5c||c===8||c===9||c===10||c===12||c===13){bytes++;units++}
+   else if(c<0x20){bytes+=5;units+=5}
+   else if(c>=0xd800&&c<=0xdbff){const next=value.charCodeAt(i+1);if(next>=0xdc00&&next<=0xdfff)i++;else{bytes+=3;units+=5}}
+   else if(c>=0xdc00&&c<=0xdfff){bytes+=3;units+=5}
+  }
+  start=end
+ }
+ return {bytes,units}
+}
+/** Only native plain data records can bypass JSON.stringify without invoking user code. */
+export function svgInputJSONBytes(operation:HeavyOperation,input:unknown):number|undefined{
+ if(operation!=='svg-fonts'&&operation!=='svg-metadata'||!input||typeof input!=='object'||utilTypes.isProxy(input)||Object.getPrototypeOf(input)!==Object.prototype||Object.getOwnPropertyDescriptor(Object.prototype,'toJSON'))return
+ const keys=Reflect.ownKeys(input),allowed=operation==='svg-fonts'?['svg','fontFile']:['svg']
+ if(keys.length!==allowed.length||keys.some(key=>typeof key!=='string'||!allowed.includes(key)))return
+ let bytes=2,units=2
+ for(const key of keys){const descriptor=Object.getOwnPropertyDescriptor(input,key)!
+  if(!descriptor.enumerable||!('value'in descriptor)||typeof descriptor.value!=='string')return
+  if(bytes>2){bytes++;units++}
+  const name=jsonStringBytes(key as string),value=jsonStringBytes(descriptor.value)
+  bytes+=name.bytes+1+value.bytes;units+=name.units+1+value.units
+ }
+ // Preserve JSON.stringify's string-length exception on extreme escape expansion.
+ if(units>bufferConstants.MAX_STRING_LENGTH)return
+ return bytes
+}
 interface Request {operation:HeavyOperation;input:unknown;deadline:number;resolve:(value:any)=>void;reject:(error:Error)=>void;signal?:AbortSignal;cancel:()=>void;timer:ReturnType<typeof setTimeout>}
 export interface HeavyWorkOptions {signal?:AbortSignal;timeoutMs?:number}
 /** A process-local admission gate shared by engine and SVG work. DB remains in the parent. */
@@ -19,7 +57,8 @@ export class HeavyWorkRunner {
   const timeout=options.timeoutMs??30000
   if(!Number.isInteger(timeout)||timeout<1||timeout>60000)return Promise.reject(new HeavyWorkError('HEAVY_WORK_INVALID','重活截止时间无效'))
   const limit=operation.startsWith('svg-')?96*MiB:8*MiB
-  if(Buffer.byteLength(JSON.stringify(input))>limit)return Promise.reject(new HeavyWorkError('HEAVY_WORK_INPUT_LIMIT','重活输入超过预算'))
+  const bytes=svgInputJSONBytes(operation,input)??Buffer.byteLength(JSON.stringify(input))
+  if(bytes>limit)return Promise.reject(new HeavyWorkError('HEAVY_WORK_INPUT_LIMIT','重活输入超过预算'))
   if(this.queue.length>=4)return Promise.reject(new HeavyWorkError('HEAVY_WORK_BUSY','绘图工作繁忙，请稍后沿用原请求重试'))
   return new Promise<T>((resolve,reject)=>{
    const request={} as Request
@@ -50,7 +89,7 @@ export class HeavyWorkRunner {
   }
   try{
    const rssBudget=(request.operation.startsWith('svg-')?384:256)*MiB
-   if(await(this.options.availableMemory??availableHeavyMemory)()<rssBudget+128*MiB)throw new HeavyWorkError('HEAVY_WORK_MEMORY_LOW','可用内存不足，未启动绘图计算；请稍后沿用原请求重试')
+   if(await(this.options.availableMemory??availableHeavyMemory)()<(request.operation.startsWith('svg-')?SVG_HEAVY_WORK_ADMISSION_BYTES:rssBudget+128*MiB))throw new HeavyWorkError('HEAVY_WORK_MEMORY_LOW','可用内存不足，未启动绘图计算；请稍后沿用原请求重试')
    if(failure)throw failure
    if(this.closed||request.signal?.aborted||Date.now()>=request.deadline)throw new HeavyWorkError('HEAVY_WORK_ABORTED','重活请求已失效，未提交新修订')
    const url=this.options.childURL??new URL('./child'+(import.meta.url.endsWith('.ts')?'.ts':'.js'),import.meta.url)
@@ -78,4 +117,26 @@ export class HeavyWorkRunner {
  async close(){this.closed=true;for(const request of [...this.queue])this.cancel(request,new HeavyWorkError('HEAVY_WORK_CLOSED','重活执行器已关闭'));const active=this.active;if(active){active.stop(new HeavyWorkError('HEAVY_WORK_CLOSED','重活执行器已关闭'));await active.finished}}
 }
 const shared=new HeavyWorkRunner()
-export const runHeavyWork=<T>(operation:HeavyOperation,input:unknown,options?:HeavyWorkOptions)=>shared.run<T>(operation,input,options)
+const svgProofs=new WeakMap<object,string>()
+/** Only results returned by the shared, fixed child can introduce a proof. */
+export const runHeavyWork=<T>(operation:HeavyOperation,input:unknown,options?:HeavyWorkOptions)=>{
+ const promise=shared.run<T>(operation,input,options)
+ return promise.then(value=>{
+ if(operation==='svg-fonts'&&value&&typeof value==='object'){
+  const svg=Object.getOwnPropertyDescriptor(value,'svg'),valid=Object.getOwnPropertyDescriptor(value,'metadataValid')
+  if(svg&&'value'in svg&&typeof svg.value==='string'&&valid&&'value'in valid&&valid.value===true)svgProofs.set(value,svg.value)
+ }
+ return value
+ })
+}
+/** Transfer cannot create a proof: both own data properties must match a fixed-child result. */
+export function transferSVGProof(packaged:object,result:object){
+ if(utilTypes.isProxy(packaged)||utilTypes.isProxy(result))return
+ const svg=svgProofs.get(packaged),property=Object.getOwnPropertyDescriptor(result,'svg')
+ if(svg!==undefined&&property&&'value'in property&&property.value===svg)svgProofs.set(result,svg)
+}
+export function readVerifiedSVG(result:object){
+ if(utilTypes.isProxy(result))return undefined
+ const svg=svgProofs.get(result),property=Object.getOwnPropertyDescriptor(result,'svg')
+ return svg!==undefined&&property&&'value'in property&&property.value===svg?svg:undefined
+}

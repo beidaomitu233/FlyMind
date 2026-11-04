@@ -67,7 +67,21 @@ export class NativeDiagramService {
   private contentRecord(record:StoredDiagramRecord){if(record.format===3&&isCanvasRecord(record))return {format:3,mode:'canvas-only' as const,id:record.document.id,title:record.document.title,revision:record.revision,savedAt:record.savedAt,createdAt:record.createdAt,updatedAt:record.document.updatedAt,workspaceGroupId:record.workspaceGroupId,readOnly:false,syncStatus:'canvas-only' as const};const content=record.format===3?record.document.content:extractContent(record.document);return {format:record.format,content,revision:record.revision,savedAt:record.savedAt,createdAt:record.createdAt,updatedAt:record.document.updatedAt,workspaceGroupId:record.workspaceGroupId,quality:inspectDrawing(content),readOnly:record.format===2,syncStatus:record.format===3?'synced':'legacy-readonly'}}
   private async synchronizedRecord(record:StoredDiagramRecord){if(record.format===3)record.document=await validateNativeProject(record.document);return this.contentRecord(record)}
   async readContent(id:string){this.available();return this.synchronizedRecord(await this.store.getStored(id))}
-  async listRecords(){this.available();return Promise.all((await this.store.listStored()).map(record=>this.synchronizedRecord(record)))}
+  async listRecords(){
+    this.available()
+    // A workspace may contain many large XML documents. Validating them all
+    // at once retains every pending projection and digest until Promise.all
+    // settles. Keep the same ordered snapshot and validation, but cap in-flight
+    // work and release each source record once its content result is available.
+    const records:(StoredDiagramRecord|undefined)[]=await this.store.listStored()
+    const results:Awaited<ReturnType<NativeDiagramService['synchronizedRecord']>>[]=new Array(records.length)
+    let next=0,failed=false
+    const consume=async()=>{while(!failed){const index=next++;if(index>=records.length)return
+      try{results[index]=await this.synchronizedRecord(records[index]!)}catch(error){failed=true;records.fill(undefined);throw error}finally{records[index]=undefined}
+    }}
+    await Promise.all(Array.from({length:Math.min(2,records.length)},consume))
+    return results
+  }
   async groups(){this.available();return this.store.listGroups()}
   async trash(){this.available();return this.store.listTrash()}
   async organize(action:string,id:string|undefined,input:unknown,expectedDataRootId:string|undefined){

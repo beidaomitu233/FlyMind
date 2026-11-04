@@ -2,11 +2,48 @@
 import {lstat,realpath,readFile,readdir,mkdir,mkdtemp,rm,open,copyFile,chmod,symlink} from 'node:fs/promises'
 import {constants,createReadStream} from 'node:fs'
 import {createHash} from 'node:crypto'
+import {spawn} from 'node:child_process'
 import {dirname,join,resolve,sep,posix} from 'node:path'
 
 const SHA=/^[a-f0-9]{64}$/,COMMIT=/^[a-f0-9]{40}$/,ID=/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/
 const FILE_LIMIT=2_000_000_000,TREE_LIMIT=4_000_000_000,INDEX='.materializer-links.json'
 const fail=message=>{throw Error('Compact candidate: '+message)}
+/** The state is sticky: a late close can never re-authorize cleanup or unlock. */
+export function createDeploymentCommandRunner({profile='control',spawnChild=spawn,closeGraceMs=5000}={}){
+ if(!['control','application'].includes(profile)||!Number.isInteger(closeGraceMs)||closeGraceMs<1||closeGraceMs>60000)throw Error('Invalid subprocess policy')
+ const state={uncertain:false}
+ function run(command,args,{timeoutMs=300000,maxOutput=32768,noDescendants=false}={}){
+  return new Promise((resolve,reject)=>{
+   let child,finished=false,exited=false,reason,stdout='',stderr='',deadline,grace
+   const finish=(error,value)=>{if(finished)return;finished=true;clearTimeout(deadline);clearTimeout(grace);error?reject(error):resolve(value)}
+   const uncertain=()=>{state.uncertain=true;const error=Object.assign(Error('Deployment subprocess cleanup unconfirmed'),{code:'DEPLOY_SUBPROCESS_UNCERTAIN',cleanupUncertain:true});finish(error)}
+   const abort=error=>{
+    if(finished||reason)return;reason=error;clearTimeout(deadline)
+    // Only this live ChildProcess is signalled. Never signal a recycled PID or a group.
+    if(child?.pid&&!exited)try{child.kill('SIGKILL')}catch{/* Wait for close; otherwise fail closed. */}
+    grace=setTimeout(uncertain,closeGraceMs)
+   }
+   try{child=spawnChild(command,args,{stdio:['ignore','pipe','pipe'],shell:false,windowsHide:true,env:{PATH:'/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',LANG:'C.UTF-8'}})}catch(error){finish(error);return}
+   child.stdout?.on('data',chunk=>{
+    if(finished)return
+    if(profile==='control'){stdout+=chunk;if(Buffer.byteLength(stdout)>maxOutput)abort(Error('Control plane subprocess output budget exceeded'))}
+    else stdout=(stdout+chunk).slice(-16000)
+   })
+   if(profile==='control')child.stderr?.resume()
+   else child.stderr?.on('data',chunk=>{if(!finished)stderr=(stderr+chunk).slice(-16000)})
+   child.once('exit',()=>{exited=true})
+   child.once('error',error=>{if(!child.pid){finish(error);return}abort(error)})
+   child.once('close',code=>{
+    if(finished)return
+    if(reason){if(!noDescendants){uncertain();return}finish(reason);return}
+    if(code===0)finish(undefined,stdout.trim())
+    else finish(Error(profile==='control'?'Control plane subprocess failed':command+' failed ('+code+'): '+stderr.slice(-1000)))
+   })
+   deadline=setTimeout(()=>abort(Error(profile==='control'?'Control plane subprocess deadline exceeded':command+' timed out; deployment stopped')),timeoutMs)
+  })
+ }
+ return {run,state}
+}
 const exact=(v,keys)=>!!v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length===keys.length&&keys.every(k=>Object.hasOwn(v,k))
 function safePath(name){if(typeof name!=='string'||!name||name.includes(':')||name.includes('\\')||name.includes('\0')||name.startsWith('/')||name.split('/').some(x=>!x||x==='.'||x==='..'))fail('unsafe relative path');return name}
 const integer=n=>Number.isSafeInteger(n)&&n>=0
@@ -82,7 +119,10 @@ with tarfile.open(a) as t:
 `
 async function inventory(root,prefix=''){const files=[];for(const entry of await readdir(join(root,prefix),{withFileTypes:true})){const name=prefix+entry.name;if(entry.isDirectory())files.push(...await inventory(root,name+'/'));else{if(!entry.isFile())fail('special extracted payload');files.push(name)}}return files}
 async function parentFor(root,name){let parent=root;for(const part of name.split('/').slice(0,-1)){parent=join(parent,part);try{await mkdir(parent,{mode:0o755});await chmod(parent,0o755)}catch(error){if(error.code!=='EEXIST')throw error;const s=await lstat(parent);if(!s.isDirectory()||s.isSymbolicLink())fail('output parent redirected')}}}
-async function installFile(source,destination,name){await parentFor(destination,name);await copyFile(source,join(destination,name),constants.COPYFILE_EXCL);await chmod(join(destination,name),(await lstat(source)).mode&0o111?0o755:0o644)}
+// Ask the filesystem for a copy-on-write clone of unchanged trusted release
+// files. COPYFILE_FICLONE transparently falls back to an independent copy when
+// unsupported; unlike hard links, later writes cannot change the baseline.
+async function installFile(source,destination,name,clone=false){await parentFor(destination,name);await copyFile(source,join(destination,name),constants.COPYFILE_EXCL|(clone?constants.COPYFILE_FICLONE:0));await chmod(join(destination,name),(await lstat(source)).mode&0o111?0o755:0o644)}
 function sameFile(a,b){return a&&b&&a.type===b.type&&(a.type==='symlink'?a.target===b.target:a.bytes===b.bytes&&a.sha256===b.sha256)}
 function patchList(overlay,target,base){
  if(!exact(overlay,['schemaVersion','format','baseReleaseId','baseSourceCommit','baseCandidateSHA256','targetCandidateSHA256','patches'])||overlay.schemaVersion!==1||overlay.format!=='flymind-overlay'||!ID.test(overlay.baseReleaseId??'')||!COMMIT.test(overlay.baseSourceCommit??'')||!SHA.test(overlay.baseCandidateSHA256??'')||!SHA.test(overlay.targetCandidateSHA256??'')||!Array.isArray(overlay.patches)||overlay.patches.length>1)fail('invalid overlay declaration')
@@ -117,8 +157,9 @@ export async function materializeCandidate({archive,destination,environment,pyth
  const dest=await lstat(output);if(!dest.isDirectory()||dest.isSymbolicLink()||requireRootOwned&&(dest.uid!==0||dest.mode&0o022)||await realpath(output)!==output||(await readdir(output)).length)fail('destination must be empty protected directory')
  await chmod(output,0o755)
  const stage=await mkdtemp(join(dirname(output),'.materialize-'));await chmod(stage,0o700)
+ let preserveStage=false
  try{
-  await run(python,['-I','-c',EXTRACT,source,stage])
+  await run(python,['-I','-c',EXTRACT,source,stage],{noDescendants:true})
   const verify=await verifier(requireRootOwned),manifest=await jsonFile(join(stage,'candidate.json'),2*1024*1024,requireRootOwned),target=filesOf(manifest)
   const links=await jsonFile(join(stage,INDEX),16*1024*1024,requireRootOwned),payload=new Set((await inventory(stage)).filter(name=>name!==INDEX)),linkMap=new Map()
   if(!Array.isArray(links))fail('invalid archive links')
@@ -133,7 +174,7 @@ export async function materializeCandidate({archive,destination,environment,pyth
    payload.delete('candidate.json');payload.delete('overlay.json')
    for(const [name,f]of target){if(f.type==='symlink')continue
     if(patches.has(name)){const patch=patches.get(name);if(payload.has(name)||!payload.delete(patch.literalPath))fail('missing or duplicate JAR payload');await rebuildJar(patch,baseRoot,stage,output,f)}
-    else if(sameFile(f,base.get(name))){if(payload.has(name))fail('unchanged file redundantly supplied');await installFile(join(baseRoot,name),output,name)}
+    else if(sameFile(f,base.get(name))){if(payload.has(name))fail('unchanged file redundantly supplied');await installFile(join(baseRoot,name),output,name,true)}
     else{if(!payload.delete(name))fail('changed file missing');const path=join(stage,name);const s=await regular(path,requireRootOwned);if(s.size!==f.bytes||await hashFile(path)!==f.sha256)fail('changed payload digest mismatch');await installFile(path,output,name)}
    }
    if(payload.size)fail('extra overlay payload')
@@ -147,5 +188,6 @@ export async function materializeCandidate({archive,destination,environment,pyth
   }
   await installFile(join(stage,'candidate.json'),output,'candidate.json');await installLinks(output,target)
   return await verify(output,{requireRootOwned})
- }finally{if(await realpath(stage)!==stage)fail('staging directory redirected');await rm(stage,{recursive:true,force:true})}
+ }catch(error){if(error?.cleanupUncertain===true)preserveStage=true;throw error}
+ finally{if(!preserveStage){if(await realpath(stage)!==stage)fail('staging directory redirected');await rm(stage,{recursive:true,force:true})}}
 }

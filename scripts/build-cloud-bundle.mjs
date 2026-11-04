@@ -1,5 +1,6 @@
 // Build from verified outputs. Does not install, start services, or include user data.
 import {readFile,writeFile,cp,mkdir,lstat,readdir,access} from 'node:fs/promises'
+import {createReadStream} from 'node:fs'
 import {createHash} from 'node:crypto'
 import {spawnSync} from 'node:child_process'
 import {resolve,join,relative,sep} from 'node:path'
@@ -30,7 +31,7 @@ await copy('scripts/cloud-bundle-smoke.mjs','application/scripts/cloud-bundle-sm
 const git=spawnSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8',windowsHide:true}),dirty=spawnSync('git',['status','--porcelain'],{cwd:root,encoding:'utf8',windowsHide:true})
 if(git.status!==0||!/^[a-f0-9]{40}$/.test(git.stdout.trim()))throw Error('Cannot record source commit')
 const files=[]
-async function walk(directory){for(const entry of (await readdir(directory,{withFileTypes:true})).sort((a,b)=>a.name.localeCompare(b.name))){const path=join(directory,entry.name);if(entry.isSymbolicLink())throw Error('Bundle cannot contain external links');if(entry.isDirectory())await walk(path);else{const bytes=await readFile(path);files.push({path:relative(output,path).replaceAll('\\','/'),bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')})}}}
+async function walk(directory){for(const entry of (await readdir(directory,{withFileTypes:true})).sort((a,b)=>a.name.localeCompare(b.name))){const path=join(directory,entry.name);if(entry.isSymbolicLink())throw Error('Bundle cannot contain external links');if(entry.isDirectory())await walk(path);else{const digest=createHash('sha256');let bytes=0;for await(const chunk of createReadStream(path)){bytes+=chunk.length;digest.update(chunk)}files.push({path:relative(output,path).replaceAll('\\','/'),bytes,sha256:digest.digest('hex')})}}}
 await walk(output)
 await writeFile(join(output,'candidate.json'),JSON.stringify({schemaVersion:1,releaseId,sourceCommit:git.stdout.trim(),dirty:!!dirty.stdout.trim(),appVersion:pkg.version,targetVersion:'1.1.0',prepared:false,note:'Platform dependencies/resources and smoke verification must be completed before promotion.',files},null,2)+'\n')
 console.log(JSON.stringify({output,releaseId,files:files.length,prepared:false}))

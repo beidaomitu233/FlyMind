@@ -148,6 +148,7 @@ test('inline budget retains successful export files, rejects large resources and
   const result=await h.client.callTool({name:'create_diagram',arguments:{taskName:'回归测试任务',content,requestId:'large-create'}}),data=result.structuredContent as any
   assert.equal(data.exportStatus,'succeeded');assert.equal(data.previewStatus,'too_large');assert.equal(data.previewError.code,'MCP_PREVIEW_TOO_LARGE');assert.equal(data.files.png,'C:/isolated/large.png');assert.equal(result.content.some((x:any)=>x.type==='image'),false)
   await assert.rejects(h.client.readResource({uri:`flymind://exports/${content.id}/1/large-job/svg`}),(error:any)=>error.data?.code==='MCP_RESOURCE_TOO_LARGE')
+  assert.equal(h.calls.filter(call=>call.path.includes('/files/')).length,0,'known oversized PNG and SVG must be rejected before downloading their bodies')
   const alive=await h.client.callTool({name:'get_diagram',arguments:{id:content.id}});assert.equal(alive.isError,undefined)
  }finally{await h.close()}
 })

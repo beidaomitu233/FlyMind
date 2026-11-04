@@ -8,14 +8,14 @@ import type {EnsureNativeRuntimeOptions} from '../runtime-instance/types'
 import {workspaceDataRootId} from '../native-pilot'
 import {StoreError} from '../store'
 import {RESTORE_MARKER} from './marker'
-import {beneath,canonicalHash,copyVerified,hash,inventory,plainDirectory,validateWorkspace,validateWorkspaceBackup,workspaceState,writeDurable} from './workspace'
+import {beneath,canonicalHash,copyVerified,hashFile,inventory,plainDirectory,validateWorkspace,validateWorkspaceBackup,workspaceState,writeDurable} from './workspace'
 export {RESTORE_MARKER}
 export interface RestorePlan {schemaVersion:1;planId:string;backupRoot:string;backupManifestHash:string;targetRoot:string;targetStateHash:string;createdAt:number}
 type Component={name:string;oldHash:string|null;newHash:string|null}
 interface Journal {schemaVersion:1;restoreId:string;protection:string;staging:string;components:Component[];phase:string}
 const names=['flymind.sqlite','flymind.sqlite-wal','flymind.sqlite-shm','artifacts']
 async function exists(path:string){try{await lstat(path);return true}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return false;throw e}}
-async function componentHash(root:string,name:string){const path=join(root,name);if(!await exists(path))return null;const s=await lstat(path);if(s.isSymbolicLink())throw new StoreError('恢复组件不可为符号链接');return s.isDirectory()?canonicalHash(await inventory(path)):hash(await readFile(path))}
+async function componentHash(root:string,name:string){const path=join(root,name);if(!await exists(path))return null;const s=await lstat(path);if(s.isSymbolicLink())throw new StoreError('恢复组件不可为符号链接');return s.isDirectory()?canonicalHash(await inventory(path)):await hashFile(path)}
 async function journalWrite(root:string,journal:Journal){const marker=join(root,RESTORE_MARKER),temporary=marker+'.'+randomUUID()+'.tmp';await writeDurable(temporary,journal);await rename(temporary,marker)}
 async function maintenance<T>(options:EnsureNativeRuntimeOptions,fn:(root:string,lease:RuntimeLease)=>Promise<T>){
  const config=runtimeConfiguration(options),lease=await acquireRuntimeLease(config)
@@ -58,7 +58,8 @@ export async function applyWorkspaceRestore(options:EnsureNativeRuntimeOptions&{
   if(backup.manifestHash!==plan.backupManifestHash||await workspaceState(root)!==plan.targetStateHash)throw new StoreError('恢复预览后目标或备份已有修改，拒绝覆盖',409,undefined,'RESTORE_TARGET_CHANGED')
   const protection='.restore-protection/'+plan.planId,staging='.restore-staging/'+plan.planId,protectedRoot=beneath(root,protection),stagedRoot=beneath(root,staging)
   await mkdir(protectedRoot,{recursive:true});await mkdir(stagedRoot,{recursive:true});await plainDirectory(protectedRoot);await plainDirectory(stagedRoot)
-  await writeDurable(join(stagedRoot,'flymind.sqlite'),await readFile(join(plan.backupRoot,'flymind.sqlite')))
+  const database=await lstat(join(plan.backupRoot,'flymind.sqlite'))
+  await copyVerified(plan.backupRoot,stagedRoot,[{path:'flymind.sqlite',bytes:database.size,sha256:backup.manifest.database.sha256,mtimeMs:database.mtimeMs}],{preserveMtime:false})
   await copyVerified(join(plan.backupRoot,'artifacts'),join(stagedRoot,'artifacts'),backup.manifest.artifacts)
   const dataRootId=rotateIdentity(join(stagedRoot,'flymind.sqlite'),plan.planId);await validateWorkspace(stagedRoot)
   if(await workspaceState(root)!==plan.targetStateHash)throw new StoreError('暂存期间目标已有修改',409,undefined,'RESTORE_TARGET_CHANGED')

@@ -32,6 +32,21 @@ export interface DiagramRecord {document:DiagramDocument;revision:number;savedAt
 export class StoreError extends Error {constructor(message:string,public status=400,public currentRevision?:number,public code=status===409?'CONFLICT':status===410?'DELETED':status===404?'NOT_FOUND':'VALIDATION_FAILED'){super(message)}}
 export interface NativeMutation {requestId:string;requestHash:string;operation:'create'|'editor-save'|'content-patch'|'ai-create'|'ai-content-patch'|'ai-content-update'|'configure-rendering'|'import-content'|'import-project'|'import-drawio'|'canvas-map';expectedDataRootId?:string}
 type DB=Database.Database
+/** Read large documents one at a time while preserving .all().map() error priority. */
+function readRows<T,R>(rows:Iterable<R>,decode:(row:R)=>T){
+  const result:T[]=[]
+  let failed=false,firstError:unknown
+  for(const row of rows){
+    if(failed)continue
+    try{result.push(decode(row))}catch(error){failed=true;firstError=error}
+  }
+  if(failed)throw firstError
+  return result
+}
+function readDiagramRows<T>(db:DB,decode:(row:DiagramRow)=>T){return readRows(db.prepare('SELECT * FROM diagrams WHERE deleted_at IS NULL ORDER BY created_at DESC,id').iterate() as Iterable<DiagramRow>,decode)}
+export const readDiagramMetadata=(db:DB)=>readDiagramRows(db,diagramMetadata)
+export const readStoredDiagrams=(db:DB)=>readDiagramRows(db,decodeDiagramRow)
+export function readTrashRows(db:DB):NativeTrashItem[]{return readRows(db.prepare('SELECT * FROM diagrams WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC,id').iterate() as Iterable<DiagramRow>,row=>{const raw=JSON.parse(row.document),content=raw.content||raw;return {id:row.id,title:content.title,...(raw.mode==='canvas-only'?{mode:'canvas-only' as const}:{kind:content.kind}),revision:row.revision,deletedAt:row.deleted_at!,createdAt:row.created_at,workspaceGroupId:row.workspace_group_id}})}
 const schema=`
 CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS workspace_groups(id TEXT PRIMARY KEY,name TEXT NOT NULL UNIQUE,revision INTEGER NOT NULL CHECK(revision>0),created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
@@ -107,9 +122,9 @@ export class DiagramStore {
       }).immediate()
     })
   }
-  async listStored(){return this.use(db=>(db.prepare('SELECT * FROM diagrams WHERE deleted_at IS NULL ORDER BY created_at DESC,id').all() as DiagramRow[]).map(decodeDiagramRow))}
-  async listMetadata(){return this.use(db=>(db.prepare('SELECT * FROM diagrams WHERE deleted_at IS NULL ORDER BY created_at DESC,id').all() as DiagramRow[]).map(diagramMetadata))}
-  async snapshotStored(){return this.use(db=>db.transaction(()=>({diagrams:(db.prepare('SELECT * FROM diagrams WHERE deleted_at IS NULL ORDER BY created_at DESC,id').all() as DiagramRow[]).map(decodeDiagramRow),metadata:(db.prepare('SELECT * FROM diagrams WHERE deleted_at IS NULL ORDER BY created_at DESC,id').all() as DiagramRow[]).map(diagramMetadata),groups:this.groups(db),trash:this.trash(db),deletedIds:(db.prepare('SELECT id FROM diagrams WHERE deleted_at IS NOT NULL UNION SELECT id FROM diagram_tombstones').all() as {id:string}[]).map(r=>r.id)}))())}
+  async listStored(){return this.use(readStoredDiagrams)}
+  async listMetadata(){return this.use(readDiagramMetadata)}
+  async snapshotStored(){return this.use(db=>db.transaction(()=>({diagrams:readStoredDiagrams(db),metadata:readDiagramMetadata(db),groups:this.groups(db),trash:this.trash(db),deletedIds:(db.prepare('SELECT id FROM diagrams WHERE deleted_at IS NOT NULL UNION SELECT id FROM diagram_tombstones').all() as {id:string}[]).map(r=>r.id)}))())}
   async list(){return this.use(db=>db.prepare('SELECT * FROM diagrams WHERE deleted_at IS NULL ORDER BY created_at DESC,id').all().map(row=>this.fromRow(row)))}
   async snapshot(){return this.use(db=>db.transaction(()=>({diagrams:db.prepare('SELECT * FROM diagrams WHERE deleted_at IS NULL ORDER BY created_at DESC,id').all().map(row=>this.fromRow(row)),groups:this.groups(db),trash:this.trash(db),deletedIds:(db.prepare('SELECT id FROM diagrams WHERE deleted_at IS NOT NULL UNION SELECT id FROM diagram_tombstones').all() as {id:string}[]).map(r=>r.id)}))())}
   async create(input:unknown,workspaceGroupId?:string|null){if((input as any)?.schemaVersion===3)throw new StoreError('原生文档必须通过 native 接口保存',409,undefined,'NATIVE_DOCUMENT_REQUIRED');const d=validateDocument(input);this.id(d.id);freezeNewLocks(d);return this.transaction(db=>{this.checkGroup(db,workspaceGroupId);if(db.prepare('SELECT 1 FROM diagram_tombstones WHERE id=?').get(d.id))throw new StoreError('该 ID 已永久删除，不能重新创建',410);const existing=db.prepare('SELECT deleted_at FROM diagrams WHERE id=?').get(d.id) as any;if(existing){if(existing.deleted_at!==null)throw new StoreError('该 ID 已删除，不能重新创建',410);throw new StoreError('该图形 ID 已存在，请读取后更新，或使用新的 ID',409)}d.createdAt=d.updatedAt=Date.now();this.insert(db,{document:d,revision:1,savedAt:d.updatedAt,createdAt:d.createdAt,workspaceGroupId});return this.record(db,d.id)})}
@@ -117,7 +132,7 @@ export class DiagramStore {
   async patch(id:string,revision:number,ops:DiagramOperation[]){return this.change(id,revision,d=>applyOperations(d,ops))}
   async change(id:string,revision:number,fn:(d:DiagramDocument)=>DiagramDocument){return this.transaction(db=>{const prev=this.record(db,id);if(!Number.isInteger(revision)||revision!==prev.revision)throw new StoreError(`版本冲突：当前为 ${prev.revision}，请重新读取并合并`,409,prev.revision);const next=validateDocument(fn(copy(prev.document)));assertLockedObjects(prev.document,next);freezeNewLocks(next,prev.document);next.id=id;next.createdAt=prev.createdAt;next.updatedAt=Date.now();const json=JSON.stringify(projectDocument(next));db.prepare('UPDATE diagrams SET document=?,revision=revision+1,saved_at=? WHERE id=? AND revision=? AND deleted_at IS NULL').run(json,next.updatedAt,id,revision);db.prepare('INSERT INTO diagram_versions VALUES(?,?,?,?)').run(id,revision+1,json,next.updatedAt);return this.record(db,id)})}
   async delete(id:string,revision:number,expectedDataRootId?:string){return this.transaction(db=>{if(expectedDataRootId!==undefined)this.assertNativeIdentity(db,expectedDataRootId);this.id(id);const row=db.prepare('SELECT deleted_at FROM diagrams WHERE id=?').get(id) as any;if(row?.deleted_at!==null&&row?.deleted_at!==undefined)return;const prev=this.storedRecord(db,id);if(revision!==prev.revision)throw new StoreError('版本冲突，请读取最新图形',409,prev.revision);db.prepare('UPDATE diagrams SET deleted_at=? WHERE id=?').run(Date.now(),id);this.activity(db,{action:'delete',diagramId:id,groupId:prev.workspaceGroupId,fromRevision:prev.revision,toRevision:prev.revision})})}
-  private trash(db:DB):NativeTrashItem[]{return (db.prepare('SELECT * FROM diagrams WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC,id').all() as any[]).map(row=>{const raw=JSON.parse(row.document),content=raw.content||raw;return {id:row.id,title:content.title,...(raw.mode==='canvas-only'?{mode:'canvas-only'}:{kind:content.kind}),revision:row.revision,deletedAt:row.deleted_at,createdAt:row.created_at,workspaceGroupId:row.workspace_group_id}})}
+  private trash(db:DB):NativeTrashItem[]{return readTrashRows(db)}
   async listTrash(){return this.use(db=>this.trash(db))}
   private deletedRecord(db:DB,id:string,revision:number,deletedAt:number){this.id(id);const row=db.prepare('SELECT * FROM diagrams WHERE id=?').get(id) as any;if(!row)throw new StoreError('回收站中没有该图形',404);if(row.deleted_at===null||row.revision!==revision||row.deleted_at!==deletedAt)throw new StoreError('回收站内容已变化，请刷新后重试',409,row.revision);return row}
   async restore(id:string,revision:number,deletedAt:number){return this.transaction(db=>{const row=this.deletedRecord(db,id,revision,deletedAt),d=this.fromRow(row).document,now=Date.now();d.updatedAt=now;const json=JSON.stringify(projectDocument(d));db.prepare('UPDATE diagrams SET deleted_at=NULL,revision=revision+1,saved_at=?,document=? WHERE id=?').run(now,json,id);db.prepare('INSERT INTO diagram_versions VALUES(?,?,?,?)').run(id,revision+1,json,now);this.activity(db,{action:'restore',diagramId:id,groupId:row.workspace_group_id,fromRevision:revision,toRevision:revision+1});return this.record(db,id)})}
@@ -319,7 +334,7 @@ export class DiagramStore {
       return job
     })
   }
-  async enqueueNativeExport(input:EnqueueNativeExport):Promise<StoredNativeExport>{
+  async enqueueNativeExport(input:EnqueueNativeExport,assertCanEnqueue?:()=>void):Promise<StoredNativeExport>{
     const value=structuredClone(input),canonical=canonicalContentJson(value.snapshot as any)
     if(value.release)value.release=cloudReleaseSchema.parse(value.release)
     if(createHash('sha256').update(canonical).digest('hex')!==value.snapshotSha256)throw new StoreError('导出快照摘要不一致',400,undefined,'SNAPSHOT_MISMATCH')
@@ -327,6 +342,9 @@ export class DiagramStore {
       this.assertNativeIdentity(db,value.expectedDataRootId);this.requestEpoch(db,'export',value.requestId);this.exportSchema(db,true)
       const replay=db.prepare('SELECT * FROM native_export_jobs WHERE request_id=?').get(value.requestId)
       if(replay){const job=this.exportRecord(replay);this.exportAccess(db,job);if(job.requestHash!==value.requestHash)throw new StoreError('同一 requestId 不能用于不同导出请求',409,undefined,'IDEMPOTENCY_KEY_REUSED');return job}
+      // A local worker's admission state can change while its snapshot is being
+      // prepared. Recheck synchronously after transactional idempotency.
+      assertCanEnqueue?.()
       const current=this.storedRecord(db,value.diagramId)
       if(current.format!==3)throw new StoreError('旧图尚未迁移为原生格式',409,current.revision,'NATIVE_DOCUMENT_REQUIRED')
       if(value.sourceJobId){const source=this.exportRow(db,value.sourceJobId);this.exportAccess(db,source);if(source.status!=='failed'||source.diagramId!==value.diagramId||source.snapshotSha256!==value.snapshotSha256||source.revision!==value.expectedRevision)throw new StoreError('只能重试原失败任务的不可变快照',409,undefined,'EXPORT_RETRY_INVALID')}

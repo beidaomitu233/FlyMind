@@ -40,7 +40,7 @@ if(nativeBoot)app.use('/studio-api',runtimeSessionMiddleware(nativeBoot,currentD
 if(nativeBoot)app.post('/studio-api/runtime/shutdown',explicitRuntimeShutdown(nativeBoot,currentDataRootId,shutdown))
 // Bootstrap establishes only a local transport cookie, never account authorization.
 app.use('/studio-api',async(req,res,next)=>{if(req.path==='/session')return next();if(currentDataRootId()!==dataRootId){res.status(409).json({code:'LOCAL_AUTH_BINDING_MISMATCH',error:'工作区身份已改变，未自动重绑授权'});return}return localAuthorizationMiddleware(authorizationGate)(req,res,next)})
-const nativeExports=new NativeExportService(store,pilot.enabled)
+const nativeExports=new NativeExportService(store,pilot.enabled,undefined,()=>{if(exportWorker?.cleanupFailure)throw exportWorker.cleanupFailure})
 app.use('/studio-api/native',nativeRouter(nativeService,nativeExports))
 if(pilot.enabled){app.use(runtimeAssetsRouter());exportWorker=new NativeExportWorker(store,new NativeDrawioRenderer());exportWorker.start()}
 app.get('/studio-api/guide',async(_req,res)=>res.type('text/markdown').send((await drawingGuide()).guide))

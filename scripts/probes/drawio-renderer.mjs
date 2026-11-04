@@ -6,6 +6,8 @@ import sharp from 'sharp';
 import {chromium} from 'playwright-core';
 import {createHash} from 'node:crypto';
 import {RUNTIME_FONT_FAMILY,RUNTIME_FONT_SHA256} from '../../src/drawing/engine/runtime-assets.ts';
+import {BROWSER_FONT_MANIFEST} from '../../src/drawing/engine/browser-font-manifest.ts';
+import {inspectNativeSVGResources} from '../../server/rendering/svg-resources.ts';
 import {NativeDrawioRenderer} from '../../server/rendering/renderer.ts';
 import {resolveRuntimeAssets,checkRuntimeAssets} from '../../server/rendering/assets.ts';
 import {compileDrawio,projectDrawio,drawioRenderSignature} from '../../src/drawing/engine/drawio/index.ts';
@@ -23,7 +25,7 @@ try{
   if(name==='mixed-aliases'){let index=0;const names=['Microsoft YaHei','Helvetica','Arial'];project=await createDrawingProject(content,{...base.rendering.engine,xml:base.rendering.engine.xml.replaceAll('fontFamily=Noto Sans CJK SC',()=>`fontFamily=${names[index++%3]}`)},{createdAt:1,updatedAt:1})}
   const result=await renderer.render(project,{background:name==='transparent'?'transparent':'white',scale:name==='large-scale'?4:1});assert.equal((await projectDrawio(result.nativeXML)).contentHash,project.rendering.engine.contentHash);assert.equal(drawioRenderSignature(result.nativeXML),drawioRenderSignature(project.rendering.engine.xml));
   const corner=await sharp(result.png).ensureAlpha().extract({left:0,top:0,width:1,height:1}).raw().toBuffer();assert.equal(corner[3],name==='transparent'?0:255);if(name!=='transparent')assert.deepEqual([...corner.slice(0,3)],[255,255,255]);
-  const fontURLs=[...result.svg.matchAll(/url\(([^)]+)\)/g)].map(m=>m[1].trim().replace(/^["']|["']$/g,''));assert.ok(fontURLs.length>0);for(const url of fontURLs)assert.equal(createHash('sha256').update(Buffer.from(url.slice(url.indexOf(',')+1),'base64')).digest('hex'),RUNTIME_FONT_SHA256);
+  const fontURLs=inspectNativeSVGResources(result.svg).urls.filter(url=>/^data:font\/(?:otf|woff2);base64,/i.test(url)),approved=new Set(BROWSER_FONT_MANIFEST.files.map(file=>file.sha256));assert.ok(fontURLs.length>0);for(const url of fontURLs){const hash=createHash('sha256').update(Buffer.from(url.slice(url.indexOf(',')+1),'base64')).digest('hex');assert.ok(url.startsWith('data:font/otf;')?hash===RUNTIME_FONT_SHA256:approved.has(hash))}
   await writeFile(resolve(out,name+'.png'),result.png);await writeFile(resolve(out,name+'.svg'),result.svg);if(result.nativeSVG)await writeFile(resolve(out,name+'.native.svg'),result.nativeSVG);await writeFile(resolve(out,name+'.drawio'),result.nativeXML);
   report.samples.push({name,width:result.width,height:result.height,scale:result.scale,pngBytes:result.png.length,svgBytes:Buffer.byteLength(result.svg),runtime:result.runtime,timings:result.timings,warnings:result.warnings,nativeSnapshotUnchanged:true});console.log(JSON.stringify(report.samples.at(-1)));
  }

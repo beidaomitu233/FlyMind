@@ -5,6 +5,7 @@ import {join,resolve,dirname,basename} from 'node:path'
 import type {Readable,Writable} from 'node:stream'
 import {chromium,type Browser,type ConnectOverCDPTransport} from 'playwright-core'
 import {NativeRenderError} from './types'
+import {createCDPFrameDecoder} from './cdp-frames'
 
 export interface HiddenBrowser {browser:Browser;pid:number;profileDirectory:string;close():Promise<void>}
 /** Fixed headless shell is a Windows console executable. Playwright's own
@@ -21,12 +22,13 @@ export async function launchHiddenBrowser(executablePath:string):Promise<HiddenB
  let child:ChildProcess|undefined,browser:Browser|undefined,exitResolved=false,closePromise:Promise<void>|undefined
  let resolveExit!:()=>void
  const exited=new Promise<void>(resolve=>resolveExit=resolve)
- let buffered=Buffer.alloc(0),stderr='',ended=false,notified=false
+ let stderr='',ended=false,notified=false
  let rejectStartup!:(error:Error)=>void
  const startupFailure=new Promise<never>((_resolve,reject)=>rejectStartup=reject)
  const notify=(reason:string)=>{if(notified)return;notified=true;transport.onclose?.(reason)}
  const queued:object[]=[]
  const transport:ConnectOverCDPTransport={send(message){const pipe=child?.stdio[3] as Writable|undefined;if(ended||!pipe||pipe.destroyed)throw new NativeRenderError('BROWSER_DISCONNECTED','浏览器私有管道已关闭');pipe.write(JSON.stringify(message)+'\0')},close(){ended=true;(child?.stdio[3] as Writable|undefined)?.destroy();(child?.stdio[4] as Readable|undefined)?.destroy();notify('Browser transport closed')},open(){for(const message of queued.splice(0))transport.onmessage?.(message)}}
+ const decode=createCDPFrameDecoder(message=>{if(transport.onmessage)transport.onmessage(message);else queued.push(message)})
  async function close(){
   if(closePromise)return closePromise
   closePromise=(async()=>{
@@ -46,9 +48,7 @@ export async function launchHiddenBrowser(executablePath:string):Promise<HiddenB
   ;(child.stdio[3] as Writable).once('error',error=>{ended=true;rejectStartup(error);notify('Browser write pipe failed')})
   ;(child.stderr as Readable).on('data',(chunk:Buffer)=>{stderr=(stderr+chunk.toString('utf8')).slice(-2000)})
   ;(child.stdio[4] as Readable).on('data',(chunk:Buffer)=>{
-   buffered=Buffer.concat([buffered,chunk]);if(buffered.length>128*1024*1024){transport.close();rejectStartup(new NativeRenderError('BROWSER_PROTOCOL_FAILED','CDP frame budget exceeded'));notify('CDP frame budget exceeded');return}
-   let boundary:number
-   while((boundary=buffered.indexOf(0))!==-1){const frame=buffered.subarray(0,boundary);buffered=buffered.subarray(boundary+1);if(!frame.length)continue;try{const message=JSON.parse(frame.toString('utf8'));if(!message||typeof message!=='object'||Array.isArray(message))throw Error();if(transport.onmessage)transport.onmessage(message);else queued.push(message)}catch{transport.close();rejectStartup(new NativeRenderError('BROWSER_PROTOCOL_FAILED','Invalid private CDP frame'));notify('Invalid private CDP frame');return}}
+   try{decode(chunk)}catch(error){const message=error instanceof Error?error.message:'Invalid private CDP frame';transport.close();rejectStartup(error instanceof Error?error:new NativeRenderError('BROWSER_PROTOCOL_FAILED',message));notify(message)}
   })
   ;(child.stdio[4] as Readable).once('error',()=>{ended=true;rejectStartup(new NativeRenderError('BROWSER_PROTOCOL_FAILED','Browser pipe failed'));notify('Browser pipe failed')})
   browser=await Promise.race([chromium.connectOverCDP(transport,{timeout:15000}),startupFailure])

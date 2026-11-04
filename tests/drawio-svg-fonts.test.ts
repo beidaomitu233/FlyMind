@@ -19,3 +19,15 @@ test('unknown font families in presentation, inline CSS, style block and font-fa
 test('font packaging rejects bad font bytes and DTD/entities and preserves a document without original defs',async()=>{
  assert.throws(()=>packageNativeSVGFonts(raw,Buffer.from('bad')),{code:'FONT_HASH_MISMATCH'});assert.throws(()=>svgDrawingSignature('<!DOCTYPE svg><svg/>'),{code:'UNSAFE_SVG'});const font=await readFile(new URL('../resources/fonts/NotoSansCJKsc-Regular.otf',import.meta.url)),svg='<svg xmlns="http://www.w3.org/2000/svg"><text font-family="Arial" x="8" y="9">说明</text></svg>';assert.equal(svgDrawingSignature(svg),svgDrawingSignature(packageNativeSVGFonts(svg,font)))
 })
+test('font packaging checks rewritten resources, scripts and events before adding only the verified canonical font',async()=>{
+ const font=await readFile(new URL('../resources/fonts/NotoSansCJKsc-Regular.otf',import.meta.url))
+ for(const body of ['<script/>','<rect onload="run()"/>','<iframe/>'])assert.throws(()=>packageNativeSVGFonts(`<svg xmlns="http://www.w3.org/2000/svg">${body}</svg>`,font),{code:'UNSAFE_SVG'})
+ for(const body of [
+  '<rect style="font-family:Arial;fill:url(&quot;&#104;ttps://external.invalid/a&quot;)"/>',
+  '<image href="file:///private/a"/>',
+  '<style>@import &quot;https://external.invalid/a&quot;; .label{font-family:Arial}</style>'
+ ])assert.throws(()=>packageNativeSVGFonts(`<svg xmlns="http://www.w3.org/2000/svg">${body}</svg>`,font),{code:'UNRESOLVED_RESOURCE'})
+ for(const body of ['<rect fill="url(data:font/otf;base64,YmFk)"/>','<image href="data:font/otf;base64,YmFk"/>'])assert.throws(()=>packageNativeSVGFonts(`<svg xmlns="http://www.w3.org/2000/svg">${body}</svg>`,font),{code:'FONT_NOT_EMBEDDED'})
+ assert.throws(()=>packageNativeSVGFonts('<!DOCTYPE svg [<!ENTITY x "bad">]><svg xmlns="http://www.w3.org/2000/svg"/>',font),{code:'UNSAFE_SVG'})
+ assert.throws(()=>packageNativeSVGFonts('<svg xmlns="http://www.w3.org/2000/svg"><style>.label{font-family:Unknown}</style></svg>',font),{code:'UNSUPPORTED_FONT'})
+})

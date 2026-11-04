@@ -1,4 +1,5 @@
 import {readFile,lstat,readlink,readdir,realpath} from 'node:fs/promises'
+import {createReadStream} from 'node:fs'
 import {createHash} from 'node:crypto'
 import {resolve,join,sep} from 'node:path'
 import {pathToFileURL} from 'node:url'
@@ -14,7 +15,7 @@ export async function verifyCandidate(directory,{requirePrepared=true,requireCle
  const expected=new Set(['candidate.json'])
  for(const file of manifest.files){if(!file||typeof file!=='object')throw Error('Candidate entry invalid');const name=file.path;if(typeof name!=='string'||name.includes('\0')||name.includes(':')||name.includes('\\')||name.startsWith('/')||name.split('/').some(s=>!s||s==='.'||s==='..')||expected.has(name))throw Error('Candidate file path invalid');expected.add(name);const target=resolve(root,name);if(!target.startsWith(root+sep))throw Error('Candidate path leaves release');const stat=await lstat(target)
   if(file.type==='symlink'){if(typeof file.target!=='string'||!stat.isSymbolicLink()||await readlink(target)!==file.target||!resolve(target,'..',file.target).startsWith(root+sep)||!(await realpath(target)).startsWith(root+sep))throw Error('Candidate link changed');if(requireRootOwned&&stat.uid!==0)throw Error('Candidate link ownership invalid')}
-  else{if(file.type!==undefined||!Number.isSafeInteger(file.bytes)||file.bytes<0||typeof file.sha256!=='string'||!/^[a-f0-9]{64}$/.test(file.sha256)||!stat.isFile()||stat.isSymbolicLink()||stat.size!==file.bytes||!(await realpath(target)).startsWith(root+sep))throw Error('Candidate file changed: '+name);immutable(stat);const bytes=await readFile(target);if(createHash('sha256').update(bytes).digest('hex')!==file.sha256)throw Error('Candidate digest changed: '+name)}
+  else{if(file.type!==undefined||!Number.isSafeInteger(file.bytes)||file.bytes<0||typeof file.sha256!=='string'||!/^[a-f0-9]{64}$/.test(file.sha256)||!stat.isFile()||stat.isSymbolicLink()||stat.size!==file.bytes||!(await realpath(target)).startsWith(root+sep))throw Error('Candidate file changed: '+name);immutable(stat);const hash=createHash('sha256');let size=0;for await(const chunk of createReadStream(target)){size+=chunk.length;hash.update(chunk)}if(size!==file.bytes||hash.digest('hex')!==file.sha256)throw Error('Candidate digest changed: '+name)}
  }
  async function inventory(path,prefix=''){immutable(await lstat(path));for(const entry of await readdir(path,{withFileTypes:true})){const name=prefix+entry.name;if(entry.isDirectory())await inventory(join(path,entry.name),name+'/');else if(!expected.has(name))throw Error('Unregistered candidate file: '+name)}}await inventory(root)
  return manifest

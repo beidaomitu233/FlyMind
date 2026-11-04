@@ -93,7 +93,7 @@ export function createCloudHTTP(options:CloudHTTPOptions){
  })
  app.use(express.json({limit:'4mb'}))
  app.get('/healthz',(_req,res)=>res.json({status:'running'}))
- app.get('/readyz',async(_req,res)=>{const release=await releaseManifest,state=maintenance.snapshot();res.status(state.ready?200:503).json({...state,releaseId:release.releaseId,engineResourceKey:release.engineResourceKey})})
+ app.get('/readyz',async(_req,res)=>{const release=await releaseManifest,state=maintenance.snapshot(),fault=pool.hasCleanupFailure(),ready=state.ready&&!fault;res.status(ready?200:503).json({...state,ready,...(fault?{code:'EXPORT_CLEANUP_UNCERTAIN'}:{}),releaseId:release.releaseId,engineResourceKey:release.engineResourceKey})})
  if(oauth&&mcp){
   // SDK defaults advertise confidential clients too; this provider supports public PKCE only.
   const metadata=createOAuthMetadata({provider:oauth,issuerUrl:publicURL,scopesSupported:MCP_SCOPES})
@@ -193,7 +193,7 @@ export function createCloudHTTP(options:CloudHTTPOptions){
     const expected=req.get('X-FlyMind-DataRoot-Id');if(expected&&expected!==workspace.dataRootId)throw new CloudAccessError(409,'WORKSPACE_MISMATCH','工作区身份不匹配')
     if(req.body&&typeof req.body==='object'&&Object.hasOwn(req.body,'requestId'))req.body={...req.body,requestId:cloudRequestId(principal,req.body.requestId)}
     const manifest=await releaseManifest
-    const release=access==='export:create'?pool.reserve(workspace):()=>{}
+    const release=access==='export:create'?pool.reserveForExportRequest(workspace):()=>{}
     try{await withActivityActor({userId:principal.user.id,userDisplayName:principal.user.name,teamId:principal.team.id,channel:principal.authorization?'mcp':'web',...(principal.authorization?.clientId?{clientId:principal.authorization.clientId}:{}),dataRootId:workspace.dataRootId},()=>new Promise<void>((yes,no)=>{
      let settled=false,inJSON=false
      const json=res.json.bind(res),send=res.send.bind(res)
@@ -203,7 +203,7 @@ export function createCloudHTTP(options:CloudHTTPOptions){
      res.json=body=>{inJSON=true;try{return json(rewriteURLs(body,'/cloud-api/teams/'+teamId))}finally{inJSON=false;finished();if(req.method!=='GET')rooms.kick()}}
      res.send=body=>{try{return send(body)}finally{if(!inJSON)finished()}}
      res.once('finish',finished)
-     nativeRouter(workspace.diagrams,workspace.exports,{release:manifest})(req,res,error=>{res.off('finish',finished);if(settled)return;settled=true;if(error)no(error);else{next();yes()}})
+     nativeRouter(workspace.diagrams,workspace.exports,{release:manifest,assertExportAdmission:()=>pool.assertCanEnqueue()})(req,res,error=>{res.off('finish',finished);if(settled)return;settled=true;if(error)no(error);else{next();yes()}})
     }))}finally{release()}
    }))
   }catch(error){next(error)}

@@ -4,7 +4,7 @@ import {McpError} from '@modelcontextprotocol/sdk/types.js'
 import {createHash,randomUUID} from 'node:crypto'
 import type {NativeRuntimeConnection} from '../runtime-instance/types'
 import type {NativeExportJob,NativeExportFormat} from '../exports/types'
-import {EXPORT_FORMATS} from '../exports/types'
+import {EXPORT_FORMATS} from '../exports/formats'
 import {inspectDrawing} from '../../src/drawing/core/drawing-quality'
 import {sampleFor} from '../../src/drawing/core/samples'
 import {extractContent} from '../../src/drawing/core/layers'
@@ -14,6 +14,7 @@ import {diagramId as id,diagramKind,revision,requestId,taskName,nativeContentSch
 import {drawioCapabilities} from '../../src/drawing/engine/profiles'
 import {nativeGuide,guideData,type NativeApplicationGuide} from './guide'
 import {drawingStandard} from '../drawing-guide'
+import {readBoundedInlineBytes} from './inline-bytes'
 
 class ApiError extends Error {constructor(readonly status:number,readonly code:string,message:string,readonly details:Record<string,unknown>={}){super(message)}}
 const json=(data:any)=>({content:[{type:'text' as const,text:JSON.stringify(data)}],structuredContent:data})
@@ -23,6 +24,8 @@ export const MCP_INLINE_LIMIT=8*1024*1024
 const jsonBytes=(value:unknown)=>Buffer.byteLength(JSON.stringify(value),'utf8')
 // Reserve JSON escaping/base64 overhead before advertising a resource link.
 const inlineReadable=(format:string,bytes:number)=>bytes*(format==='png'?4/3:6)+4096<=MCP_INLINE_LIMIT
+const rawInlineLimit=(format:string)=>Math.floor((MCP_INLINE_LIMIT-4096)/(format==='png'?4/3:6))
+const resourceTooLarge=(format:string,bytes:number)=>new McpError(-32001,'MCP_RESOURCE_TOO_LARGE: 制品超过安全STDIO预算，请使用导出结果files或认证下载',{code:'MCP_RESOURCE_TOO_LARGE',format,bytes,maxInlineBytes:MCP_INLINE_LIMIT})
 /** Repeated reminder is sourced from the last authoritative guide, not a second policy. */
 export function appendMcpGuidance(value:any,guide:Pick<NativeApplicationGuide,'guide'|'standardVersion'>,full=false){
  const section=guide.guide.split('### MCP执行提示')[1]?.split(/\r?\n#{1,3}\s/)[0]?.trim()
@@ -108,13 +111,18 @@ export async function createNativeMcpServer(connect:()=>Promise<NativeRuntimeCon
    if(delivery.jobId!==job!.id||delivery.diagramId!==meta.diagramId||delivery.revision!==meta.revision||delivery.dataRootId!==c.dataRootId)throw new ApiError(409,'EXPORT_SNAPSHOT_MISMATCH','交付路径与任务身份不符')
    const formats=EXPORT_FORMATS.filter(f=>!!job!.files?.[f])
    const urls=Object.fromEntries(formats.map(f=>[f,options.resourceURL?options.resourceURL(`/studio-api/native/exports/${id.parse(job!.id)}/files/${f}`):c.baseURL+job!.files![f]!.url])),resources=Object.fromEntries(formats.map(f=>[f,`flymind://exports/${meta.diagramId}/${meta.revision}/${job!.id}/${f}`]))
-   const png=await request(`/studio-api/native/exports/${job!.id}/files/png`,{},async response=>{if(!response.ok)throw new ApiError(response.status,'EXPORT_ARTIFACT_UNAVAILABLE','PNG 无法读取');return Buffer.from(await response.arrayBuffer())})
-   if(png.length<24||png.subarray(0,8).toString('hex')!=='89504e470d0a1a0a'||png.readUInt32BE(16)!==job!.width||png.readUInt32BE(20)!==job!.height)throw new ApiError(500,'EXPORT_PNG_INVALID','PNG 签名或尺寸不符')
    data={...data,files:options.remoteApplication?urls:delivery.files,urls,resources,exportedAt:job!.exportedAt,width:job!.width,height:job!.height,resourceLimits:Object.fromEntries(formats.map(f=>[f,{bytes:job!.files![f]!.bytes,maxInlineBytes:MCP_INLINE_LIMIT,readable:inlineReadable(f,job!.files![f]!.bytes)}])),previewStatus:'inline'}
+   const tooLargePreview=()=>json({...data,previewStatus:'too_large',previewError:{code:'MCP_PREVIEW_TOO_LARGE',message:'PNG预览超过安全STDIO预算；导出已成功，请使用files.png或认证下载，不重新创建'}})
+   const pngBytes=job!.files?.png?.bytes
+   if(typeof pngBytes==='number'&&Number.isSafeInteger(pngBytes)&&pngBytes>rawInlineLimit('png'))return tooLargePreview()
+   let png:Buffer
+   try{png=await request(`/studio-api/native/exports/${job!.id}/files/png`,{},async response=>{if(!response.ok)throw new ApiError(response.status,'EXPORT_ARTIFACT_UNAVAILABLE','PNG 无法读取');return readBoundedInlineBytes(response,rawInlineLimit('png'),()=>new ApiError(413,'MCP_PREVIEW_TOO_LARGE','PNG预览超过安全预算'))})}
+   catch(error){if(error instanceof ApiError&&error.code==='MCP_PREVIEW_TOO_LARGE')return tooLargePreview();throw error}
+   if(png.length<24||png.subarray(0,8).toString('hex')!=='89504e470d0a1a0a'||png.readUInt32BE(16)!==job!.width||png.readUInt32BE(20)!==job!.height)throw new ApiError(500,'EXPORT_PNG_INVALID','PNG 签名或尺寸不符')
    const links=formats.filter(f=>f!=='png'&&inlineReadable(f,job!.files![f]!.bytes)).map(f=>({type:'resource_link' as const,uri:resources[f],name:options.remoteApplication?`${job!.id}.${f}`:job!.files![f]!.filename,mimeType:mime(f),size:job!.files![f]!.bytes}))
    const responseValue={...json(data),content:[...json(data).content,{type:'image' as const,mimeType:'image/png',data:png.toString('base64')},...links]}
    if(jsonBytes(responseValue)+4096<=MCP_INLINE_LIMIT)return responseValue
-   return json({...data,previewStatus:'too_large',previewError:{code:'MCP_PREVIEW_TOO_LARGE',message:'PNG预览超过安全STDIO预算；导出已成功，请使用files.png或认证下载，不重新创建'}})
+   return tooLargePreview()
   }catch(error){const e=error as any;if(!saved)throw error;return json({...data,exportStatus:job?.status==='failed'?'failed':'unavailable',...(job?{jobId:job.id}:{}),exportRetry:job?{jobId:job.id,path:`/studio-api/native/exports/${job.id}/retry`}:retry,exportError:{code:e.code??'EXPORT_UNAVAILABLE',message:e.message}})}
  }
  async function currentGuide(kind?:z.infer<typeof diagramKind>){const value=options.remoteApplication?nativeGuideOutput.parse(await api('/guide'+(kind?'?kind='+encodeURIComponent(kind):''))):{...guideData,guide:nativeGuide+'\n\n'+await drawingStandard(),...(kind?{sample:extractContent(sampleFor(kind))}:{})};if(!value.guide.trim()||!value.standardVersion.trim())throw new ApiError(503,'APPLICATION_GUIDE_INVALID','当前应用未提供完整绘图规则，未初始化MCP；请稍后重新连接');latestGuide=value;return value}
@@ -149,8 +157,10 @@ export async function createNativeMcpServer(connect:()=>Promise<NativeRuntimeCon
  server.registerResource('export',new ResourceTemplate('flymind://exports/{id}/{revision}/{exportId}/{format}',{list:undefined}),{},async(uri,args)=>{
   const diagram=id.parse(String(args.id)),rev=revision.parse(Number(args.revision)),jobId=id.parse(String(args.exportId)),format=z.enum(EXPORT_FORMATS).parse(String(args.format)) as NativeExportFormat,c=await conn(),job:NativeExportJob=await api(`/exports/${jobId}`)
   if(job.diagramId!==diagram||job.revision!==rev||job.dataRootId!==c.dataRootId||job.status!=='succeeded')throw new ApiError(404,'EXPORT_RESOURCE_MISMATCH','资源不属于指定图形/修订/工作区或尚未成功')
-  const bytes=await request(`/studio-api/native/exports/${jobId}/files/${format}`,{},async response=>{if(!response.ok)throw new ApiError(response.status,'EXPORT_ARTIFACT_UNAVAILABLE','制品不可读取');return Buffer.from(await response.arrayBuffer())}),value={contents:[format==='png'?{uri:uri.href,mimeType:mime(format),blob:bytes.toString('base64')}:{uri:uri.href,mimeType:mime(format),text:bytes.toString('utf8')}]}
-  if(!inlineReadable(format,bytes.length)||jsonBytes(value)+4096>MCP_INLINE_LIMIT)throw new McpError(-32001,'MCP_RESOURCE_TOO_LARGE: 制品超过安全STDIO预算，请使用导出结果files或认证下载',{code:'MCP_RESOURCE_TOO_LARGE',format,bytes:bytes.length,maxInlineBytes:MCP_INLINE_LIMIT})
+  const declared=job.files?.[format]?.bytes
+  if(typeof declared==='number'&&Number.isSafeInteger(declared)&&declared>rawInlineLimit(format))throw resourceTooLarge(format,declared)
+  const bytes=await request(`/studio-api/native/exports/${jobId}/files/${format}`,{},async response=>{if(!response.ok)throw new ApiError(response.status,'EXPORT_ARTIFACT_UNAVAILABLE','制品不可读取');return readBoundedInlineBytes(response,rawInlineLimit(format),observed=>resourceTooLarge(format,observed))}),value={contents:[format==='png'?{uri:uri.href,mimeType:mime(format),blob:bytes.toString('base64')}:{uri:uri.href,mimeType:mime(format),text:bytes.toString('utf8')}]}
+  if(!inlineReadable(format,bytes.length)||jsonBytes(value)+4096>MCP_INLINE_LIMIT)throw resourceTooLarge(format,bytes.length)
   return value
  })
  return {server,async close(){await server.close();if(connection)await(await connection).close()}}

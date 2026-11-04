@@ -14,6 +14,7 @@ import {DiagramStore} from '../server/store'
 import {spawn} from 'node:child_process'
 import {pathToFileURL} from 'node:url'
 import Database from 'better-sqlite3'
+import sharp from 'sharp'
 import type {NativeExportRenderer} from '../server/exports/types'
 import {businessContent} from './fixtures/native-business'
 import {cloudMcpHandshake} from '../server/cloud/mcp-compat'
@@ -66,7 +67,7 @@ async function setup(renderer?:NativeExportRenderer,maxQueuedTeams=4,identity?:i
  }
  const team=(id:string,path:string)=>'/cloud-api/teams/'+id+'/studio-api'+path
  async function health(id='team-a',token=tokens.alice){const r=await request(team(id,'/health'),{token});assert.equal(r.status,200);return await r.json() as any}
- async function close(){await stop(http);await cloud.close();await stop(authority);assert.ok(resolve(root).startsWith(resolve(tmpdir())+sep)&&root.includes('flymind-cloud-http-'));await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100})}
+ async function close(){await stop(http);try{await cloud.close()}finally{await stop(authority);assert.ok(resolve(root).startsWith(resolve(tmpdir())+sep)&&root.includes('flymind-cloud-http-'));await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100})}}
  return {root,cloud,request,team,health,close,calls,revoked,base}
 }
 
@@ -173,6 +174,65 @@ test('global export queue is bounded before enqueue, while unrelated team reads 
   r=await s.request(s.team('team-b','/native/diagrams/queue-doc/exports'),{token:tokens.alice,rootId:b.dataRootId,method:'POST',body:{expectedRevision:1,requestId:'queue-b'}});assert.equal(r.status,503);assert.equal((await r.json() as any).code,'EXPORT_CAPACITY')
   r=await s.request(s.team('team-b','/native/diagrams/queue-doc'),{token:tokens.alice});assert.equal(r.status,200)
  }finally{await s.close();assert.equal(closed,1)}
+})
+
+test('faulted cloud export admission preserves authorized replay and rejects transactional new jobs',async()=>{
+ let runs=0,blockedStarted!:()=>void,releaseFault!:()=>void,releaseSame!:()=>void,releaseNew!:()=>void,enteredSame!:()=>void,enteredNew!:()=>void
+ let observedPool:CloudExportPool|undefined;const originalReserve=CloudExportPool.prototype.reserveForExportRequest
+ const started=new Promise<void>(r=>blockedStarted=r),faultGate=new Promise<void>(r=>releaseFault=r),sameGate=new Promise<void>(r=>releaseSame=r),newGate=new Promise<void>(r=>releaseNew=r),sameEntered=new Promise<void>(r=>enteredSame=r),newEntered=new Promise<void>(r=>enteredNew=r)
+ const renderer:NativeExportRenderer={render:async()=>{throw Error('tracked render required')},renderTracked(project){
+  const current=++runs
+  if(current===1)return {result:(async()=>({png:await sharp({create:{width:20,height:12,channels:4,background:'#fff'}}).png().toBuffer(),svg:'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="12"/>',width:20,height:12,scale:1,nativeXML:project.rendering.engine.xml,runtime:{},timings:{totalMs:1,browserStartMs:0,loadMs:0,exportMs:1},warnings:[]}))(),quiescence:Promise.resolve()}
+  if(current===2)return {result:Promise.reject(Object.assign(Error('fixture failure'),{code:'FIXTURE'})),quiescence:Promise.resolve()}
+  blockedStarted();return {result:faultGate.then(()=>{throw Object.assign(Error('fixture render'),{code:'FIXTURE_RENDER'})}),quiescence:faultGate.then(()=>{throw Error('fixture cleanup')})}
+ },close:async()=>{}}
+ const s=await setup(renderer,2);let originalEnqueue:DiagramStore['enqueueNativeExport']|undefined,store:DiagramStore|undefined
+ CloudExportPool.prototype.reserveForExportRequest=function(...args){observedPool=this;return originalReserve.apply(this,args)}
+ try{
+  const h=await s.health(),base=s.team('team-a','/native'),post=(path:string,body:unknown)=>s.request(base+path,{token:tokens.alice,rootId:h.dataRootId,method:'POST',body})
+  let readiness=await s.request('/readyz');assert.equal(readiness.status,200);const healthy=await readiness.json() as any;assert.equal(healthy.ready,true);assert.equal(healthy.code,undefined);assert.ok(healthy.releaseId);assert.ok(healthy.engineResourceKey)
+  let liveness=await s.request('/healthz');assert.equal(liveness.status,200);assert.deepEqual(await liveness.json(),{status:'running'})
+  let r=await post('/diagrams',{content:businessContent('flowchart','admission-cloud'),requestId:'create-graph'});assert.equal(r.status,201)
+  const create=(key:string)=>post('/diagrams/admission-cloud/exports',{expectedRevision:1,requestId:key}),snapshot=(key:string)=>post('/diagrams/admission-cloud/exports/snapshot',{revision:1,requestId:key})
+  const status=async(id:string)=>{const response=await s.request(base+'/exports/'+id,{token:tokens.alice});assert.equal(response.status,200);return response.json() as Promise<any>}
+  const untilStatus=async(id:string,want:string)=>within((async()=>{for(;;){const job=await status(id);if(job.status===want)return job;await new Promise(r=>setTimeout(r,10))}})())
+  r=await create('completed');assert.equal(r.status,202);const completed=await r.json() as any;await untilStatus(completed.id,'succeeded')
+  r=await create('source-failed');assert.equal(r.status,202);const source=await r.json() as any;await untilStatus(source.id,'failed')
+  r=await create('existing-create');assert.equal(r.status,202);const existing=await r.json() as any;await within(started)
+  r=await snapshot('existing-snapshot');assert.equal(r.status,202);const historical=await r.json() as any
+  r=await post('/exports/'+source.id+'/retry',{requestId:'existing-retry'});assert.equal(r.status,202);const retry=await r.json() as any
+  const bindings=await s.cloud.workspaces.run(tokens.alice,'team-a','export:create',async(workspace,principal)=>({store:workspace.store,same:cloudRequestId(principal,'racing-same'),fresh:cloudRequestId(principal,'racing-new'),epoch:cloudRequestId(principal,'blocked-epoch')}))
+  store=bindings.store;originalEnqueue=store.enqueueNativeExport.bind(store);let sameHeld=false
+  store.enqueueNativeExport=async(...args)=>{const key=args[0].requestId;if(key===bindings.same&&!sameHeld){sameHeld=true;enteredSame();await sameGate}else if(key===bindings.fresh){enteredNew();await newGate}return originalEnqueue!(...args)}
+  const firstSame=create('racing-same');await within(sameEntered)
+  r=await create('racing-same');assert.equal(r.status,202);const committedSame=await r.json() as any
+  const heldNew=create('racing-new');await within(newEntered)
+  let reentrantFault=false,reentrantReadiness=false
+  const activeWorker=(observedPool as any).entries.get(h.dataRootId).worker
+  activeWorker.options.onError=(error:{code?:string})=>{if(error.code==='EXPORT_CLEANUP_UNCERTAIN'){reentrantReadiness=observedPool!.hasCleanupFailure();try{observedPool!.assertCanEnqueue()}catch(fault){reentrantFault=(fault as {code?:string}).code==='EXPORT_CLEANUP_UNCERTAIN'}}}
+  releaseFault();await untilStatus(existing.id,'failed')
+  await within((async()=>{for(;;){try{observedPool!.assertCanEnqueue()}catch(error){if((error as {code?:string}).code==='EXPORT_CLEANUP_UNCERTAIN')return;throw error}await new Promise(yes=>setTimeout(yes,10))}})())
+  assert.equal(reentrantFault,true,'pool must observe worker fault before its drain catch runs')
+  assert.equal(reentrantReadiness,true,'readiness must observe worker fault before its drain catch runs')
+  readiness=await s.request('/readyz');assert.equal(readiness.status,503);const unhealthy=await readiness.json() as any;assert.equal(unhealthy.ready,false);assert.equal(unhealthy.code,'EXPORT_CLEANUP_UNCERTAIN');assert.equal(unhealthy.releaseId,healthy.releaseId);assert.equal(unhealthy.engineResourceKey,healthy.engineResourceKey);assert.ok(!JSON.stringify(unhealthy).includes(s.root))
+  liveness=await s.request('/healthz');assert.equal(liveness.status,200);assert.deepEqual(await liveness.json(),{status:'running'})
+  const count=()=>{const db=new Database(store!.databasePath,{readonly:true});try{return (db.prepare('SELECT count(*) n FROM native_export_jobs').get() as {n:number}).n}finally{db.close()}}
+  const before=count();releaseSame();r=await within(firstSame);assert.equal(r.status,202);assert.equal((await r.json() as any).id,committedSame.id)
+  releaseNew();r=await within(heldNew);assert.equal(r.status,503);assert.equal((await r.json() as any).code,'EXPORT_CLEANUP_UNCERTAIN')
+  for(const [request,id] of [[()=>create('existing-create'),existing.id],[()=>snapshot('existing-snapshot'),historical.id],[()=>post('/exports/'+source.id+'/retry',{requestId:'existing-retry'}),retry.id]] as const){r=await request();assert.equal(r.status,202);assert.equal((await r.json() as any).id,id)}
+  for(const request of [()=>create('fresh-create'),()=>snapshot('fresh-snapshot'),()=>post('/exports/'+source.id+'/retry',{requestId:'fresh-retry'})]){r=await request();assert.equal(r.status,503);assert.equal((await r.json() as any).code,'EXPORT_CLEANUP_UNCERTAIN')}
+  r=await post('/diagrams/admission-cloud/exports',{expectedRevision:1,requestId:'existing-create',options:{scale:2}});assert.equal(r.status,409);assert.equal((await r.json() as any).code,'IDEMPOTENCY_KEY_REUSED')
+  r=await s.request(base+'/diagrams/admission-cloud/exports',{token:tokens.bob,rootId:h.dataRootId,method:'POST',body:{expectedRevision:1,requestId:'existing-create'}});assert.equal(r.status,403)
+  r=await s.request(base+'/diagrams/admission-cloud/exports',{rootId:h.dataRootId,method:'POST',body:{expectedRevision:1,requestId:'existing-create'}});assert.equal(r.status,401)
+  r=await s.request(base+'/diagrams/admission-cloud/exports',{token:tokens.alice,rootId:'wrong-root',method:'POST',body:{expectedRevision:1,requestId:'existing-create'}});assert.equal(r.status,409)
+  {const db=new Database(store.databasePath);try{db.exec('CREATE TABLE restored_request_barriers(scope TEXT NOT NULL,request_id TEXT NOT NULL,restore_id TEXT NOT NULL,PRIMARY KEY(scope,request_id))');db.prepare('INSERT INTO restored_request_barriers VALUES(?,?,?)').run('export',bindings.epoch,'fixture')}finally{db.close()}}
+  r=await create('blocked-epoch');assert.equal(r.status,409);assert.equal((await r.json() as any).code,'REQUEST_EPOCH_CHANGED')
+  r=await s.request(base+'/exports/'+completed.id,{token:tokens.alice});assert.equal(r.status,200)
+  const successful=await r.json() as any;r=await s.request(successful.files.png.url,{token:tokens.alice});assert.equal(r.status,200);assert.equal(count(),before)
+  await assert.rejects(s.cloud.quiesce({timeoutMs:1000}),(e:any)=>e.code==='EXPORT_CLEANUP_UNCERTAIN')
+  readiness=await s.request('/readyz');assert.equal(readiness.status,503);const maintenance=await readiness.json() as any;assert.equal(maintenance.ready,false);assert.equal(maintenance.state,'updating');assert.equal(maintenance.code,'EXPORT_CLEANUP_UNCERTAIN')
+  r=await create('existing-create');assert.equal(r.status,503);assert.equal((await r.json() as any).code,'CLOUD_UPDATING')
+ }finally{releaseFault();releaseSame();releaseNew();CloudExportPool.prototype.reserveForExportRequest=originalReserve;if(store&&originalEnqueue)store.enqueueNativeExport=originalEnqueue;await s.close().catch((error:any)=>{assert.equal(error.code,'EXPORT_CLEANUP_UNCERTAIN')})}
 })
 
 async function within<T>(promise:Promise<T>,ms=5000):Promise<T>{let timer:ReturnType<typeof setTimeout>|undefined;try{return await Promise.race([promise,new Promise<never>((_yes,no)=>{timer=setTimeout(()=>no(Error('bounded test wait expired')),ms)})])}finally{clearTimeout(timer)}}

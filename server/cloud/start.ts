@@ -20,7 +20,7 @@ async function start(){
   // Fail closed before listening. Ownership is independent of the selected port.
   await checkRuntimeAssets();const release=await preparedCloudRelease()
   lease=await acquireCloudApplicationLease({cloudDataRoot:dataRoot,port})
-  renderer=new NativeDrawioRenderer();await renderer.ready()
+  renderer=new NativeDrawioRenderer();await renderer.ready({keepBrowser:false})
   if(stopRequested)throw Object.assign(Error(),{code:'CLOUD_START_CANCELLED'})
   // Claim HTTP port before recovery workers can touch an existing queue.
   const placeholder=(_req:unknown,res:import('node:http').ServerResponse)=>{res.writeHead(503,{'Retry-After':'2','Content-Type':'application/json'});res.end(JSON.stringify({code:'CLOUD_STARTING',error:'服务正在准备'}))}

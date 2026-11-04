@@ -3,12 +3,25 @@ import assert from 'node:assert/strict'
 import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
-import {NativeDrawioRenderer} from '../server/rendering/renderer'
+import {NativeDrawioRenderer,decodePNGReply,captureRenderBounds} from '../server/rendering/renderer'
 import {resolveRuntimeAssets,checkRuntimeAssets} from '../server/rendering/assets'
 import {exportScale,RENDER_BUDGET} from '../server/rendering/budgets'
 import {runtimeFontCSS,RUNTIME_FONT_FAMILY,RUNTIME_FONT_SHA256} from '../src/drawing/engine/runtime-assets'
 import {businessLibraryConfiguration} from '../src/drawing/engine/drawio-host/library'
 import {inspectNativeSVGResources} from '../server/rendering/svg-resources'
+
+test('PNG reply is validated and its base64 reference released before subsequent work',()=>{
+ const bytes=Buffer.alloc(24);Buffer.from('89504e470d0a1a0a','hex').copy(bytes)
+ const reply:{data?:unknown}={data:'data:image/png;base64,'+bytes.toString('base64')}
+ assert.deepEqual(decodePNGReply(reply),bytes);assert.equal('data' in reply,false)
+ for(const [data,code] of [['not png','OUTPUT_BUDGET'],['data:image/png;base64,AAAA','INVALID_PNG']] as const){const bad:{data?:unknown}={data};assert.throws(()=>decodePNGReply(bad),{code});assert.equal('data' in bad,false)}
+})
+test('load capture retains only numeric dimensions and never the native document',()=>{
+ const xml='x'.repeat(1024*1024),event={xml,modelBounds:{width:100,height:200,other:xml},other:xml}
+ assert.deepEqual(captureRenderBounds(event),{width:100,height:200})
+ assert.deepEqual(captureRenderBounds({modelBounds:{width:{xml},height:'200'}}),{width:undefined,height:undefined})
+ assert.throws(()=>exportScale(captureRenderBounds({}).width as number,200),{code:'DIMENSION_BUDGET'})
+})
 
 test('decoded native gradient references remain local; encoded external resources and active SVG still reject',()=>{
  const good='<svg xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g"/></defs><rect fill="url(&quot;#g&quot;)"/><style>.a{stroke:url("#g")}</style></svg>'
