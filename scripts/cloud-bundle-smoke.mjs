@@ -17,6 +17,7 @@ import {extractContent} from '../lib/src/drawing/core/layers.js'
 import {drawioCapabilities} from '../lib/src/drawing/engine/profiles.js'
 const application=resolve(fileURLToPath(new URL('../',import.meta.url))),bundle=resolve(application,'..'),candidatePath=join(bundle,'candidate.json'),candidate=JSON.parse(await readFile(candidatePath,'utf8'))
 if(candidate.prepared)throw Error('Candidate already finalized; do not modify an immutable release')
+if(candidate.dirty!==false)throw Error('Candidate source is not clean; refuse platform preparation')
 if(!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(candidate.releaseId))throw Error('Candidate identity invalid')
 process.env.FLYMIND_RELEASE_ID=candidate.releaseId
 const root=await mkdtemp(join(tmpdir(),'flymind-bundle-smoke-')),renderer=new NativeDrawioRenderer();let worker

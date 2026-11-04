@@ -14,6 +14,10 @@ const output=resolve(arg('--output'));if(output===resolve(root)||resolve(root).s
 try{await lstat(output);throw Error('Output already exists; choose a new directory')}catch(error){if(error.code!=='ENOENT')throw error}
 const required=['lib/server/cloud/start.js','lib/server/cloud/mcp-gateway-start.js','dist/index.html','integrations/xinghui-admin/backend/system-admin/target/system-admin.jar','integrations/xinghui-admin/frontend/apps/web-ele/dist/index.html']
 for(const name of required)await access(join(root,name))
+const git=spawnSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8',windowsHide:true}),dirty=spawnSync('git',['status','--porcelain'],{cwd:root,encoding:'utf8',windowsHide:true})
+if(git.status!==0||!/^[a-f0-9]{40}$/.test(git.stdout.trim()))throw Error('Cannot record source commit')
+if(dirty.status!==0)throw Error('Cannot verify source worktree')
+if(dirty.stdout.trim()){console.error(dirty.stdout.trim());throw Error('Source worktree changed during verification; candidate not assembled')}
 await mkdir(output,{recursive:false})
 const application=join(output,'application');await mkdir(application)
 async function copy(from,to){await cp(join(root,from),join(output,to),{recursive:true,errorOnExist:true,force:false,dereference:false,filter:async path=>{if((await lstat(path)).isSymbolicLink())throw Error('Unexpected source build symlink: '+relative(root,path));return true}})}
@@ -28,8 +32,6 @@ const applicationPackage={name:'flymind-cloud-private',version:pkg.version,priva
 lock.name=applicationPackage.name;lock.packages['']={name:applicationPackage.name,version:pkg.version,license:pkg.license,engines:pkg.engines,dependencies:pkg.dependencies}
 await writeFile(join(application,'package.json'),JSON.stringify(applicationPackage,null,2)+'\n');await writeFile(join(application,'package-lock.json'),JSON.stringify(lock,null,2)+'\n')
 await copy('scripts/cloud-bundle-smoke.mjs','application/scripts/cloud-bundle-smoke.mjs')
-const git=spawnSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8',windowsHide:true}),dirty=spawnSync('git',['status','--porcelain'],{cwd:root,encoding:'utf8',windowsHide:true})
-if(git.status!==0||!/^[a-f0-9]{40}$/.test(git.stdout.trim()))throw Error('Cannot record source commit')
 const files=[]
 async function walk(directory){for(const entry of (await readdir(directory,{withFileTypes:true})).sort((a,b)=>a.name.localeCompare(b.name))){const path=join(directory,entry.name);if(entry.isSymbolicLink())throw Error('Bundle cannot contain external links');if(entry.isDirectory())await walk(path);else{const digest=createHash('sha256');let bytes=0;for await(const chunk of createReadStream(path)){bytes+=chunk.length;digest.update(chunk)}files.push({path:relative(output,path).replaceAll('\\','/'),bytes,sha256:digest.digest('hex')})}}}
 await walk(output)

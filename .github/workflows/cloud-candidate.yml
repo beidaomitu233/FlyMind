@@ -6,7 +6,7 @@ on:
         description: Source build host (Linux fallback keeps the same gates and Windows platform validation)
         type: choice
         options: [windows-2022, ubuntu-22.04]
-        default: windows-2022
+        default: ubuntu-22.04
       deploy_production:
         description: Deploy this main run after source and all platform checks (explicit full-stack mode required)
         type: boolean
@@ -21,22 +21,16 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: cloud-candidate-${{ github.ref }}-${{ inputs.source_runner || 'windows-2022' }}
+  group: cloud-candidate-${{ github.ref }}-${{ inputs.source_runner || 'ubuntu-22.04' }}
   cancel-in-progress: false
 jobs:
   source:
-    runs-on: ${{ inputs.source_runner || 'windows-2022' }}
+    runs-on: ${{ inputs.source_runner || 'ubuntu-22.04' }}
     defaults:
       run:
         shell: pwsh
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, verified 2026-10-20
-      - name: Preserve approved Windows-built SQL bytes on the fallback source host
-        if: runner.os == 'Linux'
-        run: |
-          git config core.autocrlf true
-          git checkout-index --all --force
-          if ($LASTEXITCODE -ne 0) { throw 'Source checkout normalization failed' }
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22.23.3
