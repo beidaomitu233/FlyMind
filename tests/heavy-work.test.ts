@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {HeavyWorkRunner} from '../server/heavy-work/runner'
 import {compileDrawio} from '../server/heavy-work/engine'
 import {technicalReferenceContent} from '../src/drawing/core/technical-sample'
-import {linuxHeavyMemory} from '../server/heavy-work/resources'
+import {boundByNodeMemory,linuxHeavyMemory,reclaimableInactiveFile} from '../server/heavy-work/resources'
 import {heavyFailure} from '../server/heavy-work/protocol'
 const factory=()=>new HeavyWorkRunner({childURL:new URL('./fixtures/heavy-work-child.mjs',import.meta.url),availableMemory:async()=>2**30,rss:async()=>undefined})
 
@@ -38,6 +38,42 @@ test('Linux admission uses reclaimable MemAvailable and the tightest service/anc
  files['/proc/self/cgroup']='0::/\n';assert.equal(await linuxHeavyMemory(1024,read),2*1024**3)
  files['/proc/self/cgroup']='5:cpu,memory:/docker/test\n';files['/sys/fs/cgroup/memory/docker/memory.limit_in_bytes']='536870912';files['/sys/fs/cgroup/memory/docker/memory.usage_in_bytes']='268435456'
  assert.equal(await linuxHeavyMemory(1024,read),256*1024**2)
+})
+
+test('only proven clean inactive file pages are credited, with strict conservative fallback',()=>{
+ const stat='inactive_file 1000\nfile_dirty 100\nfile_writeback 50\nshmem 200\n'
+ assert.equal(reclaimableInactiveFile(stat,2000),650)
+ assert.equal(reclaimableInactiveFile(stat,300),300)
+ assert.equal(reclaimableInactiveFile('inactive_file 100\nfile_dirty 70\nfile_writeback 20\nshmem 11\n',1000),0)
+ for(const invalid of [stat.replace('shmem 200\n',''),stat+'shmem 1\n',stat.replace('file_dirty 100','file_dirty -1'),stat.replace('file_dirty 100','file_dirty 9007199254740992')])assert.equal(reclaimableInactiveFile(invalid,2000),0)
+ assert.equal(reclaimableInactiveFile(stat,-1),0)
+})
+
+test('clean file credit is computed separately for each cgroup and remains bounded by host and Node',async()=>{
+ const M=1024**2,files:Record<string,string>={
+  '/proc/meminfo':`MemAvailable: ${900*1024} kB\n`, '/proc/self/cgroup':'0::/flymind.slice/app.service\n',
+  '/sys/fs/cgroup/memory.max':'max','/sys/fs/cgroup/memory.current':'0',
+  '/sys/fs/cgroup/flymind.slice/memory.max':String(1024*M),'/sys/fs/cgroup/flymind.slice/memory.current':String(700*M),
+  '/sys/fs/cgroup/flymind.slice/memory.stat':`inactive_file ${200*M}\nfile_dirty ${10*M}\nfile_writeback ${5*M}\nshmem ${15*M}\n`,
+  '/sys/fs/cgroup/flymind.slice/app.service/memory.max':String(700*M),'/sys/fs/cgroup/flymind.slice/app.service/memory.current':String(300*M),
+  '/sys/fs/cgroup/flymind.slice/app.service/memory.stat':`inactive_file ${100*M}\nfile_dirty 0\nfile_writeback 0\nshmem 0\n`,
+ }
+ const read=async(path:string)=>{if(!(path in files))throw Error('absent');return files[path]}
+ const available=await linuxHeavyMemory(100*M,read)
+ assert.equal(available,494*M) // parent 324+170, child 400+100
+ assert.equal(boundByNodeMemory(available,300*M),300*M)
+ assert.equal(boundByNodeMemory(available,800*M),available)
+ assert.equal(boundByNodeMemory(available,undefined),available)
+ delete files['/sys/fs/cgroup/flymind.slice/memory.stat'];assert.equal(await linuxHeavyMemory(100*M,read),324*M)
+ files['/sys/fs/cgroup/flymind.slice/memory.stat']='inactive_file 100\n';assert.equal(await linuxHeavyMemory(100*M,read),324*M)
+ files['/proc/meminfo']=`MemAvailable: ${200*1024} kB\n`;assert.equal(await linuxHeavyMemory(100*M,read),200*M)
+ files['/proc/meminfo']=`MemAvailable: ${900*1024} kB\n`
+ files['/sys/fs/cgroup/flymind.slice/memory.current']=String(1100*M)
+ files['/sys/fs/cgroup/flymind.slice/memory.stat']=`inactive_file ${500*M}\nfile_dirty 0\nfile_writeback 0\nshmem 0\n`
+ assert.equal(await linuxHeavyMemory(100*M,read),0) // Never credit an already over-limit group.
+ files['/proc/self/cgroup']='broken';files['/sys/fs/cgroup/memory.max']=String(1024*M);files['/sys/fs/cgroup/memory.current']=String(700*M)
+ files['/sys/fs/cgroup/memory.stat']=`inactive_file ${500*M}\nfile_dirty 0\nfile_writeback 0\nshmem 0\n`
+ assert.equal(await linuxHeavyMemory(100*M,read),324*M) // Unknown membership never gains credit.
 })
 
 test('memory pressure after admission terminates the active child and the slot can recover',async()=>{
