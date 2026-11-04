@@ -3,6 +3,7 @@ import {fileURLToPath} from 'node:url'
 import {types as utilTypes} from 'node:util'
 import {constants as bufferConstants} from 'node:buffer'
 import {availableHeavyMemory,childRSS} from './resources'
+import {HEAVY_MEMORY_PROFILE} from './memory-profile'
 import {HeavyWorkError,type HeavyOperation,type HeavyReply} from './protocol'
 export {HeavyWorkError} from './protocol'
 const MiB=1024*1024
@@ -88,12 +89,12 @@ export class HeavyWorkRunner {
    finishActive();void this.pump()
   }
   try{
-   const rssBudget=(request.operation.startsWith('svg-')?384:256)*MiB
-   if(await(this.options.availableMemory??availableHeavyMemory)()<(request.operation.startsWith('svg-')?SVG_HEAVY_WORK_ADMISSION_BYTES:rssBudget+128*MiB))throw new HeavyWorkError('HEAVY_WORK_MEMORY_LOW','可用内存不足，未启动绘图计算；请稍后沿用原请求重试')
+   const svg=request.operation.startsWith('svg-'),rssBudget=svg?HEAVY_MEMORY_PROFILE.svgRssBytes:256*MiB
+   if(await(this.options.availableMemory??availableHeavyMemory)()<(svg?HEAVY_MEMORY_PROFILE.svgAdmissionBytes:rssBudget+128*MiB))throw new HeavyWorkError('HEAVY_WORK_MEMORY_LOW','可用内存不足，未启动绘图计算；请稍后沿用原请求重试')
    if(failure)throw failure
    if(this.closed||request.signal?.aborted||Date.now()>=request.deadline)throw new HeavyWorkError('HEAVY_WORK_ABORTED','重活请求已失效，未提交新修订')
    const url=this.options.childURL??new URL('./child'+(import.meta.url.endsWith('.ts')?'.ts':'.js'),import.meta.url)
-   const spawnOptions={execArgv:['--max-old-space-size=256',...(url.pathname.endsWith('.ts')?['--import','tsx']:[])],windowsHide:true,silent:true,serialization:'advanced' as const}
+   const spawnOptions={execArgv:[`--max-old-space-size=${svg?HEAVY_MEMORY_PROFILE.svgHeapMiB:256}`,...(url.pathname.endsWith('.ts')?['--import','tsx']:[])],windowsHide:true,silent:true,serialization:'advanced' as const}
    const child=fork(fileURLToPath(url),[],spawnOptions)
    active.child=child
    // Never relay child stderr/stdout (it may contain paths or input diagnostics).

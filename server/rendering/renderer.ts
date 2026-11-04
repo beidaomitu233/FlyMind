@@ -7,7 +7,8 @@ import {launchHiddenBrowser,type HiddenBrowser} from './hidden-browser'
 import {resolveRuntimeAssets,checkRuntimeAssets,runtimeAssetsRouter} from './assets'
 import {NativeRenderError,type NativeRenderOptions,type NativeRenderResult,type RuntimeAssetPaths} from './types'
 import {RENDER_BUDGET,exportScale} from './budgets'
-import {runHeavyWork,SVG_HEAVY_WORK_ADMISSION_BYTES,transferSVGProof} from '../heavy-work/runner'
+import {runHeavyWork,transferSVGProof} from '../heavy-work/runner'
+import {HEAVY_MEMORY_PROFILE} from '../heavy-work/memory-profile'
 import {availableHeavyMemory} from '../heavy-work/resources'
 import type {NativeDrawingProject} from '../../src/drawing/engine/types'
 import {validateNativeProject,isNativeCanvasProject,assertNativeResourceSafety,nativeCanvasRenderSignature} from '../../src/drawing/engine/native-canvas'
@@ -98,6 +99,7 @@ export class NativeDrawioRenderer {
  }
  private browserDisconnected(launching:Promise<Browser>){if(this.browser===launching)void this.releaseBrowser().catch(()=>{})}
  private sampleAvailableMemory(){return availableHeavyMemory()}
+ private sampleAdmissionMemory(){return availableHeavyMemory()}
  private samplePressureMemory(){return availableHeavyMemory()}
  private fenceActivePackages(){
   if(!this.packageWorks.size||this.pressureGate)return
@@ -156,7 +158,7 @@ export class NativeDrawioRenderer {
   let owned:HiddenBrowser|undefined,launchedBrowser:Browser|undefined
   const pressureSequence=this.pressureSequence
   const launching=(async()=>{
-   if(await availableHeavyMemory()<512*1024*1024)throw new NativeRenderError('RENDER_MEMORY_LOW','可用内存不足，未启动绘图浏览器')
+   if(await this.sampleAdmissionMemory()<HEAVY_MEMORY_PROFILE.browserAdmissionBytes)throw new NativeRenderError('RENDER_MEMORY_LOW','可用内存不足，未启动绘图浏览器')
    if(this.closed)throw new NativeRenderError('RENDERER_CLOSED','renderer 已关闭')
    if(this.pressureSequence!==pressureSequence)throw this.lastPressureError
    const browser=launchedBrowser=process.platform==='win32'?(owned=await launchHiddenBrowser(this.assets.browserExecutable)).browser:await chromium.launch({executablePath:this.assets.browserExecutable,headless:true,chromiumSandbox:true,args:['--disable-background-networking','--disable-component-update']})
@@ -202,7 +204,7 @@ export class NativeDrawioRenderer {
    const project=await validateNativeProject(structuredClone(input));check();assertNativeResourceSafety(project.rendering.engine.xml);const fonts=fontsUsed(project.rendering.engine.xml),origin=await this.start();check()
    // Admission, not an OS memory quota: retain headroom before a new browser
    // context and its CPU worker can allocate. Other services can still compete.
-   if(await availableHeavyMemory()<512*1024*1024)throw new NativeRenderError('RENDER_MEMORY_LOW','可用内存不足，未启动本次绘图渲染；请稍后显式重试')
+   if(await this.sampleAdmissionMemory()<HEAVY_MEMORY_PROFILE.browserAdmissionBytes)throw new NativeRenderError('RENDER_MEMORY_LOW','可用内存不足，未启动本次绘图渲染；请稍后显式重试')
    check();const beforeBrowser=performance.now(),browser=await this.getBrowser(abort.signal);check();const owner=this.browser
    if(!owner||await owner!==browser||this.browser!==owner||this.browserClosing)throw new NativeRenderError('BROWSER_CLEANUP_FAILED','浏览器已退役，未创建上下文')
    check();contextOwner=owner;const browserStartMs=performance.now()-beforeBrowser
@@ -247,7 +249,7 @@ export class NativeDrawioRenderer {
      try{available=await this.sampleAvailableMemory()}catch{/* The worker retains its own mandatory memory admission. */}
      check();checkResources()
      // Install the worker fence before starting browser close, without yielding.
-     if(available!==undefined&&available<SVG_HEAVY_WORK_ADMISSION_BYTES&&this.jobs.size===1&&this.jobs.has(abort)&&this.browser===contextOwner&&!this.browserClosing&&!this.browserCloseError&&!this.pressureGate&&(!this.ownedBrowser||this.ownedBrowser.browser===browser)){
+     if(available!==undefined&&available<HEAVY_MEMORY_PROFILE.svgAdmissionBytes&&this.jobs.size===1&&this.jobs.has(abort)&&this.browser===contextOwner&&!this.browserClosing&&!this.browserCloseError&&!this.pressureGate&&(!this.ownedBrowser||this.ownedBrowser.browser===browser)){
       let release!:()=>void;const promise=new Promise<void>(resolve=>release=resolve),gate={promise,release:()=>{if(this.pressureGate===gate)this.pressureGate=undefined;release()}}
       this.pressureGate=gate;releasePressureGate=gate.release
       await this.releaseBrowser();check();checkResources()
