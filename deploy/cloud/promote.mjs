@@ -24,11 +24,16 @@ export function validateDeploymentConfig(config){
 }
 // The caller must stop the writer and validate the trusted, non-overlapping roots.
 export async function backupStoppedData(source,destination){
+ const sourceInfo=await lstat(source)
+ if(sourceInfo.isSymbolicLink())throw Error('Data backup refuses redirected paths')
+ if(!sourceInfo.isDirectory())throw Error('Data backup source must be a directory')
  await mkdir(destination,{mode:0o700})
  // Do not intentionally share COW extents for user data backups: a damaged
  // shared block can affect both copies. This is still a same-host backup, not
  // an independent failure domain; retain a separate verified backup as well.
- await cp(source,destination,{recursive:true,errorOnExist:true,force:false,dereference:false,mode:constants.COPYFILE_EXCL,filter:async path=>{if((await lstat(path)).isSymbolicLink())throw Error('Data backup refuses redirected paths');return true}})
+ // Node 22.23 rejects COPYFILE_EXCL when cp's directory target already exists,
+ // including this deliberately reserved root. Copy its children exclusively.
+ for await(const entry of await opendir(source))await cp(join(source,entry.name),join(destination,entry.name),{recursive:true,errorOnExist:true,force:false,dereference:false,mode:constants.COPYFILE_EXCL,filter:async path=>{if((await lstat(path)).isSymbolicLink())throw Error('Data backup refuses redirected paths');return true}})
  await chmod(destination,0o700)
 }
 async function syncDirectory(path){const file=await open(path,'r');try{await file.sync()}finally{await file.close()}}
