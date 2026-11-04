@@ -48,6 +48,10 @@ jobs:
           cache: maven
           cache-dependency-path: integrations/xinghui-admin/backend/**/pom.xml
       - run: npm ci
+        if: runner.os == 'Windows'
+      - name: Install Linux source dependencies with cloud package metadata
+        if: runner.os == 'Linux'
+        run: node scripts/install-cloud-source.mjs
       - run: npm run setup:runtime
       - name: Linux browser system libraries (sandbox remains enabled)
         if: runner.os == 'Linux'
