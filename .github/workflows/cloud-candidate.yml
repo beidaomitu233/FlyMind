@@ -2,11 +2,6 @@ name: Build cloud candidate
 on:
   workflow_dispatch:
     inputs:
-      source_runner:
-        description: Source build host (Linux fallback keeps the same gates and Windows platform validation)
-        type: choice
-        options: [windows-2022, ubuntu-22.04]
-        default: ubuntu-22.04
       deploy_production:
         description: Deploy this main run after source and all platform checks (explicit full-stack mode required)
         type: boolean
@@ -21,11 +16,11 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: cloud-candidate-${{ github.ref }}-${{ inputs.source_runner || 'ubuntu-22.04' }}
+  group: cloud-candidate-${{ github.ref }}
   cancel-in-progress: false
 jobs:
   source:
-    runs-on: ${{ inputs.source_runner || 'ubuntu-22.04' }}
+    runs-on: windows-2022
     defaults:
       run:
         shell: pwsh
@@ -42,14 +37,7 @@ jobs:
           cache: maven
           cache-dependency-path: integrations/xinghui-admin/backend/**/pom.xml
       - run: npm ci
-        if: runner.os == 'Windows'
-      - name: Install Linux source dependencies with cloud package metadata
-        if: runner.os == 'Linux'
-        run: node scripts/install-cloud-source.mjs
       - run: npm run setup:runtime
-      - name: Linux browser system libraries (sandbox remains enabled)
-        if: runner.os == 'Linux'
-        run: node node_modules/playwright-core/cli.js install-deps chromium
       - run: npm run build
       - name: Local account browser and compiled Runtime
         run: node --import tsx scripts/local-auth-ui-probe.mjs
