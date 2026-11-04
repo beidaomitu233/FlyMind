@@ -4,6 +4,8 @@
 
 管理员先确认机器和所有待创建目标无现存或正在使用的 FlyMind 资源、服务和子进程，并核对当前备份及回滚方案。已存在的 MySQL/Redis 和其他站点不得删除或重置。准备独立 `flymind` 系统用户及同名非 root 组，预装、校验 Linux Node 22.23.3 至 `/opt/flymind/runtime/node-v22.23.3-linux-x64/bin/node`，确认 Java 和目标机 Chromium 依赖。确保可用磁盘足够同时容纳源候选及目标副本；复制逐文件进行，不将整包读入内存。
 
+本批已有可信 root 所有 `/var/backups/flymind`，其中历史备份保持原样。助手仅新建 `/var/backups/flymind/u40-20261105` 及其中私有的 `production`、`production-mysql`，若新目录已存在则拒绝；不会更改父目录权限或删除历史备份。管理员须将后续 app 的 `backupDirectory`、Java 的 `backupDirectory` 与固定 MySQL 备份 helper 分别配置为新子目录中的 `production`、`production-mysql`；原示例路径不能直接照抄。
+
 管理员在 root 私有且祖先目录均不可被非 root 写入的位置准备：
 
 - 经平台验收的完整 Linux prepared candidate 解压目录（包含 `candidate.json`、`application`、`control-plane`、`admin` 和 `ops`），以及从可信制品记录独立核对的 `candidate.json` SHA-256；不能用 Windows 包或仅有 `prepared` 字样代替验收。

@@ -4,7 +4,8 @@ import {mkdtemp,mkdir,open,writeFile,readFile,stat,utimes,rm,symlink,realpath,re
 import {tmpdir} from 'node:os'
 import {join,resolve,sep} from 'node:path'
 import {createHash} from 'node:crypto'
-import {inventory,copyVerified,hashFile} from '../server/backups/workspace'
+import {spawnSync} from 'node:child_process'
+import {inventory,copyVerified,hashFile,createWorkspaceBackup} from '../server/backups/workspace'
 
 async function fixture(){const parent=await realpath(tmpdir()),root=await realpath(await mkdtemp(join(parent,'flymind-backup-stream-'))),source=join(root,'source'),target=join(root,'target'),outside=join(root,'outside');await mkdir(source);await mkdir(outside);await writeFile(join(outside,'private'),'keep');return {root,source,target,outside,async close(){assert.ok(resolve(root).startsWith(parent+sep)&&root.includes('flymind-backup-stream-'));await rm(root,{recursive:true,force:true})}}}
 async function large(path:string){const out=await open(path,'wx'),block=Buffer.from('0123456789abcdef'.repeat(4096)),digest=createHash('sha256');try{for(let i=0;i<192;i++){await out.writeFile(block);digest.update(block)}await out.sync()}finally{await out.close()}return {bytes:block.length*192,sha256:digest.digest('hex')}}
@@ -45,6 +46,18 @@ test('source and target symlinks are rejected without touching outside files',as
   await assert.rejects(copyVerified(f.source,f.target,files),(e:any)=>e.code==='BACKUP_PATH_INVALID');assert.equal(await readFile(join(f.outside,'private'),'utf8'),'keep');await assert.rejects(stat(join(f.outside,'file')),(e:any)=>e.code==='ENOENT')
  }finally{await f.close()}
 })
+
+test('backup directory rejects an ancestor junction',async t=>{
+ const f=await fixture();try{
+  await mkdir(join(f.source,'nested'));await writeFile(join(f.source,'nested','file'),'safe')
+  const link=join(f.root,'link');try{await symlink(f.source,link,process.platform==='win32'?'junction':'dir')}catch(error){if(['EPERM','EACCES'].includes((error as NodeJS.ErrnoException).code??''))return t.skip('junction creation unavailable');throw error}
+  await assert.rejects(inventory(join(link,'nested')),(e:any)=>e.code==='BACKUP_PATH_INVALID');await rm(link)
+ }finally{await f.close()}
+})
+test('backup directory accepts a Windows 8.3 alias',async t=>{
+ if(process.platform!=='win32')return t.skip('Windows 8.3 only');const f=await fixture();try{await writeFile(join(f.source,'file'),'safe');const script='import ctypes,sys; b=ctypes.create_unicode_buffer(32768); n=ctypes.windll.kernel32.GetShortPathNameW(sys.argv[1],b,len(b)); print(b.value if n else "")',result=spawnSync('python',['-c',script,f.source],{encoding:'utf8'}),alias=result.stdout?.trim();if(result.status!==0||!alias||alias.toLowerCase()===f.source.toLowerCase())return t.skip('8.3 alias unavailable');assert.equal((await inventory(alias)).length,1);await assert.rejects(createWorkspaceBackup({sourceRoot:alias,backupRoot:join(f.source,'nested','backup')}),(e:any)=>e.code==='BACKUP_PATH_INVALID')}finally{await f.close()}
+})
+test('backup destination below the source is rejected before creating directories',async()=>{const f=await fixture();try{await assert.rejects(createWorkspaceBackup({sourceRoot:f.source,backupRoot:join(f.source,'nested','backup')}),(e:any)=>e.code==='BACKUP_PATH_INVALID');await assert.rejects(stat(join(f.source,'nested')),{code:'ENOENT'})}finally{await f.close()}})
 
 test('inventory drains already-started streams before returning the first error',async()=>{
  const f=await fixture();try{

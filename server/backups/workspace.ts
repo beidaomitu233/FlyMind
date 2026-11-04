@@ -3,7 +3,7 @@ import {createRequire} from 'node:module'
 import {createHash,randomUUID} from 'node:crypto'
 import {mkdir,readFile,readdir,lstat,realpath,open,rename,utimes,stat} from 'node:fs/promises'
 import {createReadStream,constants} from 'node:fs'
-import {resolve,join,relative,sep,isAbsolute,dirname} from 'node:path'
+import {resolve,join,relative,sep,isAbsolute,dirname,parse} from 'node:path'
 import {canonicalContentJson} from '../../src/drawing/engine/content-hash'
 import {validateNativeProject,nativeIdentity} from '../document-record'
 import {validateDocument} from '../../src/drawing/core/model'
@@ -29,20 +29,35 @@ export function beneath(root:string,rel:string){
  if(!rel||isAbsolute(rel)||rel.includes('\\')||rel.split('/').some(s=>!s||s==='.'||s==='..'))throw new StoreError('相对路径无效',400,undefined,'BACKUP_PATH_INVALID')
  const target=resolve(root,...rel.split('/'));if(!target.startsWith(resolve(root)+sep))throw new StoreError('路径越界',400,undefined,'BACKUP_PATH_INVALID');return target
 }
-export async function plainDirectory(root:string){if((await lstat(root)).isSymbolicLink()||!(await lstat(root)).isDirectory()||resolve(await realpath(root)).toLowerCase()!==resolve(root).toLowerCase())throw new StoreError('拒绝符号链接/重定向目录',400,undefined,'BACKUP_PATH_INVALID')}
+function insideDirectory(root:string,path:string){const value=relative(root,path);return value!==''&&value!=='..'&&!value.startsWith('..'+sep)&&!isAbsolute(value)}
+export async function plainDirectory(root:string){
+ const full=resolve(root),before=await lstat(full),same=(a:string,b:string)=>process.platform==='win32'?a.toLowerCase()===b.toLowerCase():a===b
+ if(before.isSymbolicLink()||!before.isDirectory())throw new StoreError('拒绝符号链接/重定向目录',400,undefined,'BACKUP_PATH_INVALID')
+ const canonical=resolve(await realpath(full))
+ // Windows 8.3 names can resolve to a different spelling without redirecting.
+ // In that case check every original component, including junctions, before
+ // switching to the canonical root for all further containment checks.
+ if(!same(full,canonical)){let part=parse(full).root;for(const name of relative(part,full).split(sep).filter(Boolean)){part=join(part,name);const entry=await lstat(part);if(entry.isSymbolicLink()||!entry.isDirectory())throw new StoreError('拒绝符号链接/重定向目录',400,undefined,'BACKUP_PATH_INVALID')}}
+ const after=await lstat(full);if(after.isSymbolicLink()||!after.isDirectory()||before.dev!==after.dev||before.ino!==after.ino||!same(resolve(await realpath(full)),canonical))throw new StoreError('拒绝符号链接/重定向目录',400,undefined,'BACKUP_PATH_INVALID')
+ return canonical
+}
+async function canonicalFutureDirectory(path:string){
+ let current=resolve(path);const missing:string[]=[]
+ for(;;){try{return resolve(await plainDirectory(current),...missing)}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;const parent=dirname(current);if(parent===current)throw error;missing.unshift(relative(parent,current));current=parent}}
+}
 export async function writeDurable(path:string,value:unknown){const f=await open(path,'wx');try{await f.writeFile(typeof value==='string'||Buffer.isBuffer(value)?value:JSON.stringify(value,null,2));await f.sync()}finally{await f.close()}}
 /** Open one checked source, stream it, then reject replacements or mutations. */
 async function stableSource<T>(root:string,path:string,read:(f:Awaited<ReturnType<typeof open>>)=>Promise<T>):Promise<{value:T;mtimeMs:number}>{
  await plainDirectory(root);let parent=resolve(root)
  for(const part of relative(root,resolve(path,'..')).split(sep).filter(Boolean)){if(part==='..')throw new StoreError('备份文件路径已改变',400,undefined,'BACKUP_PATH_INVALID');parent=join(parent,part);await plainDirectory(parent)}
  const before=await lstat(path)
- if(before.isSymbolicLink()||!before.isFile()||!(await realpath(path)).startsWith(resolve(root)+sep))throw new StoreError('备份文件路径已改变',400,undefined,'BACKUP_PATH_INVALID')
+ if(before.isSymbolicLink()||!before.isFile()||!insideDirectory(root,await realpath(path)))throw new StoreError('备份文件路径已改变',400,undefined,'BACKUP_PATH_INVALID')
  const f=await open(path,constants.O_RDONLY|(constants.O_NOFOLLOW??0)|(constants.O_NONBLOCK??0))
  try{
   const initial=await f.stat()
   if(!initial.isFile()||initial.dev!==before.dev||initial.ino!==before.ino||initial.size!==before.size||initial.mtimeMs!==before.mtimeMs||initial.ctimeMs!==before.ctimeMs)throw new StoreError('备份复制期间制品已改变',409,undefined,'BACKUP_SOURCE_CHANGED')
   const value=await read(f),after=await f.stat(),current=await lstat(path)
-  if(current.isSymbolicLink()||!current.isFile()||!(await realpath(path)).startsWith(resolve(root)+sep)||[after,current].some(s=>s.dev!==initial.dev||s.ino!==initial.ino||s.size!==initial.size||s.mtimeMs!==initial.mtimeMs||s.ctimeMs!==initial.ctimeMs))throw new StoreError('备份复制期间制品已改变',409,undefined,'BACKUP_SOURCE_CHANGED')
+  if(current.isSymbolicLink()||!current.isFile()||!insideDirectory(root,await realpath(path))||[after,current].some(s=>s.dev!==initial.dev||s.ino!==initial.ino||s.size!==initial.size||s.mtimeMs!==initial.mtimeMs||s.ctimeMs!==initial.ctimeMs))throw new StoreError('备份复制期间制品已改变',409,undefined,'BACKUP_SOURCE_CHANGED')
   return {value,mtimeMs:initial.mtimeMs}
  }finally{await f.close()}
 }
@@ -54,7 +69,7 @@ async function streamSource(f:Awaited<ReturnType<typeof open>>,target?:Awaited<R
 export async function inventory(root:string,options:{afterChunk?:(path:string,bytes:number)=>Promise<void>}={}):Promise<BackupFile[]>{
  const files:BackupFile[]=[],paths:string[]=[]
  async function walk(dir:string){for(const e of await readdir(dir,{withFileTypes:true})){const p=join(dir,e.name);if(e.isSymbolicLink())throw new StoreError('备份不接受符号链接',400,undefined,'BACKUP_PATH_INVALID');if(e.isDirectory()){await plainDirectory(p);await walk(p)}else if(e.isFile())paths.push(p);else throw new StoreError('不支持的文件类型')}}
- try{await plainDirectory(root)}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return [];throw e}
+ try{root=await plainDirectory(root)}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return [];throw e}
  await walk(root)
  // Four small streaming buffers bound memory while keeping large fixed-supply
  // inventories practical on filesystems with high per-operation latency.
@@ -67,7 +82,7 @@ export async function inventory(root:string,options:{afterChunk?:(path:string,by
  return files.sort((a,b)=>a.path.localeCompare(b.path))
 }
 export async function copyVerified(sourceRoot:string,targetRoot:string,files:BackupFile[],options:{preserveMtime?:boolean;afterChunk?:(path:string,bytes:number)=>Promise<void>}={}){
- await mkdir(targetRoot,{recursive:true});await plainDirectory(targetRoot)
+ sourceRoot=await plainDirectory(sourceRoot);await mkdir(targetRoot,{recursive:true});targetRoot=await plainDirectory(targetRoot)
  for(const file of files){const source=beneath(sourceRoot,file.path),target=beneath(targetRoot,file.path)
   const checked=await stableSource(sourceRoot,source,f=>streamSource(f));if(checked.value.bytes!==file.bytes||checked.value.sha256!==file.sha256)throw new StoreError('备份复制期间制品已改变',409,undefined,'BACKUP_SOURCE_CHANGED')
   let parent=resolve(targetRoot);for(const part of file.path.split('/').slice(0,-1)){parent=join(parent,part);try{await mkdir(parent)}catch(e){if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e}await plainDirectory(parent)}
@@ -120,7 +135,8 @@ export function readExportJobs(db:Database.Database):StoredNativeExport[]{
  return jobs
 }
 export async function validateWorkspace(root:string){
- const databaseFile=join(root,'flymind.sqlite');if((await lstat(databaseFile)).isSymbolicLink()||!resolve(await realpath(databaseFile)).startsWith(resolve(root)+sep))throw new StoreError('数据库文件路径越界',400,undefined,'BACKUP_PATH_INVALID')
+ root=await plainDirectory(root)
+ const databaseFile=join(root,'flymind.sqlite');if((await lstat(databaseFile)).isSymbolicLink()||!insideDirectory(root,await realpath(databaseFile)))throw new StoreError('数据库文件路径越界',400,undefined,'BACKUP_PATH_INVALID')
  const db=new Database(join(root,'flymind.sqlite'),{readonly:true,fileMustExist:true})
  try{
   if(db.pragma('integrity_check',{simple:true})!=='ok'||(db.pragma('foreign_key_check') as unknown[]).length)throw new StoreError('数据库完整性或外键校验失败',400,undefined,'BACKUP_DATABASE_INVALID')
@@ -150,8 +166,9 @@ export async function validateWorkspace(root:string){
  }finally{db.close()}
 }
 export async function createWorkspaceBackup(options:{sourceRoot:string;backupRoot:string;projectRoot?:string}){
- const source=resolve(options.sourceRoot),destination=resolve(options.backupRoot);assertIsolatedNativeRoot(source,PROJECT_ROOT);if(options.projectRoot)assertIsolatedNativeRoot(source,options.projectRoot);await plainDirectory(source)
- if(destination===source||destination.startsWith(source+sep)||source.startsWith(destination+sep))throw new StoreError('备份根必须独立于源根',400,undefined,'BACKUP_PATH_INVALID')
+ const source=await plainDirectory(resolve(options.sourceRoot)),destination=await canonicalFutureDirectory(options.backupRoot);assertIsolatedNativeRoot(source,PROJECT_ROOT);if(options.projectRoot)assertIsolatedNativeRoot(source,options.projectRoot)
+ const within=(parent:string,child:string)=>{const path=relative(parent,child);return path===''||path!=='..'&&!path.startsWith('..'+sep)&&!isAbsolute(path)}
+ if(within(source,destination)||within(destination,source))throw new StoreError('备份根必须独立于源根',400,undefined,'BACKUP_PATH_INVALID')
  const backupId='backup_'+randomUUID(),staging=join(destination,'.'+backupId+'.pending'),published=join(destination,backupId);await mkdir(staging,{recursive:true})
  const db=new Database(join(source,'flymind.sqlite'),{readonly:true,fileMustExist:true});try{await db.backup(join(staging,'flymind.sqlite'))}finally{db.close()}
  const artifacts=await inventory(join(source,'artifacts'));await copyVerified(join(source,'artifacts'),join(staging,'artifacts'),artifacts)
@@ -161,7 +178,7 @@ export async function createWorkspaceBackup(options:{sourceRoot:string;backupRoo
  return {backupRoot:published,manifest}
 }
 export async function validateWorkspaceBackup(root:string,projectRoot?:string){
- await plainDirectory(root);const manifest=JSON.parse(await readFile(join(root,'manifest.json'),'utf8')) as WorkspaceBackupManifest
+ root=await plainDirectory(root);const manifest=JSON.parse(await readFile(join(root,'manifest.json'),'utf8')) as WorkspaceBackupManifest
  if(manifest.schemaVersion!==1||manifest.requiredSupply!=='matching-local-installation'||!Array.isArray(manifest.artifacts)||!/^[a-zA-Z0-9_-]+$/.test(manifest.backupId))throw new StoreError('备份格式不支持',400,undefined,'BACKUP_MANIFEST_INVALID')
  if(await hashFile(join(root,'flymind.sqlite'))!==manifest.database.sha256)throw new StoreError('备份数据库摘要不符',400,undefined,'BACKUP_DATABASE_INVALID')
  const files=await inventory(join(root,'artifacts'));if(files.length!==manifest.artifacts.length)throw new StoreError('备份制品数量不符')

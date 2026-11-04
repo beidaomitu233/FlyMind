@@ -22,7 +22,7 @@ BOUNDARY_INSTALLER = Path('/root/flymind-install/install-resource-boundary.py')
 OPT = Path('/opt/flymind')
 DATA = Path('/var/lib/flymind')
 ETC = Path('/etc/flymind')
-BACKUP = Path('/var/backups/flymind')
+BACKUP = Path('/var/backups/flymind/u40-20261105')
 SYSTEM = Path('/etc/systemd/system')
 SERVICES = ('flymind-application.service', 'flymind-gateway.service', 'flymind-control-plane.service')
 

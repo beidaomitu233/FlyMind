@@ -283,13 +283,14 @@ test('successful browser retirement preserves finished images while aborting ano
  }finally{await h.renderer.close()}
 })
 
-test('existing browser retirement cannot exempt the current task',async()=>{
- const p=await project(),closing=deferred<void>(),h=harness(p.rendering.engine.xml,{close:()=>new Promise(()=>{}),browserClose:()=>closing.promise})
+test('existing browser retirement cannot exempt the current task',{timeout:15000},async()=>{
+ const p=await project(),closing=deferred<void>(),aborted=deferred<void>();let h:ReturnType<typeof harness>,retirement:Promise<void>|undefined
+ h=harness(p.rendering.engine.xml,{close:()=>{const job=[...h.renderer.jobs][0] as AbortController;job.signal.addEventListener('abort',()=>aborted.resolve(),{once:true});retirement=h.renderer.releaseBrowser();return new Promise(()=>{})},browserClose:()=>closing.promise})
+ h.renderer.contextCleanupMs=250;h.renderer.browserCleanupMs=10000
  try{
-  const result=assert.rejects(h.renderer.render(p),{code:'BROWSER_CLEANUP_FAILED'});await until(()=>h.contextCloses===1)
-  const retirement=h.renderer.releaseBrowser();await until(()=>h.browserCloses===1)
-  await until(()=>[...h.renderer.jobs].some((job:any)=>job.signal.aborted));assert.equal(h.workers,0);closing.resolve();await retirement;await result;assert.equal(h.browserCloses,1)
- }finally{await h.renderer.close()}
+  const result=assert.rejects(h.renderer.render(p),{code:'BROWSER_CLEANUP_FAILED'});await aborted.promise
+  assert.ok(retirement);assert.equal(h.workers,0);closing.resolve();await retirement;await result;assert.equal(h.browserCloses,1)
+ }finally{closing.resolve();await h.renderer.close()}
 })
 
 test('retirement fence exists before abort handlers can request another browser',async()=>{

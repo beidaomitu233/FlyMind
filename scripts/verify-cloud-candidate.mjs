@@ -1,11 +1,15 @@
 import {readFile,lstat,readlink,readdir,realpath} from 'node:fs/promises'
 import {createReadStream} from 'node:fs'
 import {createHash} from 'node:crypto'
-import {resolve,join,sep} from 'node:path'
+import {resolve,join,sep,dirname,parse,relative,isAbsolute} from 'node:path'
 import {pathToFileURL} from 'node:url'
 export async function verifyCandidate(directory,{requirePrepared=true,requireClean=true,checkRuntime=true,requireRootOwned=false}={}){
- const root=resolve(directory),rootInfo=await lstat(root)
- if(!rootInfo.isDirectory()||rootInfo.isSymbolicLink()||await realpath(root)!==root)throw Error('Candidate directory redirects')
+ const requested=resolve(directory),rootInfo=await lstat(requested),same=(a,b)=>process.platform==='win32'?a.toLowerCase()===b.toLowerCase():a===b
+ if(!rootInfo.isDirectory()||rootInfo.isSymbolicLink())throw Error('Candidate directory redirects')
+ const root=resolve(await realpath(requested))
+ if(!same(requested,root)){let current=parse(requested).root;for(const name of relative(current,requested).split(sep).filter(Boolean)){current=join(current,name);const entry=await lstat(current);if(entry.isSymbolicLink()||!entry.isDirectory())throw Error('Candidate directory redirects')}}
+ const rechecked=await lstat(requested);if(rechecked.isSymbolicLink()||!rechecked.isDirectory()||rechecked.dev!==rootInfo.dev||rechecked.ino!==rootInfo.ino||!same(resolve(await realpath(requested)),root))throw Error('Candidate directory redirects')
+ const inside=path=>{const r=relative(root,path);return r!==''&&r!=='..'&&!r.startsWith('..'+sep)&&!isAbsolute(r)}
  const immutable=stat=>{const readable=stat.isDirectory()?0o005:0o004;if(requireRootOwned&&(stat.uid!==0||(stat.mode&0o022)||(stat.mode&readable)!==readable))throw Error('Candidate must be root-owned, readable/traversable by service, and not group/world writable')}
  immutable(rootInfo)
  const metadata=await lstat(join(root,'candidate.json'));if(!metadata.isFile()||metadata.isSymbolicLink()||metadata.size>2*1024*1024)throw Error('Candidate metadata invalid');immutable(metadata)
@@ -14,8 +18,8 @@ export async function verifyCandidate(directory,{requirePrepared=true,requireCle
  if(checkRuntime&&manifest.prepared&&(manifest.platform!==process.platform||manifest.arch!==process.arch||manifest.node!==process.version||manifest.abi!==process.versions.modules))throw Error('Candidate OS/CPU/Node/ABI does not match this machine')
  const expected=new Set(['candidate.json'])
  for(const file of manifest.files){if(!file||typeof file!=='object')throw Error('Candidate entry invalid');const name=file.path;if(typeof name!=='string'||name.includes('\0')||name.includes(':')||name.includes('\\')||name.startsWith('/')||name.split('/').some(s=>!s||s==='.'||s==='..')||expected.has(name))throw Error('Candidate file path invalid');expected.add(name);const target=resolve(root,name);if(!target.startsWith(root+sep))throw Error('Candidate path leaves release');const stat=await lstat(target)
-  if(file.type==='symlink'){if(typeof file.target!=='string'||!stat.isSymbolicLink()||await readlink(target)!==file.target||!resolve(target,'..',file.target).startsWith(root+sep)||!(await realpath(target)).startsWith(root+sep))throw Error('Candidate link changed');if(requireRootOwned&&stat.uid!==0)throw Error('Candidate link ownership invalid')}
-  else{if(file.type!==undefined||!Number.isSafeInteger(file.bytes)||file.bytes<0||typeof file.sha256!=='string'||!/^[a-f0-9]{64}$/.test(file.sha256)||!stat.isFile()||stat.isSymbolicLink()||stat.size!==file.bytes||!(await realpath(target)).startsWith(root+sep))throw Error('Candidate file changed: '+name);immutable(stat);const hash=createHash('sha256');let size=0;for await(const chunk of createReadStream(target)){size+=chunk.length;hash.update(chunk)}if(size!==file.bytes||hash.digest('hex')!==file.sha256)throw Error('Candidate digest changed: '+name)}
+  if(file.type==='symlink'){if(typeof file.target!=='string'||!stat.isSymbolicLink()||await readlink(target)!==file.target||!inside(resolve(dirname(target),file.target))||!inside(await realpath(target)))throw Error('Candidate link changed');if(requireRootOwned&&stat.uid!==0)throw Error('Candidate link ownership invalid')}
+  else{if(file.type!==undefined||!Number.isSafeInteger(file.bytes)||file.bytes<0||typeof file.sha256!=='string'||!/^[a-f0-9]{64}$/.test(file.sha256)||!stat.isFile()||stat.isSymbolicLink()||stat.size!==file.bytes||!inside(await realpath(target)))throw Error('Candidate file changed: '+name);immutable(stat);const hash=createHash('sha256');let size=0;for await(const chunk of createReadStream(target)){size+=chunk.length;hash.update(chunk)}if(size!==file.bytes||hash.digest('hex')!==file.sha256)throw Error('Candidate digest changed: '+name)}
  }
  async function inventory(path,prefix=''){immutable(await lstat(path));for(const entry of await readdir(path,{withFileTypes:true})){const name=prefix+entry.name;if(entry.isDirectory())await inventory(join(path,entry.name),name+'/');else if(!expected.has(name))throw Error('Unregistered candidate file: '+name)}}await inventory(root)
  return manifest
