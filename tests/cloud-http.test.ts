@@ -18,6 +18,7 @@ import sharp from 'sharp'
 import type {NativeExportRenderer} from '../server/exports/types'
 import {businessContent} from './fixtures/native-business'
 import {cloudMcpHandshake} from '../server/cloud/mcp-compat'
+import {inspectDrawing} from '../src/drawing/core/drawing-quality'
 
 const tokens={alice:'alice_session_abcdefghijklmnopqrstuvwxyz_0123456789',bob:'bob_session_abcdefghijklmnopqrstuvwxyz_0123456789',viewer:'viewer_session_abcdefghijklmnopqrstuvwxyz_0123456789'}
 async function listen(server:Server){await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));return 'http://127.0.0.1:'+(server.address() as {port:number}).port}
@@ -147,6 +148,16 @@ test('cloud native HTTP isolates team stores, binds root/CAS and actor requests,
   s.revoked.add(tokens.alice);r=await s.request(s.team('team-a','/native/workspace'),{token:tokens.alice});assert.equal(r.status,401)
   r=await s.request(s.team('team-a','/native/not-a-route'),{token:tokens.viewer});assert.equal(r.status,404)
   assert.ok(s.calls.filter(c=>c.path.endsWith('/introspect')).length>=12)
+ }finally{await s.close()}
+})
+
+test('cloud export snapshot response includes application quality for the saved revision',async()=>{
+ const s=await setup();try{
+  const h=await s.health(),content=businessContent('flowchart','snapshot-quality')
+  let r=await s.request(s.team('team-a','/native/diagrams'),{token:tokens.alice,rootId:h.dataRootId,method:'POST',body:{content,requestId:'quality-source'}});assert.equal(r.status,201,await r.clone().text())
+  r=await s.request(s.team('team-a','/native/diagrams/snapshot-quality/exports'),{token:tokens.alice,rootId:h.dataRootId,method:'POST',body:{expectedRevision:1,requestId:'quality-export'}});assert.equal(r.status,202,await r.clone().text());const job=await r.json() as any
+  r=await s.request(s.team('team-a','/native/exports/'+job.id+'/snapshot'),{token:tokens.alice});assert.equal(r.status,200,await r.clone().text());const snapshot=await r.json() as any
+  assert.equal(snapshot.revision,1);assert.deepEqual(snapshot.content,content);assert.deepEqual(snapshot.quality,inspectDrawing(snapshot.content))
  }finally{await s.close()}
 })
 

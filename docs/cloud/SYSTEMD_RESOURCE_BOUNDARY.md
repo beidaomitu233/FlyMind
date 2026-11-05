@@ -1,6 +1,6 @@
 # FlyMind 服务组内存边界（待安装和目标机验收）
 
-仓库提供 `deploy/cloud/systemd/flymind.slice` 和三个服务的 `10-flymind-slice.conf`。它们是部署材料，不会随应用候选自动安装。`MemoryHigh=896M` 是回收压力阈值，`MemoryMax=1024M` 为三个服务及其留在服务 cgroup 中的后代共同使用的硬上限；`MemorySwapMax=0` 禁止该组使用 swap。内核可在上限下终止任务，限额本身不保证绘图或发布成功。
+仓库提供 `deploy/cloud/systemd/flymind.slice` 和三个服务的 `10-flymind-slice.conf`。它们是部署材料，不会随应用候选自动安装。`MemoryHigh=1000M` 是回收压力阈值，`MemoryMax=1024M` 为三个服务及其留在服务 cgroup 中的后代共同使用的硬上限；`MemorySwapMax=0` 禁止该组使用 swap。内核可在上限下终止任务，限额本身不保证绘图或发布成功。软阈值高于 1024−128 MiB，避免配置值与应用 128 MiB 压力线重合；两者采样和计量口径不同，不能保证一定先取消任务。
 
 ## 已知安装缺口
 
@@ -9,6 +9,8 @@
 在目标机先确认 systemd、统一 cgroup v2 的 memory 控制器与 swap 控制均可用；核实单元名称、已有 drop-in、服务依赖、当前工作负载及足够的内存余量。检查内存压力限额对全部服务的可用性，并保留现有单元及 drop-in 的可恢复备份。若缺少控制器或无法验证实际生效，停止，不以配置文件存在代替硬限额。
 
 在可信 root 控制台运行审定的 `deploy/cloud/install-resource-boundary.py --install`（需 Linux/Python 3 和 cgroup v2），脚本仅检查并创建以下固定目标，不接受用户指定路径、不覆盖未知同名文件、不运行 systemctl。它逐项同步文件及目录；中途中断可能留下部分新文件，应检查后重跑，未知内容或权限会拒绝。`--verify-files` 只核对文件，不修改；两者不证明限额运行中生效。目标 root 所有、0644；drop-in 目录 root 所有且不可被服务用户写入：
+
+旧版 `896M` 文件与新文件不同，安装器会保守拒绝覆盖。升级已有安装须由管理员核对原文件并保留备份，按审定步骤原子替换 slice，再 reload 并核验实际 cgroup；不得以拒绝为由放宽未知文件检查。
 
 - `/etc/systemd/system/flymind.slice`
 - `/etc/systemd/system/flymind-application.service.d/10-flymind-slice.conf`

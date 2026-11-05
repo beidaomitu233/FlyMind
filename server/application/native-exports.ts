@@ -2,6 +2,7 @@ import {StoreError,type DiagramStore} from '../store'
 import {canonicalContentJson} from '../../src/drawing/engine/content-hash'
 import {validateNativeProject,nativeIdentity,isCanvasRecord} from '../document-record'
 import {isNativeCanvasProject} from '../../src/drawing/engine/native-canvas'
+import {inspectDrawing} from '../../src/drawing/core/drawing-quality'
 import {exportSnapshotHash,readNativeArtifact,verifyNativeArtifact,sha256} from '../exports/artifacts'
 import {EXPORT_FORMATS,nativeExportFormats,type NativeExportJob,type NativeExportOptions,type NativeExportFormat,type StoredNativeExport} from '../exports/types'
 import type {CloudReleaseManifest} from '../cloud/mcp-compat'
@@ -86,6 +87,6 @@ export class NativeExportService {
   async snapshot(jobId:string){
     this.available()
     const {job,currentRevision}=await this.store.getNativeExport(jobId),project=await validateNativeProject(job.snapshot),current=await this.store.getNativeDrawing(job.diagramId)
-    return {format:3,...(isNativeCanvasProject(project)?{mode:'canvas-only' as const,id:project.id,title:project.title}:{content:project.content}),revision:job.revision,createdAt:project.createdAt,updatedAt:project.updatedAt,workspaceGroupId:current.workspaceGroupId,currentRevision,isCurrentRevision:currentRevision===job.revision}
+    return {format:3,...(isNativeCanvasProject(project)?{mode:'canvas-only' as const,id:project.id,title:project.title}:{content:project.content,quality:inspectDrawing(project.content)}),revision:job.revision,createdAt:project.createdAt,updatedAt:project.updatedAt,workspaceGroupId:current.workspaceGroupId,currentRevision,isCurrentRevision:currentRevision===job.revision}
   }
 }

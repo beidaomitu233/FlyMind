@@ -17,6 +17,12 @@ import {exportBasename} from '../src/drawing/core/export-metadata'
 import type {DrawingProjectV3} from '../src/drawing/engine/types'
 import type {DiagramContent} from '../src/drawing/core/model'
 import type {CloudReleaseManifest} from '../server/cloud/mcp-compat'
+import {Client} from '@modelcontextprotocol/sdk/client/index.js'
+import {InMemoryTransport} from '@modelcontextprotocol/sdk/inMemory.js'
+import {createNativeMcpServer} from '../server/mcp-native/server'
+import {runtimeCapabilities} from '../server/runtime-instance/config'
+import {guideData} from '../server/mcp-native/guide'
+import {inspectDrawing} from '../src/drawing/core/drawing-quality'
 
 const content:DiagramContent={schemaVersion:1,id:'export-test',title:'导出隔离测试',kind:'swimlane',nodes:[{id:'a',kind:'start',label:'开始',laneId:'owner',phaseId:'work'},{id:'b',kind:'end',label:'完成',laneId:'owner',phaseId:'work'}],edges:[{id:'ab',source:'a',target:'b'}],lanes:[{id:'owner',label:'办理人员'}],phases:[{id:'work',label:'办理'}],groups:[]}
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms))
@@ -112,6 +118,42 @@ test('failed r1 retry after r2 preserves snapshot metadata and delivery rejects 
   renderer.action=rendered;const retry=await s.exports.retry(first.id,{requestId:'retry-old'},s.identity);await worker.runOnce();assert.equal((await s.exports.get(retry.id)).status,'succeeded');assert.equal((await s.exports.snapshot(retry.id)).content.title,content.title);assert.deepEqual(JSON.parse((await s.exports.file(retry.id,'project.json')).buffer.toString()),s.record.document)
   const delivery=await s.exports.delivery(retry.id);await writeFile(delivery.files.png,'corrupt');await assert.rejects(s.exports.delivery(retry.id),(e:any)=>e.code==='EXPORT_ARTIFACT_CORRUPT')
  }finally{await worker.close();await cleanup(s.root)}
+})
+
+test('remote MCP resumes and retries an immutable export snapshot with application quality',async()=>{
+ const s=await setup(),renderer=new Renderer(),worker=new NativeExportWorker(s.store,renderer)
+ let facade:Awaited<ReturnType<typeof createNativeMcpServer>>|undefined,client:Client|undefined,omitQuality=false
+ const calls:{path:string;method:string}[]=[]
+ try{
+  renderer.action=async()=>{throw new Error('injected failure')}
+  const first=await create(s);await worker.runOnce();assert.equal((await s.exports.get(first.id)).status,'failed')
+  await s.diagrams.patchContent(content.id,{expectedRevision:1,requestId:'advance-quality',operations:[{op:'set_title',title:'修订二'},{op:'update_node',id:'a',changes:{label:'核对资料并逐项完成所有必要审核工作流程'}}]},s.identity)
+  const oldQuality=inspectDrawing(s.record.document.content),current=await s.diagrams.get(content.id)
+  assert.notDeepEqual(inspectDrawing(current.document.content),oldQuality)
+  facade=await createNativeMcpServer(async()=>({baseURL:'http://127.0.0.1:5179',dataRootId:s.identity,instanceId:'test-instance',sessionToken:'secret',capabilities:runtimeCapabilities(),headers:()=>({}),authenticatedFetch:async(path,init={})=>{
+   calls.push({path,method:init.method??'GET'})
+   let value:unknown
+   if(path.endsWith('/guide'))value={...guideData,guide:'authoritative application guide'}
+   else if(path.endsWith('/snapshot')){const snapshot=await s.exports.snapshot(first.id);if(omitQuality){const copy={...snapshot} as any;delete copy.quality;value=copy}else value=snapshot}
+   else if(path.endsWith('/retry'))value=await s.exports.retry(first.id,JSON.parse(String(init.body)),s.identity)
+   else if(path.includes('/records/'))value=await s.diagrams.get(content.id)
+   else if(path.includes('/exports/'))value=await s.exports.get(path.split('/').at(-1)!)
+   else throw new Error('unexpected application path '+path)
+   return Response.json(value)
+  },close:async()=>{}}),{remoteApplication:true,waitMs:0,pollMs:1})
+  const [serverTransport,clientTransport]=InMemoryTransport.createLinkedPair();client=new Client({name:'remote-export-regression',version:'1'});await facade.server.connect(serverTransport);await client.connect(clientTransport)
+  const resumed=await client.callTool({name:'export_diagram',arguments:{id:content.id,requestId:'resume-old',jobId:first.id,expectedRevision:1}}),resumedData=resumed.structuredContent as any
+  assert.equal(resumed.isError,undefined,JSON.stringify(resumed));assert.equal(resumedData.exportStatus,'failed');assert.equal(resumedData.jobId,first.id);assert.equal(resumedData.revision,1);assert.equal(resumedData.currentRevision,2);assert.equal(resumedData.isCurrentRevision,false);assert.deepEqual(resumedData.quality,oldQuality)
+  assert.equal(calls.some(call=>call.method==='POST'),false)
+  omitQuality=true
+  const denied=await client.callTool({name:'export_diagram',arguments:{id:content.id,requestId:'missing-quality',retryJobId:first.id,expectedRevision:1}})
+  assert.equal(denied.isError,true);assert.match(JSON.stringify(denied),/APPLICATION_QUALITY_MISSING/);assert.equal(calls.some(call=>call.method==='POST'),false)
+  omitQuality=false
+  const retried=await client.callTool({name:'export_diagram',arguments:{id:content.id,requestId:'retry-old',retryJobId:first.id,expectedRevision:1}}),retryData=retried.structuredContent as any
+  assert.equal(retried.isError,undefined,JSON.stringify(retried));assert.equal(retryData.exportStatus,'waiting_timeout');assert.notEqual(retryData.jobId,first.id);assert.equal(retryData.revision,1);assert.equal(retryData.currentRevision,2);assert.deepEqual(retryData.quality,oldQuality)
+  assert.deepEqual((await s.exports.snapshot(retryData.jobId)).quality,oldQuality);assert.equal((await s.exports.get(retryData.jobId)).sourceJobId,first.id)
+  assert.equal(calls.filter(call=>call.method==='POST').length,1);assert.ok(calls.some(call=>call.path.endsWith('/retry')))
+ }finally{await client?.close();await facade?.close();await worker.close();await cleanup(s.root)}
 })
 
 test('a queued old revision remains historical when the document changes during rendering',async()=>{
