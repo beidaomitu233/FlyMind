@@ -113,7 +113,7 @@ export class NativeDrawioRenderer {
   const monitor:{active:boolean;sampling:boolean;timer?:ReturnType<typeof setInterval>}={active:true,sampling:false};this.pressureMonitor=monitor
   const tick=()=>{if(!monitor.active||monitor.sampling)return;monitor.sampling=true;const owner=this.browser;let deadline:ReturnType<typeof setTimeout>|undefined
    const sampled=Promise.race([Promise.resolve().then(()=>this.samplePressureMemory()),new Promise<never>((_,reject)=>{deadline=setTimeout(()=>reject(Error('memory sample timeout')),500);deadline.unref()})])
-   void sampled.then(value=>{if(!Number.isFinite(value)||value<0)throw Error('invalid memory sample');return value<128*1024*1024?new NativeRenderError('RENDER_MEMORY_PRESSURE','绘图期间可用内存不足，已取消渲染'):undefined},()=>new NativeRenderError('RENDER_MEMORY_CHECK_FAILED','绘图期间无法确认可用内存，已取消渲染'))
+   void sampled.then(value=>{if(!Number.isFinite(value)||value<0)throw Error('invalid memory sample');return value<HEAVY_MEMORY_PROFILE.browserPressureBytes?new NativeRenderError('RENDER_MEMORY_PRESSURE','绘图期间可用内存不足，已取消渲染'):undefined},()=>new NativeRenderError('RENDER_MEMORY_CHECK_FAILED','绘图期间无法确认可用内存，已取消渲染'))
     .catch(()=>new NativeRenderError('RENDER_MEMORY_CHECK_FAILED','绘图期间无法确认可用内存，已取消渲染'))
     .then(error=>{if(!error||!monitor.active||this.closed||this.browser!==owner)return
      monitor.active=false;clearInterval(monitor.timer);if(this.pressureMonitor===monitor)this.pressureMonitor=undefined

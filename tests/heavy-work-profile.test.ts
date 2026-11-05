@@ -10,8 +10,8 @@ const MiB=1024**2
 const childURL=new URL('./fixtures/heavy-work-profile-child.mjs',import.meta.url)
 
 test('default and unknown profiles retain the original limits; compact is explicit',()=>{
- for(const name of [undefined,'','typo','COMPACT-1G'])assert.deepEqual(resolveMemoryProfile(name),{browserAdmissionBytes:512*MiB,svgAdmissionBytes:512*MiB,svgRssBytes:384*MiB,svgHeapMiB:256})
- assert.deepEqual(resolveMemoryProfile('compact-1g'),{browserAdmissionBytes:384*MiB,svgAdmissionBytes:384*MiB,svgRssBytes:256*MiB,svgHeapMiB:160})
+ for(const name of [undefined,'','typo','COMPACT-1G'])assert.deepEqual(resolveMemoryProfile(name),{browserAdmissionBytes:512*MiB,svgAdmissionBytes:512*MiB,svgRssBytes:384*MiB,svgHeapMiB:256,browserPressureBytes:128*MiB})
+ assert.deepEqual(resolveMemoryProfile('compact-1g'),{browserAdmissionBytes:384*MiB,svgAdmissionBytes:384*MiB,svgRssBytes:256*MiB,svgHeapMiB:160,browserPressureBytes:64*MiB})
  assert.deepEqual(HEAVY_MEMORY_PROFILE,resolveMemoryProfile('compact-1g'))
 })
 
@@ -25,6 +25,19 @@ test('compact SVG rejects below 384 MiB and uses the 160 MiB child heap',async()
 test('compact browser launch rejects below its admission before starting Chromium',async()=>{
  const renderer=new NativeDrawioRenderer() as any;renderer.sampleAdmissionMemory=async()=>384*MiB-1
  try{await assert.rejects(renderer.getBrowser(),{code:'RENDER_MEMORY_LOW'})}finally{await renderer.close()}
+})
+
+test('compact renderer pressure monitor accepts 64 MiB and cancels below it',async()=>{
+ const renderer=new NativeDrawioRenderer() as any,job=new AbortController();let available=64*MiB,observed!:()=>void
+ const firstSample=new Promise<void>(resolve=>{observed=resolve})
+ renderer.samplePressureMemory=async()=>{observed();return available};renderer.jobs.add(job)
+ try{
+  renderer.updatePressureMonitor();await firstSample;await new Promise(resolve=>setImmediate(resolve));assert.equal(job.signal.aborted,false)
+  const cancelled=new Promise<void>(resolve=>job.signal.addEventListener('abort',()=>resolve(),{once:true}));available=64*MiB-1
+  let timeout:ReturnType<typeof setTimeout>|undefined
+  try{await Promise.race([cancelled,new Promise<never>((_,reject)=>{timeout=setTimeout(()=>reject(Error('pressure monitor did not cancel')),2000)})])}finally{clearTimeout(timeout)}
+  assert.equal(job.signal.reason.code,'RENDER_MEMORY_PRESSURE')
+ }finally{renderer.jobs.delete(job);await renderer.close()}
 })
 
 test('compact compile keeps its existing admission and heap',async()=>{
