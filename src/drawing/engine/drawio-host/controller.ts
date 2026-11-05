@@ -25,6 +25,7 @@ export interface DrawioHostOptions {
   readViewport?:()=>{scrollLeft:number;scrollTop:number}|Promise<{scrollLeft:number;scrollTop:number}>
   fontFamilies?:readonly string[]
   browserFonts?:boolean
+  fontSubset?:readonly string[]
   collaboration?:boolean
   initializedEngine?:boolean
   requireDocumentIdentity?:boolean
@@ -76,7 +77,7 @@ export class DrawioHostController {
     if(!object(data)||typeof data.event!=='string'){this.report('INVALID_MESSAGE','原生消息缺少有效 event');return}
     if(data.event==='configure'){
       if(this.phase!=='configure')return
-      this.phase='init';this.send('configure',{config:businessLibraryConfiguration(this.options.fontFamilies,this.options.browserFonts)});return
+      this.phase='init';this.send('configure',{config:businessLibraryConfiguration(this.options.fontFamilies,this.options.browserFonts,this.options.fontSubset)});return
     }
     if(data.event==='init'){
       if(this.phase!=='init')return

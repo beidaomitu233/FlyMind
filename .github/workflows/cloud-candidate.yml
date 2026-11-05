@@ -44,7 +44,7 @@ jobs:
       - name: Two browsers, MCP and update recovery
         run: node --import tsx scripts/cloud-ui-probe.mjs
       - name: Onboarding, editor loading, registration and startup feedback
-        run: node --import tsx --test --test-concurrency=1 tests/browser-fonts.test.ts tests/agent-connect.test.ts tests/onboarding.test.ts tests/drawio-host.test.ts tests/drawio-loading.test.ts tests/native-layout-feedback.test.ts tests/cloud-auth-ui.test.ts tests/runtime-instance.test.ts
+        run: node --import tsx --test --test-concurrency=1 tests/browser-fonts.test.ts tests/compact-fonts.test.ts tests/agent-connect.test.ts tests/onboarding.test.ts tests/drawio-host.test.ts tests/drawio-loading.test.ts tests/native-layout-feedback.test.ts tests/cloud-auth-ui.test.ts tests/runtime-instance.test.ts
       - name: Explicit compact-memory profile contracts
         run: node --import tsx --test --test-concurrency=1 tests/heavy-work-profile.test.ts
       - name: Cloud and local contract gates

@@ -69,6 +69,10 @@ function setup(extra:Partial<ConstructorParameters<typeof DrawioHostController>[
 test('ordered configure/init/load handshake sends initial document once; duplicate and out-of-order events cannot reload',async()=>{
  const h=setup();try{h.receive({event:'init'});h.receive({event:'load',xml});assert.equal(h.sent.length,0);await assert.rejects(h.controller.captureXML(),{code:'NOT_READY'});h.boot();assert.deepEqual(h.sent.map(m=>m.action),['configure','load']);assert.equal(h.sent[1].autosave,1);assert.equal(h.sent[1].xml,xml);assert.deepEqual(h.ready,['session-a']);h.boot();assert.equal(h.sent.length,2)}finally{h.controller.dispose()}
 })
+test('selected fonts are sent only when explicitly supplied by the render host',()=>{
+ const h=setup({fontFamilies:['Noto Sans CJK SC'],fontSubset:['FlyMindCJKWeb-core.woff2']})
+ try{h.boot();assert.match(h.sent[0].config.fontCss,/FlyMindCJKWeb-core\.woff2/);assert.match(h.sent[0].config.fontCss,/unicode-range:/);assert.doesNotMatch(h.sent[0].config.fontCss,/opentype/);assert.equal(h.sent[1].xml,xml)}finally{h.controller.dispose()}
+})
 test('origin and exact source filter runs before parsing, including null sources',()=>{
  const h=setup();try{for(const origin of ['https://evil.test','null','http://localhost:5178.evil.test','http://localhost:5179'])h.receive('{',origin);h.receive({event:'configure'},undefined,{});h.receive({event:'configure'},undefined,null);assert.equal(h.errors.length,0);assert.equal(h.sent.length,0);h.boot();assert.equal(h.ready.length,1)}finally{h.controller.dispose()}
 })

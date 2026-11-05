@@ -1,5 +1,6 @@
 import {DRAWIO_ADAPTER_VERSION,DRAWIO_VERSION} from '../constants'
 import {RUNTIME_FONT_FAMILY,runtimeFontCSS} from '../runtime-assets'
+import {selectedBrowserFontCSS} from '../browser-fonts'
 
 const prototypes=[
   {kind:'task',title:'业务步骤',shape:'rounded=1',width:200,height:64},
@@ -13,8 +14,8 @@ const prototypes=[
 ] as const
 
 /** Inline data works with the fixed editor's offline=1; no URL library fetch. */
-export function businessLibraryConfiguration(fontFamilies?:readonly string[],browserFonts=false){
-  const originalFontCSS=runtimeFontCSS(fontFamilies)
+export function businessLibraryConfiguration(fontFamilies?:readonly string[],browserFonts=false,fontSubset?:readonly string[]){
+  const originalFontCSS=fontSubset?selectedBrowserFontCSS(fontFamilies??[RUNTIME_FONT_FAMILY],fontSubset):runtimeFontCSS(fontFamilies)
   return {
     defaultFonts:[RUNTIME_FONT_FAMILY],fontCss:browserFonts?'':originalFontCSS,
     defaultVertexStyle:{fontFamily:RUNTIME_FONT_FAMILY},

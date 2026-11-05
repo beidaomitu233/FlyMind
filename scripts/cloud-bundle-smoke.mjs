@@ -4,6 +4,7 @@ import {mkdtemp,rm,writeFile,readFile,readdir,lstat,readlink,chmod,realpath} fro
 import {tmpdir} from 'node:os'
 import {resolve,join,relative,sep,dirname} from 'node:path'
 import {createHash} from 'node:crypto'
+import {spawn} from 'node:child_process'
 import {fileURLToPath} from 'node:url'
 import {DiagramStore} from '../lib/server/store.js'
 import {NativeDiagramService} from '../lib/server/application/native-diagrams.js'
@@ -35,6 +36,10 @@ try{
  }
  report.release=release;report.ok=true
 }finally{if(worker)await worker.close();else await renderer.close();assert.ok(resolve(root).startsWith(resolve(tmpdir())+sep)&&root.includes('flymind-bundle-smoke-'));await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100})}
+if(process.platform==='linux'){
+ const status=await new Promise((yes,no)=>{const child=spawn(process.execPath,[join(application,'scripts/cloud-font-comparison.mjs')],{stdio:'inherit',windowsHide:true});child.once('error',no);child.once('close',(code,signal)=>yes({code,signal}))})
+ assert.deepEqual(status,{code:0,signal:null},'Linux native font pixel comparison failed');report.fontComparison='six native samples: full OTF vs selected WOFF2, exact RGBA'
+}
 await writeFile(join(bundle,'smoke-report.json'),JSON.stringify(report,null,2)+'\n')
 if(process.platform==='linux'){
  // Chromium ships these public dependency lists as 0600. Normalize only their

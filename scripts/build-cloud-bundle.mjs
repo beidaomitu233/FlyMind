@@ -32,6 +32,7 @@ const applicationPackage={name:'flymind-cloud-private',version:pkg.version,priva
 lock.name=applicationPackage.name;lock.packages['']={name:applicationPackage.name,version:pkg.version,license:pkg.license,engines:pkg.engines,dependencies:pkg.dependencies}
 await writeFile(join(application,'package.json'),JSON.stringify(applicationPackage,null,2)+'\n');await writeFile(join(application,'package-lock.json'),JSON.stringify(lock,null,2)+'\n')
 await copy('scripts/cloud-bundle-smoke.mjs','application/scripts/cloud-bundle-smoke.mjs')
+await copy('scripts/cloud-font-comparison.mjs','application/scripts/cloud-font-comparison.mjs')
 const files=[]
 async function walk(directory){for(const entry of (await readdir(directory,{withFileTypes:true})).sort((a,b)=>a.name.localeCompare(b.name))){const path=join(directory,entry.name);if(entry.isSymbolicLink())throw Error('Bundle cannot contain external links');if(entry.isDirectory())await walk(path);else{const digest=createHash('sha256');let bytes=0;for await(const chunk of createReadStream(path)){bytes+=chunk.length;digest.update(chunk)}files.push({path:relative(output,path).replaceAll('\\','/'),bytes,sha256:digest.digest('hex')})}}}
 await walk(output)

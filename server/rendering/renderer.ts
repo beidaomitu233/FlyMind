@@ -16,11 +16,13 @@ import {DRAWIO_VERSION} from '../../src/drawing/engine/constants'
 import {DrawioHostController} from '../../src/drawing/engine/drawio-host/controller'
 import {drawioHostURL} from '../../src/drawing/engine/drawio-host/library'
 import {drawioRenderSignature,projectDrawio} from '../../src/drawing/engine/drawio'
-import {parseNative,attr} from '../../src/drawing/engine/drawio/xml'
+import {parseNative,attr,type NativeDocument} from '../../src/drawing/engine/drawio/xml'
+import {compactFontSubset} from './compact-fonts'
 import {RUNTIME_BROWSER_VERSION,RUNTIME_FONT_ALIASES,RUNTIME_FONT_FAMILY,RUNTIME_FONT_SHA256,RUNTIME_FONT_FILE} from '../../src/drawing/engine/runtime-assets'
 
-function fontsUsed(xml:string){
- const n=parseNative(xml),fonts=new Set<string>([RUNTIME_FONT_FAMILY])
+const useCompactFontProfile=process.env.FLYMIND_MEMORY_PROFILE==='compact-1g'
+function fontsUsed(n:NativeDocument){
+ const fonts=new Set<string>([RUNTIME_FONT_FAMILY])
  for(const e of n.cells.values()){
   const style=attr(e.cell,'style')??'';for(const match of style.matchAll(/(?:^|;)fontFamily=([^;]+)(?:;|$)/g))fonts.add(match[1])
   const label=attr(e.object,'label')??attr(e.cell,'value')??''
@@ -201,7 +203,11 @@ export class NativeDrawioRenderer {
   this.updatePressureMonitor()
   const check=()=>{if(abort.signal.aborted)throw abort.signal.reason;if(this.closed)throw new NativeRenderError('RENDERER_CLOSED','renderer 已关闭')}
   try{const work=(async()=>{
-   const project=await validateNativeProject(structuredClone(input));check();assertNativeResourceSafety(project.rendering.engine.xml);const fonts=fontsUsed(project.rendering.engine.xml),origin=await this.start();check()
+   const project=await validateNativeProject(structuredClone(input));check();assertNativeResourceSafety(project.rendering.engine.xml)
+   const {fonts,fontSubset}=(()=>{const native=parseNative(project.rendering.engine.xml),fonts=fontsUsed(native);let fontSubset:string[]|undefined
+    if(useCompactFontProfile)try{fontSubset=compactFontSubset(project.rendering.engine.xml,native)}catch{/* An unrecognized input keeps the original complete font. */}
+    return {fonts,fontSubset}
+   })(),origin=await this.start();check()
    // Admission, not an OS memory quota: retain headroom before a new browser
    // context and its CPU worker can allocate. Other services can still compete.
    if(await this.sampleAdmissionMemory()<HEAVY_MEMORY_PROFILE.browserAdmissionBytes)throw new NativeRenderError('RENDER_MEMORY_LOW','可用内存不足，未启动本次绘图渲染；请稍后显式重试')
@@ -218,7 +224,7 @@ export class NativeDrawioRenderer {
    let readyResolve!:()=>void,readyReject!:(e:Error)=>void;const ready=new Promise<void>((yes,no)=>{readyResolve=yes;readyReject=no});void ready.catch(()=>{})
    abort.signal.addEventListener('abort',()=>{readyReject(abort.signal.reason);for(const p of pending.values())p.reject(abort.signal.reason);pending.clear()},{once:true})
    const post=(data:string,targetOrigin:string)=>{void page.evaluate(({data,targetOrigin})=>(window as any).__sendNative(data,targetOrigin),{data,targetOrigin}).catch(e=>{readyReject(e);for(const p of pending.values())p.reject(e)})}
-   controller=new DrawioHostController({sessionKey:randomUUID(),initialXML:project.rendering.engine.xml,title:isNativeCanvasProject(project)?project.title:project.content.title,origin,source:()=>target,post,fontFamilies:fonts,onReady:readyResolve,onError:e=>readyReject(new NativeRenderError(e.code,e.message))})
+   controller=new DrawioHostController({sessionKey:randomUUID(),initialXML:project.rendering.engine.xml,title:isNativeCanvasProject(project)?project.title:project.content.title,origin,source:()=>target,post,fontFamilies:fonts,fontSubset,onReady:readyResolve,onError:e=>readyReject(new NativeRenderError(e.code,e.message))})
    await page.exposeBinding('__nativeMessage',({frame},data:unknown,eventOrigin:unknown)=>{
     if(frame!==page.mainFrame()||eventOrigin!==origin||typeof data!=='string'||data.length>RENDER_BUDGET.maxMessageBytes||Buffer.byteLength(data)>RENDER_BUDGET.maxMessageBytes)return
     let event:any;try{event=JSON.parse(data)}catch{return}if(event?.event==='load')lastBounds=captureRenderBounds(event)
