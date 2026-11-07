@@ -1,7 +1,7 @@
 /** Browser-only selection/scanning. Server previews remain authoritative for structure and XML. */
-export const MAX_IMPORT_SCAN_ENTRIES=200
-export const MAX_IMPORT_BATCH_SOURCES=50
-export const MAX_IMPORT_BATCH_BYTES=20_000_000
+export const MAX_IMPORT_SCAN_ENTRIES=500
+export const MAX_IMPORT_BATCH_SOURCES=150
+export const MAX_IMPORT_BATCH_BYTES=40_000_000
 export const MAX_IMPORT_FILE_BYTES=2_500_000
 export interface ImportFile {name:string;size:number;webkitRelativePath?:string;arrayBuffer():Promise<ArrayBuffer>}
 export interface ImportSelection {file:ImportFile;path:string}
@@ -13,13 +13,13 @@ export function importRelativePath(value:string):string{
 }
 export function selectImportFiles(files:Iterable<ImportFile>):ImportSelection[]{
  const result:ImportSelection[]=[];let count=0
- for(const file of files){if(++count>MAX_IMPORT_SCAN_ENTRIES)throw new Error('一次最多扫描200个文件');try{result.push({file,path:importRelativePath(file.webkitRelativePath||file.name)})}catch{/* Hidden/system paths are not opened. */}}
+ for(const file of files){if(++count>MAX_IMPORT_SCAN_ENTRIES)throw new Error(`一次最多扫描${MAX_IMPORT_SCAN_ENTRIES}个文件`);try{result.push({file,path:importRelativePath(file.webkitRelativePath||file.name)})}catch{/* Hidden/system paths are not opened. */}}
  return result.sort((a,b)=>a.path.localeCompare(b.path))
 }
 export async function scanImportEntries(entries:Iterable<ImportDirectoryEntry>):Promise<ImportSelection[]>{
  const result:ImportSelection[]=[];let count=0
  async function visit(entry:ImportDirectoryEntry,parent=''){
-  if(++count>MAX_IMPORT_SCAN_ENTRIES)throw new Error('一次最多扫描200个目录条目')
+  if(++count>MAX_IMPORT_SCAN_ENTRIES)throw new Error(`一次最多扫描${MAX_IMPORT_SCAN_ENTRIES}个目录条目`)
   let path:string;try{path=importRelativePath(parent+entry.name)}catch{return}
   if(entry.isFile&&entry.file){const file=await new Promise<ImportFile>((ok,no)=>entry.file!(ok,no));result.push({file,path})}
   else if(entry.isDirectory&&entry.createReader){const reader=entry.createReader();for(;;){const children=await new Promise<ImportDirectoryEntry[]>((ok,no)=>reader.readEntries(ok,no));if(!children.length)break;for(const child of children)await visit(child,path+'/')}}
@@ -33,17 +33,16 @@ async function sha(bytes:Uint8Array){return Array.from(new Uint8Array(await cryp
 function base64(bytes:Uint8Array){let text='';for(let n=0;n<bytes.length;n+=32768)text+=String.fromCharCode(...bytes.subarray(n,n+32768));return btoa(text)}
 /** JSON comparison only selects candidates; malformed business fields must still fail server preview. */
 export async function identifyImportCandidates(selection:ImportSelection[]):Promise<ImportCandidate[]>{
- if(selection.length>MAX_IMPORT_SCAN_ENTRIES)throw new Error('一次最多扫描200个文件')
+ if(selection.length>MAX_IMPORT_SCAN_ENTRIES)throw new Error(`一次最多扫描${MAX_IMPORT_SCAN_ENTRIES}个文件`)
  const rows:ImportCandidate[]=[],seen=new Map<string,ImportCandidate>(),business=new Map<string,Array<{row:ImportCandidate;content:string;render?:string}>>()
- let bytesTotal=0,sources=0
+ let bytesTotal=0
  for(const selected of selection){
   const path=importRelativePath(selected.path),file=selected.file,extension=path.toLowerCase(),row:ImportCandidate={itemId:'',path,name:file.name,status:'unsupported'}
   rows.push(row)
   if(!/\.(json|drawio|xml)$/.test(extension)){row.itemId='unsupported_'+rows.length;row.reason=/\.(png|svg)$/.test(extension)?'伴随图片不另建图；仅图片不能还原节点':'不支持此文件格式';continue}
   if(file.size>MAX_IMPORT_FILE_BYTES){row.itemId='unsupported_'+rows.length;row.reason='单源超过2,500,000字节';continue}
-  if(++sources>MAX_IMPORT_BATCH_SOURCES)throw new Error('一次最多预检50份规范源')
   const bytes=new Uint8Array(await file.arrayBuffer());bytesTotal+=bytes.length
-  if(bytes.length!==file.size||bytes.length>MAX_IMPORT_FILE_BYTES||bytesTotal>MAX_IMPORT_BATCH_BYTES)throw new Error('导入来源大小变化或合计超过20MB')
+  if(bytes.length!==file.size||bytes.length>MAX_IMPORT_FILE_BYTES||bytesTotal>MAX_IMPORT_BATCH_BYTES)throw new Error(`导入来源大小变化或合计超过${Math.floor(MAX_IMPORT_BATCH_BYTES/1_000_000)}MB`)
   const digest=await sha(bytes);row.itemId='item_'+await sha(new TextEncoder().encode(path+'\n'+digest))
   let text:string;try{text=new TextDecoder('utf-8',{fatal:true}).decode(bytes)}catch{row.reason='仅接受UTF-8来源';continue}
   const duplicate=seen.get(digest)
@@ -75,5 +74,8 @@ export async function identifyImportCandidates(selection:ImportSelection[]):Prom
   if(selected?.status==='conflict'){row.status='conflict';row.reason=selected.reason;delete row.preferredItemId}
   else if(selected)row.preferredItemId=selected.itemId
  }
+ // The batch budget counts distinct diagrams after byte and business-source dedup, never raw file count.
+ const unique=new Set(rows.filter(row=>row.status==='ready'||row.status==='conflict').map(row=>row.sourceId??row.itemId))
+ if(unique.size>MAX_IMPORT_BATCH_SOURCES)throw new Error(`共${selection.length}个文件、${unique.size}份不同图形，一次最多预检${MAX_IMPORT_BATCH_SOURCES}份规范源，请分批导入`)
  return rows
 }

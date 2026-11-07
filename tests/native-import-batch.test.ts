@@ -31,6 +31,19 @@ test('same-name JSON is not authority; conflicting content or two complete layou
  assert.ok((await identifyImportCandidates([file('one.json',JSON.stringify(full('layout1'))),file('two.json',JSON.stringify(full('layout2')))])).every(r=>r.status==='conflict'))
 })
 
+test('batch budget counts distinct diagrams after export-set dedup, not raw files',async()=>{
+ const project=(id:string)=>({schemaVersion:3,content:{...content,id},rendering:{engine:{xml:'x'}}})
+ const files=Array.from({length:58},(_,i)=>[file(`d${i}.json`,JSON.stringify({...content,id:'d'+i})),file(`d${i}.project.json`,JSON.stringify(project('d'+i)))]).flat()
+ files.push(file('manifest.json','{"not":"a diagram"}'))
+ const rows=await identifyImportCandidates(files)
+ assert.equal(rows.filter(r=>r.status==='ready').length,58);assert.ok(rows.filter(r=>r.status==='ready').every(r=>r.format==='project'));assert.ok(rows.find(r=>r.path==='manifest.json')!.status==='unsupported')
+})
+
+test('batch budget still rejects too many distinct diagrams with counts in the message',async()=>{
+ const files=Array.from({length:151},(_,i)=>file(`d${i}.json`,JSON.stringify({...content,id:'d'+i})))
+ await assert.rejects(identifyImportCandidates(files),(e:Error)=>/151/.test(e.message)&&/150/.test(e.message))
+})
+
 test('recursive directory scanning retains relative paths and skips hidden files without following unsafe paths',async()=>{
  const leaf=(name:string):ImportDirectoryEntry=>({name,isFile:true,isDirectory:false,file:ok=>ok(file(name,'{}').file)})
  let read=0;const directory:ImportDirectoryEntry={name:'chosen',isFile:false,isDirectory:true,createReader:()=>({readEntries:ok=>ok(read++===0?[leaf('a.json'),leaf('.env')]:[])})}
