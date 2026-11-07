@@ -5,7 +5,7 @@ import stat
 import subprocess
 import sys
 
-SLICE = b'[Unit]\nDescription=FlyMind application services aggregate resource boundary\n\n[Slice]\nMemoryAccounting=yes\nMemoryHigh=1000M\nMemoryMax=1024M\nMemorySwapMax=0\n'
+SLICE = b'[Unit]\nDescription=FlyMind application services aggregate resource boundary\n\n[Slice]\nMemoryAccounting=yes\nMemoryHigh=1472M\nMemoryMax=1536M\nMemorySwapMax=0\n'
 DROPIN = b'[Service]\nSlice=flymind.slice\n'
 FILES = {
     'flymind.slice': SLICE,
@@ -128,7 +128,7 @@ def main():
 
 def verify_live():
     root = '/sys/fs/cgroup/flymind.slice/'
-    for name, expected in (('memory.high', '1048576000'), ('memory.max', '1073741824'), ('memory.swap.max', '0')):
+    for name, expected in (('memory.high', '1543503872'), ('memory.max', '1610612736'), ('memory.swap.max', '0')):
         with open(root + name, encoding='ascii') as source:
             if source.read(128).strip() != expected:
                 raise RuntimeError('LIVE_LIMIT_MISMATCH')

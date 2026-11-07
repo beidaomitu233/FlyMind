@@ -26,7 +26,7 @@ class FixtureTests(unittest.TestCase):
                      '--property=MainPID': str(123 + names.index(args[-1]))}[key]
             return SimpleNamespace(stdout=value.encode('ascii'))
 
-        values = {'memory.high': '1048576000', 'memory.max': '1073741824', 'memory.swap.max': '0'}
+        values = {'memory.high': '1543503872', 'memory.max': '1610612736', 'memory.swap.max': '0'}
         def fake_open(path, **_kwargs):
             if path.startswith('/sys/fs/cgroup/flymind.slice/'):
                 name = path.rsplit('/', 1)[-1]

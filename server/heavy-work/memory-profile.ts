@@ -1,10 +1,16 @@
 const MiB=1024*1024
 
-/** Server operator opt-in; unknown values retain the stricter default. */
+/** Server operator opt-in; unknown values retain the stricter default.
+ * compact-1_5g deliberately shares the default budgets — it only enables the compact font supply. */
 export function resolveMemoryProfile(name:string|undefined){
  return name==='compact-1g'
   ?{browserAdmissionBytes:384*MiB,svgAdmissionBytes:384*MiB,svgRssBytes:256*MiB,svgHeapMiB:160,browserPressureBytes:64*MiB}
   :{browserAdmissionBytes:512*MiB,svgAdmissionBytes:512*MiB,svgRssBytes:384*MiB,svgHeapMiB:256,browserPressureBytes:128*MiB}
+}
+
+/** Compact profiles share the fixed-slice font supply; only the process budgets differ. */
+export function usesCompactFontSupply(name:string|undefined){
+ return name==='compact-1g'||name==='compact-1_5g'
 }
 
 /** Capture once from the service environment, not request parameters. */

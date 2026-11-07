@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 // The production profile is captured once from the service environment.
 process.env.FLYMIND_MEMORY_PROFILE='compact-1g'
-const {resolveMemoryProfile,HEAVY_MEMORY_PROFILE}=await import('../server/heavy-work/memory-profile')
+const {resolveMemoryProfile,usesCompactFontSupply,HEAVY_MEMORY_PROFILE}=await import('../server/heavy-work/memory-profile')
 const {HeavyWorkRunner}=await import('../server/heavy-work/runner')
 const {NativeDrawioRenderer}=await import('../server/rendering/renderer')
 const MiB=1024**2
@@ -12,6 +12,9 @@ const childURL=new URL('./fixtures/heavy-work-profile-child.mjs',import.meta.url
 test('default and unknown profiles retain the original limits; compact is explicit',()=>{
  for(const name of [undefined,'','typo','COMPACT-1G'])assert.deepEqual(resolveMemoryProfile(name),{browserAdmissionBytes:512*MiB,svgAdmissionBytes:512*MiB,svgRssBytes:384*MiB,svgHeapMiB:256,browserPressureBytes:128*MiB})
  assert.deepEqual(resolveMemoryProfile('compact-1g'),{browserAdmissionBytes:384*MiB,svgAdmissionBytes:384*MiB,svgRssBytes:256*MiB,svgHeapMiB:160,browserPressureBytes:64*MiB})
+ // The 1.5 GiB host keeps compact fonts on the original admission/process budgets.
+ assert.deepEqual(resolveMemoryProfile('compact-1_5g'),resolveMemoryProfile(undefined))
+ assert.equal(usesCompactFontSupply('compact-1g'),true);assert.equal(usesCompactFontSupply('compact-1_5g'),true);assert.equal(usesCompactFontSupply(undefined),false)
  assert.deepEqual(HEAVY_MEMORY_PROFILE,resolveMemoryProfile('compact-1g'))
 })
 

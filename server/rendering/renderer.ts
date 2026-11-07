@@ -8,7 +8,7 @@ import {resolveRuntimeAssets,checkRuntimeAssets,runtimeAssetsRouter} from './ass
 import {NativeRenderError,type NativeRenderOptions,type NativeRenderResult,type RuntimeAssetPaths} from './types'
 import {RENDER_BUDGET,exportScale} from './budgets'
 import {runHeavyWork,transferSVGProof} from '../heavy-work/runner'
-import {HEAVY_MEMORY_PROFILE} from '../heavy-work/memory-profile'
+import {HEAVY_MEMORY_PROFILE,usesCompactFontSupply} from '../heavy-work/memory-profile'
 import {availableHeavyMemory} from '../heavy-work/resources'
 import type {NativeDrawingProject} from '../../src/drawing/engine/types'
 import {validateNativeProject,isNativeCanvasProject,assertNativeResourceSafety,nativeCanvasRenderSignature} from '../../src/drawing/engine/native-canvas'
@@ -20,7 +20,7 @@ import {parseNative,attr,type NativeDocument} from '../../src/drawing/engine/dra
 import {compactFontSubset} from './compact-fonts'
 import {RUNTIME_BROWSER_VERSION,RUNTIME_FONT_ALIASES,RUNTIME_FONT_FAMILY,RUNTIME_FONT_SHA256,RUNTIME_FONT_FILE} from '../../src/drawing/engine/runtime-assets'
 
-const useCompactFontProfile=process.env.FLYMIND_MEMORY_PROFILE==='compact-1g'
+const useCompactFontProfile=usesCompactFontSupply(process.env.FLYMIND_MEMORY_PROFILE)
 function fontsUsed(n:NativeDocument){
  const fonts=new Set<string>([RUNTIME_FONT_FAMILY])
  for(const e of n.cells.values()){

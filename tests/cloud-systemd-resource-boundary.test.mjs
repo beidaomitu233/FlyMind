@@ -8,7 +8,7 @@ const read = name => readFile(new URL(name, root), 'utf8')
 test('aggregate slice has one explicit memory and swap boundary', async () => {
   const text = await read('flymind.slice')
   assert.match(text, /^\[Slice\]$/m)
-  for (const line of ['MemoryAccounting=yes', 'MemoryHigh=1000M', 'MemoryMax=1024M', 'MemorySwapMax=0']) {
+  for (const line of ['MemoryAccounting=yes', 'MemoryHigh=1472M', 'MemoryMax=1536M', 'MemorySwapMax=0']) {
     assert.equal(text.split(/\r?\n/).filter(item => item === line).length, 1, line)
   }
   const high=Number(/^MemoryHigh=(\d+)M$/m.exec(text)?.[1])
